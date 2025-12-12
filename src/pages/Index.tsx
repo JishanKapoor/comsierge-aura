@@ -1,10 +1,11 @@
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
-import IntroSection from "@/components/IntroSection";
-import FeaturesSection from "@/components/FeaturesSection";
-import CapabilitiesSection from "@/components/CapabilitiesSection";
-import StatsSection from "@/components/StatsSection";
-import LogoMarquee from "@/components/LogoMarquee";
+import ManifestoSection from "@/components/ManifestoSection";
+import FloatingVisuals from "@/components/FloatingVisuals";
+import EnginesSection from "@/components/EnginesSection";
+import InfrastructureSection from "@/components/InfrastructureSection";
+import ProductsSection from "@/components/ProductsSection";
+import ResearchSection from "@/components/ResearchSection";
 import CTASection from "@/components/CTASection";
 import Footer from "@/components/Footer";
 
@@ -13,11 +14,12 @@ const Index = () => {
     <main className="min-h-screen bg-background overflow-x-hidden">
       <Navbar />
       <HeroSection />
-      <IntroSection />
-      <FeaturesSection />
-      <CapabilitiesSection />
-      <StatsSection />
-      <LogoMarquee />
+      <ManifestoSection />
+      <FloatingVisuals />
+      <EnginesSection />
+      <InfrastructureSection />
+      <ProductsSection />
+      <ResearchSection />
       <CTASection />
       <Footer />
     </main>

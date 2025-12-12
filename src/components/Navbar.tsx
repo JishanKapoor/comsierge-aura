@@ -1,96 +1,109 @@
 import { useState } from "react";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronDown, Menu, X } from "lucide-react";
 
 const Navbar = () => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const navItems = [
-    { name: "Call Filter", href: "#features" },
-    { name: "Auto-Reply", href: "#auto-reply" },
-    { name: "Intelligence", href: "#intelligence" },
-    { name: "Integrations", href: "#integrations" },
-  ];
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4 md:px-8 lg:px-12">
-      <div className="flex items-center justify-between">
-        {/* Left Navigation */}
-        <div className="hidden md:flex flex-col gap-1.5 animate-slide-left">
-          {navItems.map((item, index) => (
-            <a
-              key={item.name}
-              href={item.href}
-              className="nav-link"
-              style={{ animationDelay: `${index * 0.1}s` }}
-            >
-              {item.name}
-            </a>
-          ))}
-          <button className="nav-link flex items-center gap-1 text-left">
-            Solutions
-            <ChevronDown className="w-3 h-3" />
-          </button>
-          <a href="#contact" className="nav-link">
-            Contact
-          </a>
-        </div>
-
-        {/* Logo */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-4 md:top-6">
-          <a
-            href="/"
-            className="font-serif text-2xl md:text-3xl font-medium tracking-tight text-foreground animate-fade-in"
+    <>
+      <motion.nav 
+        className="fixed top-0 left-0 right-0 z-50 px-6 py-6 md:px-10"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+      >
+        <div className="flex items-start justify-between">
+          {/* Left Nav */}
+          <motion.div 
+            className="hidden md:flex flex-col gap-2"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
           >
-            comsierge.
-          </a>
-        </div>
+            <a href="#silence" className="nav-link">Silence</a>
+            <a href="#respond" className="nav-link">Respond</a>
+            <a href="#connect" className="nav-link">Connect</a>
+            <a href="#learn" className="nav-link">Learn</a>
+            <button className="nav-link flex items-center gap-1">
+              Solutions
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            <a href="#contact" className="nav-link">Careers</a>
+          </motion.div>
 
-        {/* Right CTA */}
-        <div className="hidden md:block ml-auto animate-fade-up-delay-2">
-          <a href="#contact" className="pill-button-outline">
-            Get in touch
-          </a>
-        </div>
+          {/* Logo Center */}
+          <motion.div 
+            className="absolute left-1/2 -translate-x-1/2 top-6"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+          >
+            <a href="/" className="text-xl md:text-2xl font-medium tracking-tight text-foreground">
+              comsierge.
+            </a>
+          </motion.div>
 
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="md:hidden text-foreground z-50"
-        >
-          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-      </div>
+          {/* Right CTA */}
+          <motion.div
+            className="hidden md:block"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+          >
+            <a href="#contact" className="pill-button-ghost">
+              Get in touch
+            </a>
+          </motion.div>
+
+          {/* Mobile Menu Toggle */}
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="md:hidden text-foreground z-50"
+          >
+            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
+      </motion.nav>
 
       {/* Mobile Menu */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-background/98 backdrop-blur-lg md:hidden pt-20 px-6 animate-fade-in">
-          <div className="flex flex-col gap-4">
-            {navItems.map((item) => (
-              <a
-                key={item.name}
-                href={item.href}
-                className="text-2xl font-serif text-foreground"
-                onClick={() => setIsOpen(false)}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            className="fixed inset-0 z-40 bg-background pt-24 px-6 md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="flex flex-col gap-6">
+              {["Silence", "Respond", "Connect", "Learn", "Careers"].map((item, i) => (
+                <motion.a
+                  key={item}
+                  href={`#${item.toLowerCase()}`}
+                  className="text-2xl font-light text-foreground"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {item}
+                </motion.a>
+              ))}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="mt-4"
               >
-                {item.name}
-              </a>
-            ))}
-            <a
-              href="#contact"
-              className="text-2xl font-serif text-foreground"
-              onClick={() => setIsOpen(false)}
-            >
-              Contact
-            </a>
-            <div className="mt-8">
-              <a href="#contact" className="pill-button">
-                Get in touch
-              </a>
+                <a href="#contact" className="pill-button-ghost">
+                  Get in touch
+                </a>
+              </motion.div>
             </div>
-          </div>
-        </div>
-      )}
-    </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
