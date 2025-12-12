@@ -1,62 +1,63 @@
+import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import heroImage from "@/assets/hero-landscape.jpg";
 
 const HeroSection = () => {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-      {/* Background Image */}
-      <div className="absolute inset-0 z-0">
+    <section className="relative h-screen flex items-center justify-center overflow-hidden">
+      {/* Background */}
+      <motion.div 
+        className="absolute inset-0 z-0"
+        initial={{ scale: 1.1, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 1.5, ease: [0.22, 1, 0.36, 1] }}
+      >
         <img
           src={heroImage}
-          alt="Serene landscape with mountains and lake"
-          className="w-full h-full object-cover animate-scale-in"
+          alt="Atmospheric landscape"
+          className="w-full h-full object-cover"
         />
-        {/* Gradient Overlay */}
-        <div
+        {/* Gradients matching micro1 exactly */}
+        <div 
           className="absolute inset-0"
           style={{
-            background:
-              "linear-gradient(180deg, transparent 0%, hsl(0 0% 4% / 0.4) 60%, hsl(0 0% 4%) 100%)",
+            background: "linear-gradient(180deg, hsl(0 0% 3% / 0.3) 0%, hsl(0 0% 3% / 0.1) 40%, hsl(0 0% 3% / 0.7) 80%, hsl(0 0% 3%) 100%)"
           }}
         />
-        {/* Side vignettes */}
-        <div
+        <div 
           className="absolute inset-0"
           style={{
-            background:
-              "linear-gradient(90deg, hsl(0 0% 4% / 0.5) 0%, transparent 20%, transparent 80%, hsl(0 0% 4% / 0.5) 100%)",
+            background: "linear-gradient(90deg, hsl(0 0% 3% / 0.6) 0%, transparent 25%, transparent 75%, hsl(0 0% 3% / 0.6) 100%)"
           }}
         />
-      </div>
+      </motion.div>
 
       {/* Content */}
       <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-        <h1 className="hero-title text-foreground mb-8 animate-fade-up">
-          The AI guardian for
+        <motion.h1 
+          className="hero-headline text-foreground"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
+          The AI layer between
           <br />
-          <span className="italic">your communications</span>
-        </h1>
+          <span className="italic font-light">you and noise</span>
+        </motion.h1>
 
-        <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-12 animate-fade-up-delay-2 font-light">
-          Comsierge filters your calls and messages, blocks spam, and only
-          alerts you when something truly matters.
-        </p>
-
-        <div className="animate-fade-up-delay-3">
+        <motion.div
+          className="mt-10"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        >
           <a href="#contact" className="pill-button group">
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
-              <ArrowRight className="w-4 h-4 text-foreground group-hover:translate-x-0.5 transition-transform" />
+              <ArrowRight className="w-4 h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
             </span>
             Get in touch
           </a>
-        </div>
-      </div>
-
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-fade-up-delay-4">
-        <div className="w-6 h-10 rounded-full border-2 border-foreground/30 flex items-start justify-center p-2">
-          <div className="w-1 h-2 bg-foreground/50 rounded-full animate-bounce" />
-        </div>
+        </motion.div>
       </div>
     </section>
   );
