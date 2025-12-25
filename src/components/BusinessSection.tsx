@@ -2,44 +2,44 @@ import { Phone, Voicemail, Monitor, Users, ArrowRightLeft, Clock } from "lucide-
 
 const BusinessSection = () => {
   const features = [
-    { icon: Phone, title: "Auto Attendant", description: "Callers reach the right person quickly." },
-    { icon: Voicemail, title: "Shared Voicemail", description: "Team access to one inbox." },
-    { icon: Monitor, title: "Multi-Device", description: "Phone, tablet, or PC." },
-    { icon: Users, title: "Ring Groups", description: "Reduce wait times." },
-    { icon: ArrowRightLeft, title: "Call Transfer", description: "Transfer to anyone." },
-    { icon: Clock, title: "Call Queues", description: "Smart routing." },
+    { icon: Phone, title: "Auto Attendant", description: "Voice response system lets callers reach the right person quickly." },
+    { icon: Voicemail, title: "Shared Voicemail", description: "Multiple team members access one inbox for faster response." },
+    { icon: Monitor, title: "Multi-Device Support", description: "Any phone, tablet, or PC becomes your business line." },
+    { icon: Users, title: "Ring Groups", description: "Calls ring multiple team members to reduce wait times." },
+    { icon: ArrowRightLeft, title: "Call Transfer", description: "Easily transfer ongoing calls to anyone on your team." },
+    { icon: Clock, title: "Call Queues", description: "Intelligent routing so no caller waits too long." },
   ];
 
   return (
-    <section className="py-16 sm:py-20 md:py-28 px-4 sm:px-6 md:px-16 bg-card/20 border-y border-white/5">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
+    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-card/30 to-background border-t border-white/5">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-12 sm:mb-16">
           <div>
-            <span className="section-label">For Teams</span>
-            <h2 className="mt-3 text-2xl sm:text-3xl font-light text-foreground">
+            <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">For Teams</span>
+            <h2 className="mt-4 text-2xl sm:text-3xl md:text-4xl font-light text-foreground">
               Business Features
             </h2>
           </div>
-          <p className="text-xs sm:text-sm text-muted-foreground max-w-xs">
-            Built for both businesses and consumers.
+          <p className="text-sm text-muted-foreground max-w-md lg:text-right">
+            Built for both businesses and consumers. Solutions for everyone.
           </p>
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {features.map((feature, i) => (
             <div
               key={i}
-              className="group flex items-start gap-3 p-3 sm:p-4 rounded-xl bg-background/50 border border-white/5 hover:border-accent/30 transition-all duration-300"
+              className="group flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-card/20 border border-white/5 hover:border-white/10 hover:bg-card/30 transition-all duration-300"
             >
-              <div className="w-8 h-8 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                <feature.icon className="w-4 h-4 text-accent" />
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 transition-colors">
+                <feature.icon className="w-4 h-4 sm:w-5 sm:h-5 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
               </div>
               <div>
-                <h3 className="text-xs sm:text-sm font-medium text-foreground">
+                <h3 className="text-sm font-medium text-foreground mb-1">
                   {feature.title}
                 </h3>
-                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {feature.description}
                 </p>
               </div>
