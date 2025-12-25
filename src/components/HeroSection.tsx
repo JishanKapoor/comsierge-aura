@@ -31,7 +31,7 @@ const HeroSection = () => {
       </div>
 
       <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto">
-        <h1 className="hero-headline text-foreground">
+        <h1 className="hero-headline text-foreground animate-fade-in">
           The AI layer between
           <br />
           <span className="italic font-light">you and noise</span>
