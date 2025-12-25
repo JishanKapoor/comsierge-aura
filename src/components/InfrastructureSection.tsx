@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { Phone, Mail, MessageSquare, Calendar, Globe, History, Settings, Bell } from "lucide-react";
 
 const InfrastructureSection = () => {
@@ -20,120 +19,47 @@ const InfrastructureSection = () => {
     { value: "24/7", label: "Protection" },
   ];
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: { staggerChildren: 0.05, delayChildren: 0.2 }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, scale: 0.8 },
-    visible: { 
-      opacity: 1, 
-      scale: 1,
-      transition: { type: "spring", stiffness: 150, damping: 15 }
-    }
-  };
-
   return (
-    <section className="py-24 md:py-32 px-6 md:px-16 bg-card/30 border-y border-border/30">
+    <section className="py-16 sm:py-24 md:py-32 px-4 sm:px-6 md:px-16 bg-card/30 border-y border-border/30">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
-          viewport={{ once: true }}
-        >
-          <motion.span 
-            className="section-label"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            viewport={{ once: true }}
-          >
-            Complete Control
-          </motion.span>
-          <motion.h2 
-            className="section-headline text-foreground mt-4"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
-            viewport={{ once: true }}
-          >
+        <div className="text-center mb-12 sm:mb-16">
+          <span className="section-label">Complete Control</span>
+          <h2 className="section-headline text-foreground mt-4">
             The infrastructure for
             <br />
             <span className="italic">peaceful communication</span>
-          </motion.h2>
-        </motion.div>
+          </h2>
+        </div>
 
         {/* Features Grid */}
-        <motion.div
-          className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-20"
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true }}
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-12 sm:mb-20">
           {features.map((feature) => (
-            <motion.div
+            <div
               key={feature.label}
-              className="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-background border border-border/50 hover:border-border transition-all duration-300 cursor-pointer"
-              variants={itemVariants}
-              whileHover={{ 
-                scale: 1.03, 
-                y: -5,
-                boxShadow: "0 20px 40px -20px hsl(0 0% 0% / 0.5)"
-              }}
+              className="group flex flex-col items-center gap-2 sm:gap-3 p-4 sm:p-6 rounded-xl sm:rounded-2xl bg-background border border-border/50 hover:border-border transition-all duration-300"
             >
-              <motion.div
-                className="w-12 h-12 rounded-xl bg-foreground/5 flex items-center justify-center group-hover:bg-foreground/10 transition-colors duration-300"
-                whileHover={{ rotate: [0, -5, 5, 0] }}
-                transition={{ duration: 0.4 }}
-              >
-                <feature.icon className="w-5 h-5 text-foreground/70 group-hover:text-foreground transition-colors" />
-              </motion.div>
-              <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors text-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-foreground/5 flex items-center justify-center">
+                <feature.icon className="w-4 h-4 sm:w-5 sm:h-5 text-foreground/70" />
+              </div>
+              <span className="text-xs sm:text-sm text-muted-foreground text-center">
                 {feature.label}
               </span>
-            </motion.div>
+            </div>
           ))}
-        </motion.div>
+        </div>
 
         {/* Stats */}
-        <motion.div
-          className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12"
-          initial={{ opacity: 0, y: 40 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3 }}
-          viewport={{ once: true }}
-        >
-          {stats.map((stat, i) => (
-            <motion.div
-              key={stat.label}
-              className="text-center"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 + i * 0.1 }}
-              viewport={{ once: true }}
-            >
-              <motion.p 
-                className="text-4xl md:text-5xl font-light text-foreground"
-                whileInView={{ 
-                  scale: [0.5, 1.1, 1],
-                }}
-                transition={{ duration: 0.6, delay: 0.5 + i * 0.1 }}
-                viewport={{ once: true }}
-              >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 md:gap-12">
+          {stats.map((stat) => (
+            <div key={stat.label} className="text-center">
+              <p className="text-3xl sm:text-4xl md:text-5xl font-light text-foreground">
                 {stat.value}
-              </motion.p>
-              <p className="text-sm text-muted-foreground mt-2">{stat.label}</p>
-            </motion.div>
+              </p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">{stat.label}</p>
+            </div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );
