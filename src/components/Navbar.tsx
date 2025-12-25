@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Phone } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const Navbar = () => {
@@ -22,7 +22,7 @@ const Navbar = () => {
   return (
     <>
       <motion.nav 
-        className="fixed top-0 left-0 right-0 z-50 px-6 py-6 md:px-10 bg-background/80 backdrop-blur-md"
+        className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 sm:py-6"
         initial={{ opacity: 0, y: -20 }}
         animate={{ 
           opacity: hidden && !isAuthPage ? 0 : 1, 
@@ -32,39 +32,30 @@ const Navbar = () => {
       >
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           {/* Logo - Centered */}
-          <motion.div 
-            className="flex-1 flex justify-center"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-          >
-            <Link to="/" className="text-xl md:text-2xl font-medium tracking-tight text-foreground">
-              comsierge.
+          <div className="flex-1 flex justify-center">
+            <Link to="/" className="flex items-center gap-2 text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-foreground">
+              <Phone className="w-5 h-5 sm:w-6 sm:h-6" />
+              <span>comsierge.</span>
             </Link>
-          </motion.div>
+          </div>
 
           {/* Right - Login/Signup (Desktop) */}
           {!isAuthPage && (
-            <motion.div
-              className="hidden md:flex items-center gap-4 absolute right-10"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-            >
+            <div className="hidden md:flex items-center gap-4 absolute right-6 sm:right-10">
               <Link to="/auth" className="nav-link">
                 Log in
               </Link>
               <Link to="/auth" className="pill-button-ghost">
                 Sign up
               </Link>
-            </motion.div>
+            </div>
           )}
 
           {/* Mobile Menu Toggle */}
           {!isAuthPage && (
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden text-foreground z-50 absolute right-6"
+              className="md:hidden text-foreground z-50 absolute right-4 sm:right-6"
             >
               {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -82,12 +73,7 @@ const Navbar = () => {
             exit={{ opacity: 0 }}
           >
             <div className="flex flex-col items-center gap-8">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="flex flex-col items-center gap-6"
-              >
+              <div className="flex flex-col items-center gap-6">
                 <Link 
                   to="/auth" 
                   className="text-lg text-muted-foreground"
@@ -102,7 +88,7 @@ const Navbar = () => {
                 >
                   Sign up
                 </Link>
-              </motion.div>
+              </div>
             </div>
           </motion.div>
         )}

@@ -1,27 +1,17 @@
-import { motion } from "framer-motion";
-import heroVideo from "@/assets/hero-video.mp4";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Phone } from "lucide-react";
 import { Link } from "react-router-dom";
+import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
   return (
-    <section className="relative h-screen flex items-center justify-center overflow-hidden">
-      {/* Background Video */}
-      <motion.div 
-        className="absolute inset-0 z-0"
-        initial={{ scale: 1.1, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.5, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
+      {/* Background Image */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src={heroImage}
+          alt="New York City"
           className="w-full h-full object-cover"
-        >
-          <source src={heroVideo} type="video/mp4" />
-        </video>
+        />
         {/* Gradients */}
         <div 
           className="absolute inset-0"
@@ -35,60 +25,36 @@ const HeroSection = () => {
             background: "linear-gradient(90deg, hsl(0 0% 3% / 0.6) 0%, transparent 25%, transparent 75%, hsl(0 0% 3% / 0.6) 100%)"
           }}
         />
-      </motion.div>
+      </div>
 
       {/* Content */}
-      <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-        <motion.h1 
-          className="hero-headline text-foreground"
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        >
+      <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto">
+        <h1 className="hero-headline text-foreground">
           The AI layer between
           <br />
           <span className="italic font-light">you and noise</span>
-        </motion.h1>
+        </h1>
 
-        <motion.p
-          className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.65, ease: [0.22, 1, 0.36, 1] }}
-        >
+        <p className="mt-4 sm:mt-6 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto px-4">
           Calls, messages, spam—handled. Built in New York.
-        </motion.p>
+        </p>
 
-        <motion.div
-          className="mt-10 flex items-center justify-center gap-4"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        >
+        <div className="mt-8 sm:mt-10 flex items-center justify-center gap-4">
           <Link to="/auth" className="pill-button group">
-            <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
-              <ArrowRight className="w-4 h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
+            <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-background flex items-center justify-center">
+              <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
             </span>
-            Request early access
+            <span className="text-sm sm:text-base">Request early access</span>
           </Link>
-        </motion.div>
+        </div>
       </div>
 
       {/* Scroll indicator */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.2 }}
-      >
-        <motion.div
-          className="w-6 h-10 rounded-full border border-foreground/30 flex items-start justify-center p-2"
-          animate={{ y: [0, 5, 0] }}
-          transition={{ repeat: Infinity, duration: 1.5 }}
-        >
-          <div className="w-1 h-2 bg-foreground/50 rounded-full" />
-        </motion.div>
-      </motion.div>
+      <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2">
+        <div className="w-6 h-10 rounded-full border border-foreground/30 flex items-start justify-center p-2">
+          <div className="w-1 h-2 bg-foreground/50 rounded-full animate-bounce" />
+        </div>
+      </div>
     </section>
   );
 };
