@@ -45,7 +45,7 @@ const Auth = () => {
 
         {/* Card */}
         <div className="w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center animate-fade-in">
             {isLogin ? "Welcome back" : "Get started"}
           </h1>
           <p className="mt-2 text-xs sm:text-sm text-muted-foreground text-center">
@@ -55,10 +55,7 @@ const Auth = () => {
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
-            {/* Reserve space so toggle doesn't jump */}
-            {isLogin ? (
-              <div className="h-[74px]" aria-hidden="true" />
-            ) : (
+            {!isLogin && (
               <div>
                 <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Full name</label>
                 <input
