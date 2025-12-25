@@ -1,4 +1,4 @@
-import { MapPin } from "lucide-react";
+import { MapPin, Mail } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Footer = () => {
@@ -21,9 +21,9 @@ const Footer = () => {
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Product</h4>
             <ul className="space-y-3">
-              <li><a href="#silence" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Silence</a></li>
-              <li><a href="#respond" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Respond</a></li>
-              <li><a href="#connect" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Connect</a></li>
+              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a></li>
+              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Integrations</a></li>
+              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a></li>
             </ul>
           </div>
 
@@ -52,11 +52,13 @@ const Footer = () => {
           <p className="text-xs text-muted-foreground">
             © {new Date().getFullYear()} Comsierge Inc. All rights reserved.
           </p>
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-foreground transition-colors">X</a>
-            <a href="#" className="hover:text-foreground transition-colors">LinkedIn</a>
-            <a href="#" className="hover:text-foreground transition-colors">GitHub</a>
-          </div>
+          <a 
+            href="mailto:Kapoorjishan2@Gmail.com" 
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Mail className="w-4 h-4" />
+            Kapoorjishan2@Gmail.com
+          </a>
         </div>
       </div>
     </footer>
