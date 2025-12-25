@@ -1,6 +1,5 @@
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 
 const FAQSection = () => {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
@@ -29,11 +28,11 @@ const FAQSection = () => {
   ];
 
   return (
-    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background">
+    <section className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-background">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10 sm:mb-14">
           <span className="section-label">FAQ</span>
-          <h2 className="section-headline text-foreground mt-4">
+          <h2 className="section-headline text-foreground mt-4 animate-fade-in">
             Common questions
           </h2>
         </div>
@@ -42,41 +41,26 @@ const FAQSection = () => {
           {faqs.map((faq, i) => (
             <div
               key={i}
-              className="border border-border/50 rounded-xl overflow-hidden bg-card/30 hover:border-border transition-colors duration-500"
+              className="border border-border/50 rounded-xl overflow-hidden bg-card/30 hover:border-border transition-colors duration-300"
             >
               <button
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="w-full px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between text-left transition-all duration-500"
+                className="w-full px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between text-left"
               >
                 <span className="text-sm sm:text-base font-medium text-foreground pr-4">
                   {faq.question}
                 </span>
-                <motion.div
-                  animate={{ rotate: openIndex === i ? 180 : 0 }}
-                  transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-                >
-                  <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground flex-shrink-0" />
-                </motion.div>
+                <ChevronDown 
+                  className={`w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground flex-shrink-0 transition-transform duration-300 ${openIndex === i ? 'rotate-180' : ''}`} 
+                />
               </button>
-              <AnimatePresence initial={false}>
-                {openIndex === i && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ 
-                      duration: 0.4, 
-                      ease: [0.25, 0.46, 0.45, 0.94],
-                      opacity: { duration: 0.3 }
-                    }}
-                    className="overflow-hidden"
-                  >
-                    <p className="px-4 sm:px-6 pb-4 sm:pb-5 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                      {faq.answer}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${openIndex === i ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'}`}
+              >
+                <p className="px-4 sm:px-6 pb-4 sm:pb-5 text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  {faq.answer}
+                </p>
+              </div>
             </div>
           ))}
         </div>

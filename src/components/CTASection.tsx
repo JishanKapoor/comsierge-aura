@@ -1,16 +1,24 @@
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import ctaBg from "@/assets/cta-bg.jpg";
 
 const CTASection = () => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = ctaBg;
+    img.onload = () => setImageLoaded(true);
+  }, []);
+
   return (
     <section id="contact" className="relative py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background overflow-hidden">
-      {/* Background image */}
       <div className="absolute inset-0 z-0">
         <img 
           src={ctaBg}
           alt="New York City at night"
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
           loading="lazy"
         />
         <div 
@@ -22,7 +30,7 @@ const CTASection = () => {
       </div>
 
       <div className="max-w-4xl mx-auto text-center relative z-10">
-        <h2 className="section-headline text-foreground">
+        <h2 className="section-headline text-foreground animate-fade-in">
           Your attention is finite.
           <br />
           <span className="italic">Protect it.</span>
@@ -35,7 +43,7 @@ const CTASection = () => {
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link to="/auth" className="pill-button group">
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
-              <ArrowRight className="w-4 h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight className="w-4 h-4 text-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
             </span>
             Request early access
           </Link>
