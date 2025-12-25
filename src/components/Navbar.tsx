@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Phone } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -8,35 +8,41 @@ const Navbar = () => {
   const [hidden, setHidden] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
-  const { scrollY } = useScroll();
+  const lastScrollY = useRef(0);
 
-  useMotionValueEvent(scrollY, "change", (latest) => {
-    const previous = scrollY.getPrevious() || 0;
-    if (latest > previous && latest > 100) {
-      setHidden(true);
-    } else {
-      setHidden(false);
-    }
-  });
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      
+      if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+        setHidden(true);
+      } else if (currentScrollY < lastScrollY.current) {
+        setHidden(false);
+      }
+      
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   return (
     <>
       <motion.nav 
         className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 sm:py-6"
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 1, y: 0 }}
         animate={{ 
           opacity: hidden && !isAuthPage ? 0 : 1, 
           y: hidden && !isAuthPage ? -100 : 0 
         }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.4, ease: "easeInOut" }}
       >
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           {/* Logo - Centered */}
           <div className="flex-1 flex justify-center">
             <Link to="/" className="flex items-center gap-2.5 text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-foreground">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-foreground/10 backdrop-blur-sm border border-foreground/20 flex items-center justify-center">
-                <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
-              </div>
+              <Phone className="w-5 h-5 sm:w-6 sm:h-6 text-foreground" />
               <span>comsierge.</span>
             </Link>
           </div>

@@ -17,14 +17,15 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Full Background Image - NYC */}
+      {/* Full Background Image - NYC with brightness boost */}
       <div className="absolute inset-0 z-0">
         <img 
           src={heroImage}
           alt="New York City"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover brightness-125"
+          loading="eager"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-background/95 via-background/85 to-background/70" />
+        <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/50" />
       </div>
 
       {/* Content */}
@@ -39,9 +40,7 @@ const Auth = () => {
           </Link>
 
           <Link to="/" className="flex items-center gap-2.5 text-xl sm:text-2xl font-medium tracking-tight text-foreground mb-8 sm:mb-10">
-            <div className="w-8 h-8 rounded-xl bg-foreground/10 backdrop-blur-sm border border-foreground/20 flex items-center justify-center">
-              <Phone className="w-4 h-4 text-foreground" />
-            </div>
+            <Phone className="w-5 h-5 sm:w-6 sm:h-6 text-foreground" />
             <span>comsierge.</span>
           </Link>
 

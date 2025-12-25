@@ -28,7 +28,7 @@ const FAQSection = () => {
   ];
 
   return (
-    <section className="py-16 sm:py-24 md:py-32 px-4 sm:px-6 md:px-16 bg-background">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-10 sm:mb-14">
           <span className="section-label">FAQ</span>

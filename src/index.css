@@ -112,3 +112,24 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(0 0% 30%);
 }
+
+/* Animated dots for loading text */
+@keyframes dot-animation {
+  0%, 20% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+
+.animate-dot-1 {
+  animation: dot-animation 1.4s infinite;
+  animation-delay: 0s;
+}
+
+.animate-dot-2 {
+  animation: dot-animation 1.4s infinite;
+  animation-delay: 0.2s;
+}
+
+.animate-dot-3 {
+  animation: dot-animation 1.4s infinite;
+  animation-delay: 0.4s;
+}
