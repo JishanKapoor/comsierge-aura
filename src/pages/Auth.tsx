@@ -10,10 +10,6 @@ const Auth = () => {
   const [name, setName] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     navigate("/");
