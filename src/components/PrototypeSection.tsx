@@ -23,7 +23,7 @@ const PrototypeSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-background">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12 sm:mb-16">
           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Prototype</span>

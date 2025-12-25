@@ -1,5 +1,15 @@
 import { X, AlertTriangle, Bell, Clock } from "lucide-react";
 
+const AnimatedDots = () => {
+  return (
+    <span className="inline-flex">
+      <span className="animate-dot-1">.</span>
+      <span className="animate-dot-2">.</span>
+      <span className="animate-dot-3">.</span>
+    </span>
+  );
+};
+
 const ProblemSection = () => {
   const messages = [
     { text: "You've won $5000!", type: "spam", urgent: true },
@@ -9,7 +19,7 @@ const ProblemSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-background via-card/20 to-background">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-background via-card/20 to-background">
       <div className="max-w-6xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           {/* Left - Content */}
@@ -76,7 +86,6 @@ const ProblemSection = () => {
                         ? 'bg-green-500/10 border-green-500/30'
                         : 'bg-white/5 border-white/10'
                     }`}
-                    style={{ animationDelay: `${i * 0.15}s` }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-xs sm:text-sm text-foreground/80 flex-1">{msg.text}</p>
@@ -90,10 +99,12 @@ const ProblemSection = () => {
                 ))}
               </div>
 
-              {/* Chaos indicator */}
+              {/* Chaos indicator with animated dots */}
               <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-                <span className="text-xs text-muted-foreground">Overwhelming...</span>
+                <span className="text-xs text-muted-foreground">
+                  Overwhelming<AnimatedDots />
+                </span>
               </div>
             </div>
 

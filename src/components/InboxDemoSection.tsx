@@ -26,7 +26,7 @@ const InboxDemoSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-card/20 border-y border-white/5">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-card/20 border-y border-white/5">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12 sm:mb-16">
           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Live Demo</span>

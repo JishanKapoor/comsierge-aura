@@ -2,7 +2,7 @@ import { Shield, Zap, MessageSquare, Phone } from "lucide-react";
 
 const SolutionSection = () => {
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-background relative overflow-hidden">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background relative overflow-hidden">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-blue-500/5 pointer-events-none" />
       

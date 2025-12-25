@@ -1,16 +1,18 @@
-import { ArrowRight, Phone } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
-      {/* Background Image */}
+      {/* Background Image with lazy loading */}
       <div className="absolute inset-0 z-0">
         <img
           src={heroImage}
           alt="New York City"
           className="w-full h-full object-cover"
+          loading="eager"
+          decoding="async"
         />
         {/* Gradients */}
         <div 

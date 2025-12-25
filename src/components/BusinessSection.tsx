@@ -11,7 +11,7 @@ const BusinessSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-card/30 to-background border-t border-white/5">
+    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-card/30 to-background border-t border-white/5">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-12 sm:mb-16">
           <div>
