@@ -1,38 +1,73 @@
-import { useState, useEffect } from "react";
-import { ArrowRight, ArrowLeft, Phone } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, ArrowLeft, Phone, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import heroImage from "@/assets/hero-nyc.jpg";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useAuth } from "@/contexts/AuthContext";
+import { loginSchema, signupSchema, LoginFormData, SignupFormData } from "@/lib/validations";
+import { preloadedImages } from "@/hooks/useImagePreloader";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
+  const { login, signup, loginWithGoogle, isLoading } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    navigate("/");
+  const loginForm = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: "", password: "" },
+  });
+
+  const signupForm = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+  });
+
+  const handleLoginSubmit = async (data: LoginFormData) => {
+    const success = await login(data.email, data.password);
+    if (success) {
+      // Check if admin to redirect appropriately
+      if (data.email === "admin" && data.password === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
+    }
   };
+
+  const handleSignupSubmit = async (data: SignupFormData) => {
+    const success = await signup(data.name, data.email, data.password);
+    if (success) {
+      navigate("/dashboard");
+    }
+  };
+
+  const toggleMode = () => {
+    setIsLogin(!isLogin);
+    loginForm.reset();
+    signupForm.reset();
+  };
+
+  const currentErrors = isLogin ? loginForm.formState.errors : signupForm.formState.errors;
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-background">
       {/* Background */}
       <div className="absolute inset-0 z-0">
         <img
-          src={heroImage}
+          src={preloadedImages.heroNyc}
           alt="New York City"
           className="w-full h-full object-cover brightness-125"
           loading="eager"
           decoding="async"
-          fetchPriority="high"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/50" />
       </div>
 
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
-        {/* Logo (centered) */}
+        {/* Logo */}
         <div className="w-full max-w-md mb-6 sm:mb-8 flex justify-center">
           <Link
             to="/"
@@ -54,59 +89,168 @@ const Auth = () => {
               : "Create an account to start managing your communications"}
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
-            {!isLogin && (
+          {/* Demo hint */}
+          {isLogin && (
+            <div className="mt-4 p-3 bg-secondary/50 border border-border rounded-xl">
+              <p className="text-xs text-muted-foreground text-center">
+                <span className="text-foreground font-medium">Demo:</span> Use <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> for admin access
+              </p>
+            </div>
+          )}
+
+          {isLogin ? (
+            <form onSubmit={loginForm.handleSubmit(handleLoginSubmit)} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
+              <div>
+                <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Email address</label>
+                <input
+                  type="text"
+                  {...loginForm.register("email")}
+                  className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                    loginForm.formState.errors.email ? "border-destructive" : "border-white/10"
+                  }`}
+                  placeholder="you@example.com or admin"
+                />
+                {loginForm.formState.errors.email && (
+                  <p className="mt-1.5 text-xs text-destructive">{loginForm.formState.errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs sm:text-sm text-muted-foreground">Password</label>
+                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300">
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    {...loginForm.register("password")}
+                    className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                      loginForm.formState.errors.password ? "border-destructive" : "border-white/10"
+                    }`}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {loginForm.formState.errors.password && (
+                  <p className="mt-1.5 text-xs text-destructive">{loginForm.formState.errors.password.message}</p>
+                )}
+              </div>
+
+              <button type="submit" disabled={isLoading} className="w-full mt-4 pill-button justify-center py-2.5 sm:py-3 disabled:opacity-50">
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-background flex items-center justify-center">
+                      <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-foreground" />
+                    </span>
+                    <span className="text-sm">Sign in</span>
+                  </>
+                )}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={signupForm.handleSubmit(handleSignupSubmit)} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
               <div>
                 <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Full name</label>
                 <input
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/20 transition-colors duration-300 text-sm"
+                  {...signupForm.register("name")}
+                  className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                    signupForm.formState.errors.name ? "border-destructive" : "border-white/10"
+                  }`}
                   placeholder="Your name"
                 />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Email address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/20 transition-colors duration-300 text-sm"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs sm:text-sm text-muted-foreground">Password</label>
-                {isLogin && (
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300"
-                  >
-                    Forgot password?
-                  </button>
+                {signupForm.formState.errors.name && (
+                  <p className="mt-1.5 text-xs text-destructive">{signupForm.formState.errors.name.message}</p>
                 )}
               </div>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/20 transition-colors duration-300 text-sm"
-                placeholder="••••••••"
-              />
-            </div>
 
-            <button type="submit" className="w-full mt-4 pill-button justify-center py-2.5 sm:py-3">
-              <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-background flex items-center justify-center">
-                <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-foreground" />
-              </span>
-              <span className="text-sm">{isLogin ? "Sign in" : "Create account"}</span>
-            </button>
-          </form>
+              <div>
+                <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Email address</label>
+                <input
+                  type="email"
+                  {...signupForm.register("email")}
+                  className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                    signupForm.formState.errors.email ? "border-destructive" : "border-white/10"
+                  }`}
+                  placeholder="you@example.com"
+                />
+                {signupForm.formState.errors.email && (
+                  <p className="mt-1.5 text-xs text-destructive">{signupForm.formState.errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    {...signupForm.register("password")}
+                    className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                      signupForm.formState.errors.password ? "border-destructive" : "border-white/10"
+                    }`}
+                    placeholder="Min 8 chars, uppercase, lowercase, number"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {signupForm.formState.errors.password && (
+                  <p className="mt-1.5 text-xs text-destructive">{signupForm.formState.errors.password.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">Confirm password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    {...signupForm.register("confirmPassword")}
+                    className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
+                      signupForm.formState.errors.confirmPassword ? "border-destructive" : "border-white/10"
+                    }`}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {signupForm.formState.errors.confirmPassword && (
+                  <p className="mt-1.5 text-xs text-destructive">{signupForm.formState.errors.confirmPassword.message}</p>
+                )}
+              </div>
+
+              <button type="submit" disabled={isLoading} className="w-full mt-4 pill-button justify-center py-2.5 sm:py-3 disabled:opacity-50">
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-background flex items-center justify-center">
+                      <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-foreground" />
+                    </span>
+                    <span className="text-sm">Create account</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           <div className="mt-5 sm:mt-6 flex items-center gap-4">
             <div className="flex-1 h-px bg-white/10" />
@@ -116,6 +260,7 @@ const Auth = () => {
 
           <button
             type="button"
+            onClick={loginWithGoogle}
             className="w-full mt-5 sm:mt-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl py-2.5 sm:py-3 text-sm text-foreground hover:bg-white/10 transition-colors duration-300 flex items-center justify-center gap-2"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -129,20 +274,13 @@ const Auth = () => {
 
           <p className="mt-5 sm:mt-6 text-xs sm:text-sm text-muted-foreground text-center">
             {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-foreground hover:underline"
-            >
+            <button type="button" onClick={toggleMode} className="text-foreground hover:underline">
               {isLogin ? "Sign up" : "Sign in"}
             </button>
           </p>
         </div>
 
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors duration-300 mt-6"
-        >
+        <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors duration-300 mt-6">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm">Back to home</span>
         </Link>

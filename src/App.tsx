@@ -3,50 +3,34 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Dashboard from "./pages/Dashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 import ElectricGlow from "./components/ElectricGlow";
+import { AuthProvider } from "./contexts/AuthContext";
+import { useImagePreloader } from "./hooks/useImagePreloader";
 
 const queryClient = new QueryClient();
 
-const PageWrapper = ({ children }: { children: React.ReactNode }) => {
-  const [isVisible, setIsVisible] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    setIsVisible(false);
-    const timer = setTimeout(() => setIsVisible(true), 150);
-    return () => clearTimeout(timer);
-  }, [location.pathname]);
-
-  return (
-    <div
-      className={`transition-opacity duration-500 ease-out ${
-        isVisible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      {children}
-    </div>
-  );
-};
-
 const AppRoutes = () => {
   const location = useLocation();
+  useImagePreloader();
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
   return (
-    <PageWrapper>
-      <Routes>
-        <Route path="/" element={<Index />} />
-        <Route path="/auth" element={<Auth />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </PageWrapper>
+    <Routes>
+      <Route path="/" element={<Index />} />
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 };
 
@@ -56,8 +40,10 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <ElectricGlow />
-        <AppRoutes />
+        <AuthProvider>
+          <ElectricGlow />
+          <AppRoutes />
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
