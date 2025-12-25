@@ -1,6 +1,8 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
 import { ArrowRight } from "lucide-react";
+import { Link } from "react-router-dom";
+import ctaBg from "@/assets/cta-bg.jpg";
 
 const CTASection = () => {
   const ref = useRef<HTMLDivElement>(null);
@@ -19,11 +21,10 @@ const CTASection = () => {
         className="absolute inset-0 z-0"
         style={{ scale }}
       >
-        <div 
-          className="w-full h-full bg-cover bg-center"
-          style={{
-            backgroundImage: "url('https://images.unsplash.com/photo-1534430480872-3498386e7856?w=1920&q=80')",
-          }}
+        <img 
+          src={ctaBg}
+          alt="New York City at night"
+          className="w-full h-full object-cover"
         />
         <div 
           className="absolute inset-0"
@@ -49,17 +50,30 @@ const CTASection = () => {
           <span className="italic">Protect it.</span>
         </motion.h2>
 
+        <motion.p
+          className="mt-6 text-muted-foreground max-w-xl mx-auto"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.1 }}
+          viewport={{ once: true }}
+        >
+          Join the waitlist. We're launching early access in New York.
+        </motion.p>
+
         <motion.div
-          className="mt-12"
+          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.2 }}
           viewport={{ once: true }}
         >
-          <a href="mailto:hello@comsierge.ai" className="pill-button group">
+          <Link to="/auth" className="pill-button group">
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-4 h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
             </span>
+            Request early access
+          </Link>
+          <a href="mailto:hello@comsierge.ai" className="pill-button-ghost">
             Get in touch
           </a>
         </motion.div>

@@ -1,5 +1,8 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import productSilence from "@/assets/product-silence.jpg";
+import productRespond from "@/assets/product-respond.jpg";
+import productConnect from "@/assets/product-connect.jpg";
 
 interface ProductCardProps {
   image: string;
@@ -20,16 +23,11 @@ const ProductCard = ({ image, label, title, description, delay = 0 }: ProductCar
     >
       {/* Image */}
       <div className="aspect-[4/3] overflow-hidden">
-        <div 
-          className="w-full h-full bg-gradient-to-br from-secondary via-card to-muted transition-transform duration-700 group-hover:scale-105"
-          style={{ backgroundImage: image ? `url(${image})` : undefined, backgroundSize: 'cover' }}
-        >
-          {!image && (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="w-16 h-16 rounded-full bg-foreground/5" />
-            </div>
-          )}
-        </div>
+        <img 
+          src={image}
+          alt={title}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+        />
       </div>
 
       {/* Content */}
@@ -50,20 +48,20 @@ const ProductCard = ({ image, label, title, description, delay = 0 }: ProductCar
 const ProductsSection = () => {
   const products = [
     {
-      image: "",
-      label: "Silence",
+      image: productSilence,
+      label: "01",
       title: "Zero noise. Zero interruptions.",
       description: "AI that intercepts every unknown call, verifies intent, and only connects what matters."
     },
     {
-      image: "",
-      label: "Respond",
+      image: productRespond,
+      label: "02",
       title: "Replies that sound like you.",
       description: "Automated responses across SMS, WhatsApp, and Telegram that maintain your voice."
     },
     {
-      image: "",
-      label: "Connect",
+      image: productConnect,
+      label: "03",
       title: "Unified. Intelligent. Yours.",
       description: "All channels flow into one stream—summarized, translated, prioritized."
     }
@@ -79,7 +77,7 @@ const ProductsSection = () => {
           transition={{ duration: 0.6 }}
           viewport={{ once: true }}
         >
-          <span className="section-label">Our products</span>
+          <span className="section-label">What we build</span>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">

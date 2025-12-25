@@ -4,15 +4,15 @@ import { ArrowUpRight } from "lucide-react";
 const ResearchSection = () => {
   const papers = [
     {
-      date: "December 2025",
+      date: "Dec 2025",
       title: "The Attention Economy: Why AI Must Filter, Not Just Notify"
     },
     {
-      date: "November 2025",
+      date: "Nov 2025",
       title: "Context-Aware Communication: Understanding Intent at Scale"
     },
     {
-      date: "October 2025",
+      date: "Oct 2025",
       title: "Voice Cloning for Good: Ethical Frameworks for AI Responses"
     }
   ];

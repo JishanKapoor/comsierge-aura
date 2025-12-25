@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Menu, X } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -39,21 +40,24 @@ const Navbar = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
           >
-            <a href="/" className="text-xl md:text-2xl font-medium tracking-tight text-foreground">
+            <Link to="/" className="text-xl md:text-2xl font-medium tracking-tight text-foreground">
               comsierge.
-            </a>
+            </Link>
           </motion.div>
 
-          {/* Right CTA */}
+          {/* Right - Login/Signup */}
           <motion.div
-            className="hidden md:block"
+            className="hidden md:flex items-center gap-4"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <a href="#contact" className="pill-button-ghost">
-              Get in touch
-            </a>
+            <Link to="/auth" className="nav-link">
+              Log in
+            </Link>
+            <Link to="/auth" className="pill-button-ghost">
+              Sign up
+            </Link>
           </motion.div>
 
           {/* Mobile Menu Toggle */}
@@ -93,11 +97,22 @@ const Navbar = () => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
-                className="mt-4"
+                className="mt-6 flex flex-col gap-4"
               >
-                <a href="#contact" className="pill-button-ghost">
-                  Get in touch
-                </a>
+                <Link 
+                  to="/auth" 
+                  className="text-lg text-muted-foreground"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Log in
+                </Link>
+                <Link 
+                  to="/auth" 
+                  className="pill-button-ghost inline-flex justify-center"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Sign up
+                </Link>
               </motion.div>
             </div>
           </motion.div>

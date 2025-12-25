@@ -13,22 +13,22 @@ const EnginesSection = () => {
   const engines = [
     {
       id: "silence",
-      label: "Silence engine",
+      label: "01 — Intercept",
       title: "Every call screened.\nEvery spam blocked.",
-      description: "Real-time call analysis that knows the difference between your mother and a robocall."
+      description: "Real-time analysis that knows the difference between your mother and a robocall. Context-aware. Instant."
     },
     {
       id: "respond",
-      label: "Response engine", 
+      label: "02 — Respond", 
       title: "Your voice,\nwithout you.",
-      description: "AI that speaks on your behalf—scheduling, declining, redirecting—all in your tone."
+      description: "AI that speaks on your behalf—scheduling, declining, redirecting—all in your tone. Seamless."
     }
   ];
 
   return (
     <section ref={ref} id="silence" className="relative py-24 md:py-40 px-6 md:px-16 bg-background">
       <motion.div className="max-w-6xl mx-auto" style={{ opacity }}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-24">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-16 md:gap-24">
           {engines.map((engine, i) => (
             <motion.div
               key={engine.id}
