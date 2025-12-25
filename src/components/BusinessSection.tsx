@@ -35,13 +35,9 @@ const BusinessSection = () => {
         {/* Grid */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {features.map((feature, i) => (
-            <motion.div
+            <div
               key={i}
               className="group flex items-start gap-3 sm:gap-4 p-4 sm:p-5 rounded-xl sm:rounded-2xl bg-card/20 border border-white/5 hover:border-white/10 hover:bg-card/30 transition-all duration-500"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
-              viewport={{ once: true }}
             >
               <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0 group-hover:bg-white/10 transition-colors duration-300">
                 <feature.icon className="w-4 h-4 sm:w-5 sm:h-5 text-foreground/60 group-hover:text-foreground/80 transition-colors duration-300" />
@@ -54,7 +50,7 @@ const BusinessSection = () => {
                   {feature.description}
                 </p>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

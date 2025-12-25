@@ -86,19 +86,15 @@ const ProblemSection = () => {
 
               <div className="space-y-3">
                 {messages.map((msg, i) => (
-                  <motion.div
+                  <div
                     key={i}
-                    className={`p-3 rounded-xl border transition-all duration-500 ${
+                    className={`p-3 rounded-xl border transition-colors duration-300 ${
                       msg.type === 'spam' 
                         ? 'bg-red-500/5 border-red-500/20' 
                         : msg.type === 'important'
                         ? 'bg-green-500/10 border-green-500/30'
                         : 'bg-white/5 border-white/10'
                     }`}
-                    initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.3 + i * 0.1 }}
-                    viewport={{ once: true }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-xs sm:text-sm text-foreground/80 flex-1">{msg.text}</p>
@@ -108,7 +104,7 @@ const ProblemSection = () => {
                         </span>
                       )}
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
 
