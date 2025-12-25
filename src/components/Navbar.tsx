@@ -12,6 +12,17 @@ const Navbar = () => {
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
+      const faqSection = document.getElementById("faq-section");
+      
+      // Hide header when FAQ section is in view
+      if (faqSection) {
+        const faqRect = faqSection.getBoundingClientRect();
+        if (faqRect.top < 150 && faqRect.bottom > 0) {
+          setHidden(true);
+          lastScrollY.current = currentScrollY;
+          return;
+        }
+      }
 
       if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
         setHidden(true);
