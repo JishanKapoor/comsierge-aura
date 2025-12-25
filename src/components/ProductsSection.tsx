@@ -15,30 +15,31 @@ interface ProductCardProps {
 const ProductCard = ({ image, label, title, description, delay = 0 }: ProductCardProps) => {
   return (
     <motion.div
-      className="product-card group cursor-pointer"
+      className="group relative rounded-2xl overflow-hidden bg-card border border-border/50 hover:border-border transition-all duration-500"
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.8, delay }}
       viewport={{ once: true, margin: "-50px" }}
     >
       {/* Image */}
-      <div className="aspect-[4/3] overflow-hidden">
+      <div className="aspect-[16/10] overflow-hidden">
         <img 
           src={image}
           alt={title}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent" />
       </div>
 
       {/* Content */}
-      <div className="p-6 md:p-8">
-        <span className="section-label">{label}</span>
-        <h3 className="text-xl md:text-2xl font-light text-foreground mt-3">{title}</h3>
-        <p className="body-text text-sm md:text-base mt-3">{description}</p>
+      <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
+        <span className="text-xs uppercase tracking-widest text-muted-foreground">{label}</span>
+        <h3 className="text-xl md:text-2xl font-light text-foreground mt-2">{title}</h3>
+        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{description}</p>
         
-        <div className="mt-6 flex items-center gap-2 text-foreground opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-0 group-hover:translate-x-2">
-          <span className="text-sm font-medium">Learn more</span>
-          <ArrowRight className="w-4 h-4" />
+        <div className="mt-4 flex items-center gap-2 text-foreground opacity-0 group-hover:opacity-100 transition-all duration-300">
+          <span className="text-sm font-medium">Explore</span>
+          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
         </div>
       </div>
     </motion.div>
@@ -49,38 +50,41 @@ const ProductsSection = () => {
   const products = [
     {
       image: productSilence,
-      label: "01",
-      title: "Zero noise. Zero interruptions.",
-      description: "AI that intercepts every unknown call, verifies intent, and only connects what matters."
+      label: "Intercept",
+      title: "Zero noise. Always.",
+      description: "Every unknown call verified. Every spam blocked. Context-aware intelligence."
     },
     {
       image: productRespond,
-      label: "02",
-      title: "Replies that sound like you.",
-      description: "Automated responses across SMS, WhatsApp, and Telegram that maintain your voice."
+      label: "Respond",
+      title: "Your voice, automated.",
+      description: "AI that speaks like you—scheduling, declining, routing. Seamlessly."
     },
     {
       image: productConnect,
-      label: "03",
-      title: "Unified. Intelligent. Yours.",
-      description: "All channels flow into one stream—summarized, translated, prioritized."
+      label: "Unify",
+      title: "One stream. All channels.",
+      description: "SMS, WhatsApp, Telegram, email—summarized, translated, prioritized."
     }
   ];
 
   return (
-    <section id="respond" className="py-24 md:py-40 px-6 md:px-16 bg-background">
-      <div className="max-w-7xl mx-auto">
+    <section id="respond" className="py-24 md:py-32 px-6 md:px-16 bg-background">
+      <div className="max-w-6xl mx-auto">
         <motion.div
-          className="mb-16"
+          className="text-center mb-16"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           viewport={{ once: true }}
         >
           <span className="section-label">What we build</span>
+          <h2 className="section-headline text-foreground mt-4">
+            Three engines. Complete control.
+          </h2>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {products.map((product, i) => (
             <ProductCard key={product.label} {...product} delay={i * 0.1} />
           ))}
