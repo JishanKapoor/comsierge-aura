@@ -18,17 +18,17 @@ const ManifestoSection = () => {
         style={{ opacity, y }}
       >
         <motion.p 
-          className="text-xl md:text-2xl lg:text-[28px] font-light leading-[1.5] text-foreground"
+          className="text-xl md:text-2xl lg:text-[28px] font-light leading-[1.6] text-foreground"
         >
-          Your phone rings. Unknown number. Spam? Urgent? You'll never know until you pick up.
+          Unknown number. Again. Could be important. Probably isn't.
         </motion.p>
 
         <motion.p 
           className="mt-8 body-text max-w-3xl mx-auto"
         >
-          Comsierge answers first. It listens, understands context, filters the noise, and only 
-          interrupts you when something real demands attention. One AI, managing the chaos 
-          so you don't have to.
+          We built an AI that answers before you do. It listens, understands intent, 
+          filters the noise, and only interrupts when something real needs your attention. 
+          One system. Total control.
         </motion.p>
       </motion.div>
     </section>

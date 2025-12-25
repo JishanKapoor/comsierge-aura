@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import heroImage from "@/assets/hero-landscape.jpg";
+import { Link } from "react-router-dom";
+import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
   return (
@@ -14,7 +15,7 @@ const HeroSection = () => {
       >
         <img
           src={heroImage}
-          alt="Atmospheric landscape"
+          alt="New York City skyline at dusk"
           className="w-full h-full object-cover"
         />
         {/* Gradients matching micro1 exactly */}
@@ -45,20 +46,45 @@ const HeroSection = () => {
           <span className="italic font-light">you and noise</span>
         </motion.h1>
 
-        <motion.div
-          className="mt-10"
+        <motion.p
+          className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.8, delay: 0.65, ease: [0.22, 1, 0.36, 1] }}
         >
-          <a href="#contact" className="pill-button group">
+          Calls, messages, spam—handled. Built in New York.
+        </motion.p>
+
+        <motion.div
+          className="mt-10 flex items-center justify-center gap-4"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Link to="/auth" className="pill-button group">
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-4 h-4 text-foreground transition-transform group-hover:translate-x-0.5" />
             </span>
-            Get in touch
-          </a>
+            Request early access
+          </Link>
         </motion.div>
       </div>
+
+      {/* Scroll indicator */}
+      <motion.div
+        className="absolute bottom-8 left-1/2 -translate-x-1/2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.2 }}
+      >
+        <motion.div
+          className="w-6 h-10 rounded-full border border-foreground/30 flex items-start justify-center p-2"
+          animate={{ y: [0, 5, 0] }}
+          transition={{ repeat: Infinity, duration: 1.5 }}
+        >
+          <div className="w-1 h-2 bg-foreground/50 rounded-full" />
+        </motion.div>
+      </motion.div>
     </section>
   );
 };
