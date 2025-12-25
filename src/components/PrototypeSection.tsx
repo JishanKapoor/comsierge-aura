@@ -1,4 +1,5 @@
 import { Globe, Settings, Calendar } from "lucide-react";
+import { motion } from "framer-motion";
 
 const PrototypeSection = () => {
   const features = [
@@ -23,9 +24,15 @@ const PrototypeSection = () => {
   ];
 
   return (
-    <section className="py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background">
+    <section className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-background">
       <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12 sm:mb-16">
+        <motion.div 
+          className="text-center mb-12 sm:mb-16"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+          viewport={{ once: true }}
+        >
           <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Prototype</span>
           <h2 className="mt-4 text-2xl sm:text-3xl md:text-4xl font-light text-foreground">
             See The Prototype In Action
@@ -33,17 +40,21 @@ const PrototypeSection = () => {
           <p className="mt-4 text-sm sm:text-base text-muted-foreground max-w-xl mx-auto">
             Already delivering results for <span className="text-foreground">30+ beta testers</span>
           </p>
-        </div>
+        </motion.div>
 
         {/* Bento Grid */}
         <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
           {features.map((feature, i) => (
-            <div
+            <motion.div
               key={i}
               className={`group relative p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-gradient-to-br ${feature.gradient} border border-white/10 backdrop-blur-sm hover:border-white/20 transition-all duration-500`}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: i * 0.1, ease: [0.25, 0.46, 0.45, 0.94] }}
+              viewport={{ once: true }}
             >
               {/* Icon */}
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-background/50 backdrop-blur-sm border border-white/10 flex items-center justify-center mb-5 sm:mb-6 group-hover:scale-105 transition-transform duration-300">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-background/50 backdrop-blur-sm border border-white/10 flex items-center justify-center mb-5 sm:mb-6 group-hover:scale-105 transition-transform duration-500">
                 <feature.icon className="w-5 h-5 sm:w-6 sm:h-6 text-foreground" />
               </div>
 
@@ -56,7 +67,7 @@ const PrototypeSection = () => {
 
               {/* Hover glow */}
               <div className="absolute inset-0 rounded-2xl sm:rounded-3xl bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-            </div>
+            </motion.div>
           ))}
         </div>
       </div>
