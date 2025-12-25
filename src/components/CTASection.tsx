@@ -1,30 +1,23 @@
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
 import ctaBg from "@/assets/cta-bg.jpg";
 
 const CTASection = () => {
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  useEffect(() => {
-    const img = new Image();
-    img.src = ctaBg;
-    img.onload = () => setImageLoaded(true);
-  }, []);
-
   return (
     <section id="contact" className="relative py-24 sm:py-32 px-4 sm:px-6 md:px-16 bg-background overflow-hidden">
       <div className="absolute inset-0 z-0">
-        <img 
+        <img
           src={ctaBg}
           alt="New York City at night"
-          className={`w-full h-full object-cover transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className="w-full h-full object-cover"
           loading="lazy"
+          decoding="async"
         />
-        <div 
+        <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(180deg, hsl(0 0% 3%) 0%, hsl(0 0% 3% / 0.85) 30%, hsl(0 0% 3% / 0.85) 70%, hsl(0 0% 3%) 100%)"
+            background:
+              "linear-gradient(180deg, hsl(0 0% 3%) 0%, hsl(0 0% 3% / 0.85) 30%, hsl(0 0% 3% / 0.85) 70%, hsl(0 0% 3%) 100%)",
           }}
         />
       </div>

@@ -1,42 +1,36 @@
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
 import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
-  const [imageLoaded, setImageLoaded] = useState(false);
-
-  useEffect(() => {
-    const img = new Image();
-    img.src = heroImage;
-    img.onload = () => setImageLoaded(true);
-  }, []);
-
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 bg-background">
-      {/* Background Image */}
       <div className="absolute inset-0 z-0">
         <img
           src={heroImage}
           alt="New York City"
-          className={`w-full h-full object-cover transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className="w-full h-full object-cover"
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
         />
-        <div 
+        <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(180deg, hsl(0 0% 3% / 0.4) 0%, hsl(0 0% 3% / 0.2) 40%, hsl(0 0% 3% / 0.7) 80%, hsl(0 0% 3%) 100%)"
+            background:
+              "linear-gradient(180deg, hsl(0 0% 3% / 0.4) 0%, hsl(0 0% 3% / 0.2) 40%, hsl(0 0% 3% / 0.7) 80%, hsl(0 0% 3%) 100%)",
           }}
         />
-        <div 
+        <div
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(90deg, hsl(0 0% 3% / 0.6) 0%, transparent 25%, transparent 75%, hsl(0 0% 3% / 0.6) 100%)"
+            background:
+              "linear-gradient(90deg, hsl(0 0% 3% / 0.6) 0%, transparent 25%, transparent 75%, hsl(0 0% 3% / 0.6) 100%)",
           }}
         />
       </div>
 
-      {/* Content */}
-      <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto animate-fade-in">
+      <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto">
         <h1 className="hero-headline text-foreground">
           The AI layer between
           <br />
@@ -57,7 +51,6 @@ const HeroSection = () => {
         </div>
       </div>
 
-      {/* Scroll indicator */}
       <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2">
         <div className="w-6 h-10 rounded-full border border-foreground/30 flex items-start justify-center p-2">
           <div className="w-1 h-2 bg-foreground/50 rounded-full animate-bounce" />

@@ -21,9 +21,9 @@ const Footer = () => {
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Product</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Integrations</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a></li>
+              <li><span className="text-sm text-muted-foreground">Features</span></li>
+              <li><span className="text-sm text-muted-foreground">Integrations</span></li>
+              <li><span className="text-sm text-muted-foreground">Pricing</span></li>
             </ul>
           </div>
 
@@ -31,9 +31,9 @@ const Footer = () => {
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Company</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</a></li>
-              <li><a href="#learn" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Research</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Careers</a></li>
+              <li><span className="text-sm text-muted-foreground">About</span></li>
+              <li><span className="text-sm text-muted-foreground">Research</span></li>
+              <li><span className="text-sm text-muted-foreground">Careers</span></li>
             </ul>
           </div>
 
@@ -41,9 +41,9 @@ const Footer = () => {
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Legal</h4>
             <ul className="space-y-3">
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Terms</a></li>
-              <li><a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Cookies</a></li>
+              <li><span className="text-sm text-muted-foreground">Privacy</span></li>
+              <li><span className="text-sm text-muted-foreground">Terms</span></li>
+              <li><span className="text-sm text-muted-foreground">Cookies</span></li>
             </ul>
           </div>
         </div>
