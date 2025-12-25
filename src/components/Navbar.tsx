@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Menu, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Menu, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+  const isAuthPage = location.pathname === "/auth";
 
   return (
     <>
@@ -14,28 +16,10 @@ const Navbar = () => {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, delay: 0.2 }}
       >
-        <div className="flex items-start justify-between">
-          {/* Left Nav */}
+        <div className="flex items-center justify-between max-w-7xl mx-auto">
+          {/* Logo - Centered */}
           <motion.div 
-            className="hidden md:flex flex-col gap-2"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-          >
-            <a href="#silence" className="nav-link">Silence</a>
-            <a href="#respond" className="nav-link">Respond</a>
-            <a href="#connect" className="nav-link">Connect</a>
-            <a href="#learn" className="nav-link">Learn</a>
-            <button className="nav-link flex items-center gap-1">
-              Solutions
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            <a href="#contact" className="nav-link">Careers</a>
-          </motion.div>
-
-          {/* Logo Center */}
-          <motion.div 
-            className="absolute left-1/2 -translate-x-1/2 top-6"
+            className="flex-1 flex justify-center"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
@@ -45,28 +29,32 @@ const Navbar = () => {
             </Link>
           </motion.div>
 
-          {/* Right - Login/Signup */}
-          <motion.div
-            className="hidden md:flex items-center gap-4"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-          >
-            <Link to="/auth" className="nav-link">
-              Log in
-            </Link>
-            <Link to="/auth" className="pill-button-ghost">
-              Sign up
-            </Link>
-          </motion.div>
+          {/* Right - Login/Signup (Desktop) */}
+          {!isAuthPage && (
+            <motion.div
+              className="hidden md:flex items-center gap-4 absolute right-10"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+            >
+              <Link to="/auth" className="nav-link">
+                Log in
+              </Link>
+              <Link to="/auth" className="pill-button-ghost">
+                Sign up
+              </Link>
+            </motion.div>
+          )}
 
           {/* Mobile Menu Toggle */}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden text-foreground z-50"
-          >
-            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {!isAuthPage && (
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="md:hidden text-foreground z-50 absolute right-6"
+            >
+              {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          )}
         </div>
       </motion.nav>
 
@@ -79,25 +67,12 @@ const Navbar = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="flex flex-col gap-6">
-              {["Silence", "Respond", "Connect", "Learn", "Careers"].map((item, i) => (
-                <motion.a
-                  key={item}
-                  href={`#${item.toLowerCase()}`}
-                  className="text-2xl font-light text-foreground"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {item}
-                </motion.a>
-              ))}
+            <div className="flex flex-col items-center gap-8">
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="mt-6 flex flex-col gap-4"
+                transition={{ delay: 0.1 }}
+                className="flex flex-col items-center gap-6"
               >
                 <Link 
                   to="/auth" 

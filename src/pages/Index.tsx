@@ -1,9 +1,8 @@
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import ManifestoSection from "@/components/ManifestoSection";
-import FloatingVisuals from "@/components/FloatingVisuals";
-import EnginesSection from "@/components/EnginesSection";
-import InfrastructureSection from "@/components/InfrastructureSection";
+import TrustedCompanies from "@/components/TrustedCompanies";
+import FeaturesGrid from "@/components/FeaturesGrid";
 import ProductsSection from "@/components/ProductsSection";
 import ResearchSection from "@/components/ResearchSection";
 import CTASection from "@/components/CTASection";
@@ -15,9 +14,8 @@ const Index = () => {
       <Navbar />
       <HeroSection />
       <ManifestoSection />
-      <FloatingVisuals />
-      <EnginesSection />
-      <InfrastructureSection />
+      <TrustedCompanies />
+      <FeaturesGrid />
       <ProductsSection />
       <ResearchSection />
       <CTASection />
