@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion";
 import { Menu, X, Phone } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -33,8 +33,10 @@ const Navbar = () => {
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           {/* Logo - Centered */}
           <div className="flex-1 flex justify-center">
-            <Link to="/" className="flex items-center gap-2 text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-foreground">
-              <Phone className="w-5 h-5 sm:w-6 sm:h-6" />
+            <Link to="/" className="flex items-center gap-2.5 text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-foreground">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-foreground/10 backdrop-blur-sm border border-foreground/20 flex items-center justify-center">
+                <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
+              </div>
               <span>comsierge.</span>
             </Link>
           </div>
