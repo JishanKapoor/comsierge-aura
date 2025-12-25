@@ -1,20 +1,34 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence, useScroll, useMotionValueEvent } from "framer-motion";
 import { Menu, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
+  const { scrollY } = useScroll();
+
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const previous = scrollY.getPrevious() || 0;
+    if (latest > previous && latest > 100) {
+      setHidden(true);
+    } else {
+      setHidden(false);
+    }
+  });
 
   return (
     <>
       <motion.nav 
-        className="fixed top-0 left-0 right-0 z-50 px-6 py-6 md:px-10"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.2 }}
+        className="fixed top-0 left-0 right-0 z-50 px-6 py-6 md:px-10 bg-background/80 backdrop-blur-md"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ 
+          opacity: hidden && !isAuthPage ? 0 : 1, 
+          y: hidden && !isAuthPage ? -100 : 0 
+        }}
+        transition={{ duration: 0.3 }}
       >
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           {/* Logo - Centered */}

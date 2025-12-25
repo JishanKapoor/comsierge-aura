@@ -1,28 +1,32 @@
 import { motion } from "framer-motion";
+import heroVideo from "@/assets/hero-video.mp4";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
   return (
     <section className="relative h-screen flex items-center justify-center overflow-hidden">
-      {/* Background */}
+      {/* Background Video */}
       <motion.div 
         className="absolute inset-0 z-0"
         initial={{ scale: 1.1, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 1.5, ease: [0.22, 1, 0.36, 1] }}
       >
-        <img
-          src={heroImage}
-          alt="New York City skyline at dusk"
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
           className="w-full h-full object-cover"
-        />
-        {/* Gradients matching micro1 exactly */}
+        >
+          <source src={heroVideo} type="video/mp4" />
+        </video>
+        {/* Gradients */}
         <div 
           className="absolute inset-0"
           style={{
-            background: "linear-gradient(180deg, hsl(0 0% 3% / 0.3) 0%, hsl(0 0% 3% / 0.1) 40%, hsl(0 0% 3% / 0.7) 80%, hsl(0 0% 3%) 100%)"
+            background: "linear-gradient(180deg, hsl(0 0% 3% / 0.4) 0%, hsl(0 0% 3% / 0.2) 40%, hsl(0 0% 3% / 0.7) 80%, hsl(0 0% 3%) 100%)"
           }}
         />
         <div 
