@@ -11,6 +11,11 @@ const Auth = () => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useNavigate();
 
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // Preload image
   useEffect(() => {
     const img = new Image();
