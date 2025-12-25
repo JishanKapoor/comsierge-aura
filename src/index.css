@@ -84,6 +84,22 @@
 
   .section-headline {
     @apply text-[clamp(1.75rem,4vw,3rem)] font-light leading-[1.15] tracking-[-0.02em];
+    animation: title-fade-in 0.8s ease-out forwards;
+  }
+
+  .hero-headline {
+    animation: title-fade-in 0.8s ease-out forwards;
+  }
+
+  @keyframes title-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .body-text {

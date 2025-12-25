@@ -17,13 +17,13 @@ const PageWrapper = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     setIsVisible(false);
-    const timer = setTimeout(() => setIsVisible(true), 50);
+    const timer = setTimeout(() => setIsVisible(true), 150);
     return () => clearTimeout(timer);
   }, [location.pathname]);
 
   return (
     <div
-      className={`transition-opacity duration-300 ease-out ${
+      className={`transition-opacity duration-500 ease-out ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
     >
