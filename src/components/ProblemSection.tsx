@@ -9,42 +9,42 @@ const ProblemSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-28 md:py-36 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-background via-card/20 to-background">
-      <div className="max-w-6xl mx-auto">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+    <section className="py-16 sm:py-20 md:py-28 px-4 sm:px-6 md:px-16 bg-background">
+      <div className="max-w-5xl mx-auto">
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
           {/* Left - Content */}
           <div>
-            <span className="text-xs uppercase tracking-[0.2em] text-red-400/80">The Problem</span>
-            <h2 className="mt-4 text-2xl sm:text-3xl md:text-4xl font-light text-foreground leading-tight">
+            <span className="section-label text-red-400/90">The Problem</span>
+            <h2 className="mt-3 text-2xl sm:text-3xl md:text-4xl font-light text-foreground leading-tight">
               End Communication
               <br />
               <span className="italic text-muted-foreground">Overload</span>
             </h2>
-            <p className="mt-6 text-sm sm:text-base text-muted-foreground leading-relaxed">
+            <p className="mt-4 text-sm sm:text-base text-muted-foreground leading-relaxed">
               With dozens of texts and emails daily, staying focused is a challenge. Comsierge ensures you never miss what's important.
             </p>
 
             {/* Stats */}
-            <div className="mt-8 space-y-4">
+            <div className="mt-6 space-y-3">
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <X className="w-3 h-3 text-red-400" />
+                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                  <X className="w-2.5 h-2.5 text-red-400" />
                 </div>
                 <span className="text-sm text-muted-foreground">
                   <span className="text-foreground font-medium">70%</span> of messages are distractions
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <Clock className="w-3 h-3 text-red-400" />
+                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                  <Clock className="w-2.5 h-2.5 text-red-400" />
                 </div>
                 <span className="text-sm text-muted-foreground">
-                  <span className="text-foreground font-medium">25 minutes</span> to regain focus after interruption
+                  <span className="text-foreground font-medium">25 min</span> to regain focus
                 </span>
               </div>
               <div className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <AlertTriangle className="w-3 h-3 text-red-400" />
+                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                  <AlertTriangle className="w-2.5 h-2.5 text-red-400" />
                 </div>
                 <span className="text-sm text-muted-foreground">
                   Critical messages get <span className="text-foreground font-medium">buried</span>
@@ -55,9 +55,8 @@ const ProblemSection = () => {
 
           {/* Right - Visual Demo */}
           <div className="relative">
-            {/* Glass phone mockup */}
-            <div className="relative bg-card/30 backdrop-blur-xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl">
-              <div className="flex items-center justify-between mb-4">
+            <div className="relative bg-card/50 backdrop-blur-xl border border-white/10 rounded-2xl p-4 sm:p-5">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">Notifications</span>
@@ -65,23 +64,22 @@ const ProblemSection = () => {
                 <span className="text-xs text-red-400">4 unread</span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {messages.map((msg, i) => (
                   <div
                     key={i}
-                    className={`p-3 rounded-xl border transition-all duration-500 ${
+                    className={`p-2.5 rounded-lg border ${
                       msg.type === 'spam' 
-                        ? 'bg-red-500/5 border-red-500/20' 
+                        ? 'bg-red-500/10 border-red-500/20' 
                         : msg.type === 'important'
-                        ? 'bg-green-500/10 border-green-500/30'
+                        ? 'bg-accent/10 border-accent/30'
                         : 'bg-white/5 border-white/10'
                     }`}
-                    style={{ animationDelay: `${i * 0.15}s` }}
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-2">
                       <p className="text-xs sm:text-sm text-foreground/80 flex-1">{msg.text}</p>
                       {msg.urgent && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 flex-shrink-0">
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 flex-shrink-0">
                           URGENT
                         </span>
                       )}
@@ -90,15 +88,16 @@ const ProblemSection = () => {
                 ))}
               </div>
 
-              {/* Chaos indicator */}
-              <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-                <span className="text-xs text-muted-foreground">Overwhelming...</span>
+              {/* Animated loading dots */}
+              <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-center gap-2">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+                <span className="text-xs text-muted-foreground">Overwhelming</span>
               </div>
             </div>
-
-            {/* Decorative blur */}
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
           </div>
         </div>
       </div>
