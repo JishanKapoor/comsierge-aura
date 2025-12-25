@@ -62,15 +62,15 @@
 
 @layer components {
   .nav-link {
-    @apply text-[13px] font-normal text-muted-foreground transition-colors duration-300 hover:text-foreground cursor-pointer;
+    @apply text-[13px] font-normal text-muted-foreground transition-all duration-500 ease-out hover:text-foreground cursor-pointer;
   }
 
   .pill-button {
-    @apply inline-flex items-center gap-2.5 pl-1.5 pr-5 py-1.5 rounded-full bg-foreground text-background text-sm font-medium transition-all duration-300 hover:opacity-90;
+    @apply inline-flex items-center gap-2.5 pl-1.5 pr-5 py-1.5 rounded-full bg-foreground text-background text-sm font-medium transition-all duration-500 ease-out hover:opacity-90 hover:scale-[1.02] active:scale-[0.98];
   }
 
   .pill-button-ghost {
-    @apply inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full border border-border text-foreground text-sm font-medium transition-all duration-300 hover:bg-foreground hover:text-background;
+    @apply inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full border border-border text-foreground text-sm font-medium transition-all duration-500 ease-out hover:bg-foreground hover:text-background hover:scale-[1.02] active:scale-[0.98];
   }
 
   .section-label {
@@ -91,7 +91,7 @@
   }
 
   .product-card {
-    @apply relative rounded-[20px] overflow-hidden bg-card transition-transform duration-500 hover:scale-[1.02];
+    @apply relative rounded-[20px] overflow-hidden bg-card transition-all duration-500 ease-out hover:scale-[1.02];
   }
 }
 
@@ -132,4 +132,63 @@
 .animate-dot-3 {
   animation: dot-animation 1.4s infinite;
   animation-delay: 0.4s;
+}
+
+/* Electric glow animations */
+@keyframes electric-pulse {
+  0%, 100% {
+    opacity: 0.1;
+    transform: translateY(0%);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateY(100%);
+  }
+}
+
+@keyframes electric-pulse-reverse {
+  0%, 100% {
+    opacity: 0.1;
+    transform: translateY(100%);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateY(0%);
+  }
+}
+
+@keyframes glow-breathe {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.animate-electric-pulse-left {
+  animation: electric-pulse 4s ease-in-out infinite;
+}
+
+.animate-electric-pulse-left-delayed {
+  animation: electric-pulse 4s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+.animate-electric-pulse-right {
+  animation: electric-pulse-reverse 4s ease-in-out infinite;
+}
+
+.animate-electric-pulse-right-delayed {
+  animation: electric-pulse-reverse 4s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+.animate-glow-breathe {
+  animation: glow-breathe 6s ease-in-out infinite;
+}
+
+.animate-glow-breathe-delayed {
+  animation: glow-breathe 6s ease-in-out infinite;
+  animation-delay: 3s;
 }
