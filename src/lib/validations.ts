@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const loginSchema = z.object({
   email: z.string().min(1, "Email is required").refine(
-    (val) => val === "admin" || z.string().email().safeParse(val).success,
+    (val) => val === "admin" || val === "user" || z.string().email().safeParse(val).success,
     "Please enter a valid email address"
   ),
   password: z.string().min(1, "Password is required"),
