@@ -33,6 +33,12 @@ const DEMO_USERS: User[] = [
     name: "Admin User",
     role: "admin",
   },
+  {
+    id: "user-001",
+    email: "user",
+    name: "Demo User",
+    role: "user",
+  },
 ];
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -70,15 +76,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
+    // Demo user login
+    if (email === "user" && password === "user") {
+      const demoUser = DEMO_USERS.find((u) => u.email === "user");
+      if (demoUser) {
+        setUser(demoUser);
+        localStorage.setItem("comsierge_user", JSON.stringify(demoUser));
+        setIsLoading(false);
+        toast.success("Welcome back!");
+        return true;
+      }
+    }
+
     // Regular user login (demo mode - accept any valid email/password)
-    const demoUser: User = {
+    const newUser: User = {
       id: `user-${Date.now()}`,
       email,
       name: email.split("@")[0],
       role: "user",
     };
-    setUser(demoUser);
-    localStorage.setItem("comsierge_user", JSON.stringify(demoUser));
+    setUser(newUser);
+    localStorage.setItem("comsierge_user", JSON.stringify(newUser));
     setIsLoading(false);
     toast.success("Welcome back!");
     return true;
