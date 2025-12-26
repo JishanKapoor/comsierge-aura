@@ -91,9 +91,12 @@ const Auth = () => {
 
           {/* Demo hint */}
           {isLogin && (
-            <div className="mt-4 p-3 bg-secondary/50 border border-border rounded-xl">
+            <div className="mt-4 p-3 bg-secondary/50 border border-border rounded-xl space-y-1.5">
               <p className="text-xs text-muted-foreground text-center">
-                <span className="text-foreground font-medium">Demo:</span> Use <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> for admin access
+                <span className="text-foreground font-medium">User Demo:</span> <code className="bg-background/50 px-1.5 py-0.5 rounded">user</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">user</code>
+              </p>
+              <p className="text-xs text-muted-foreground text-center">
+                <span className="text-foreground font-medium">Admin Demo:</span> <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code>
               </p>
             </div>
           )}
