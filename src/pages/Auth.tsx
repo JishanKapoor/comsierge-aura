@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { ArrowRight, ArrowLeft, Phone, Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/contexts/AuthContext";
 import { loginSchema, signupSchema, LoginFormData, SignupFormData } from "@/lib/validations";
 import { preloadedImages } from "@/hooks/useImagePreloader";
+import Logo from "@/components/Logo";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -85,12 +86,8 @@ const Auth = () => {
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         {/* Logo */}
         <div className="w-full max-w-md mb-6 sm:mb-8 flex justify-center">
-          <Link
-            to="/"
-            className="flex items-center justify-center gap-2.5 text-xl sm:text-2xl font-medium tracking-tight text-foreground"
-          >
-            <Phone className="w-5 h-5 sm:w-6 sm:h-6 text-foreground" />
-            <span>comsierge.</span>
+          <Link to="/" className="text-xl sm:text-2xl">
+            <Logo />
           </Link>
         </div>
 

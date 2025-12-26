@@ -8,7 +8,6 @@ import {
   LogOut,
   Users,
   Bot,
-  User,
   Bell,
   Copy,
   Check,
@@ -19,6 +18,7 @@ import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
 import AITab from "@/components/dashboard/AITab";
 import SettingsTab from "@/components/dashboard/SettingsTab";
+import Logo from "@/components/Logo";
 
 type Tab = "messages" | "calls" | "contacts" | "ai" | "settings";
 
@@ -79,12 +79,8 @@ const Dashboard = () => {
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border/50">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           {/* Logo */}
-          <Link
-            to="/"
-            className="flex items-center gap-2 text-lg font-medium tracking-tight text-foreground"
-          >
-            <Phone className="w-5 h-5" />
-            <span className="hidden sm:inline">comsierge.</span>
+          <Link to="/" className="text-lg">
+            <Logo iconClassName="w-5 h-5" />
           </Link>
 
           {/* Phone Number - Center (Desktop) */}

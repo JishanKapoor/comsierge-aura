@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, X, Phone } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import Logo from "./Logo";
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -29,7 +30,7 @@ const Navbar = () => {
         }
       }
 
-      // Hide on scroll down, show on scroll up (like micro1.ai)
+      // Hide on scroll down, show on scroll up
       if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
         setHidden(true);
       } else if (currentScrollY < lastScrollY.current) {
@@ -59,12 +60,8 @@ const Navbar = () => {
 
           {/* Logo - Centered */}
           <div className="flex-1 flex justify-center">
-            <Link
-              to="/"
-              className="flex items-center gap-2.5 text-lg sm:text-xl md:text-2xl font-medium tracking-tight text-foreground"
-            >
-              <Phone className="w-5 h-5 sm:w-6 sm:h-6 text-foreground" />
-              <span>comsierge.</span>
+            <Link to="/" className="text-lg sm:text-xl md:text-2xl">
+              <Logo />
             </Link>
           </div>
 
