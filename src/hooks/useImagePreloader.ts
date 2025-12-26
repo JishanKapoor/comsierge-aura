@@ -11,9 +11,11 @@ import productConnect from "@/assets/product-connect.jpg";
 import productRespond from "@/assets/product-respond.jpg";
 import productSilence from "@/assets/product-silence.jpg";
 
-const imagesToPreload = [
-  heroNyc,
-  heroLandscape,
+// Critical images that should load first (above the fold)
+const criticalImages = [heroNyc, heroLandscape];
+
+// Non-critical images (can load lazily)
+const lazyImages = [
   authVisual,
   ctaBg,
   floatingCard1,
@@ -25,36 +27,46 @@ const imagesToPreload = [
 
 export const useImagePreloader = () => {
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [criticalLoaded, setCriticalLoaded] = useState(false);
 
   useEffect(() => {
-    let loadedCount = 0;
-    const totalImages = imagesToPreload.length;
+    // Load critical images first with high priority
+    const loadCritical = async () => {
+      await Promise.all(
+        criticalImages.map(
+          (src) =>
+            new Promise<void>((resolve) => {
+              const img = new Image();
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+              img.src = src;
+            })
+        )
+      );
+      setCriticalLoaded(true);
+    };
 
-    const preloadImage = (src: string) => {
-      return new Promise<void>((resolve) => {
+    loadCritical();
+
+    // Load non-critical images after a delay
+    const loadLazy = setTimeout(() => {
+      let loadedCount = 0;
+      lazyImages.forEach((src) => {
         const img = new Image();
-        img.onload = () => {
+        img.onload = img.onerror = () => {
           loadedCount++;
-          if (loadedCount === totalImages) {
+          if (loadedCount === lazyImages.length) {
             setImagesLoaded(true);
           }
-          resolve();
-        };
-        img.onerror = () => {
-          loadedCount++;
-          if (loadedCount === totalImages) {
-            setImagesLoaded(true);
-          }
-          resolve();
         };
         img.src = src;
       });
-    };
+    }, 100);
 
-    Promise.all(imagesToPreload.map(preloadImage));
+    return () => clearTimeout(loadLazy);
   }, []);
 
-  return { imagesLoaded };
+  return { imagesLoaded, criticalLoaded };
 };
 
 export const preloadedImages = {
