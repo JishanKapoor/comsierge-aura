@@ -34,6 +34,13 @@
 
     --radius: 0.5rem;
 
+    /* Dashboard-specific tokens */
+    --dashboard-header: 0 0% 4%;
+    --dashboard-nav: 0 0% 5%;
+    --dashboard-active: 142 70% 45%;
+    --dashboard-gradient-start: 142 70% 45%;
+    --dashboard-gradient-end: 180 70% 45%;
+
     --sidebar-background: 0 0% 3%;
     --sidebar-foreground: 45 20% 96%;
     --sidebar-primary: 45 20% 96%;
@@ -80,14 +87,11 @@
   .hero-headline {
     @apply text-[clamp(2.5rem,7vw,5.5rem)] font-light leading-[1.05] tracking-[-0.02em];
     font-family: 'Inter', sans-serif;
+    animation: title-fade-in 0.8s ease-out forwards;
   }
 
   .section-headline {
     @apply text-[clamp(1.75rem,4vw,3rem)] font-light leading-[1.15] tracking-[-0.02em];
-    animation: title-fade-in 0.8s ease-out forwards;
-  }
-
-  .hero-headline {
     animation: title-fade-in 0.8s ease-out forwards;
   }
 
@@ -108,6 +112,84 @@
 
   .product-card {
     @apply relative rounded-[20px] overflow-hidden bg-card transition-all duration-500 ease-out hover:scale-[1.02];
+  }
+
+  /* Dashboard Components */
+  .dashboard-card {
+    @apply bg-card/60 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-300 hover:border-border;
+  }
+
+  .dashboard-input {
+    @apply w-full px-4 py-2.5 bg-secondary/50 border border-border/50 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-200;
+  }
+
+  .dashboard-filter-btn {
+    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+  }
+
+  .dashboard-filter-btn-active {
+    @apply bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30;
+  }
+
+  .dashboard-filter-btn-inactive {
+    @apply bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary;
+  }
+
+  .dashboard-list-item {
+    @apply flex items-center gap-4 p-4 border-b border-border/30 last:border-b-0 hover:bg-secondary/20 transition-all duration-200 cursor-pointer;
+  }
+
+  .dashboard-avatar {
+    @apply flex items-center justify-center rounded-full font-medium;
+  }
+
+  .dashboard-section-title {
+    @apply text-lg font-medium text-foreground tracking-tight;
+  }
+
+  .dashboard-nav-item {
+    @apply flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200;
+  }
+
+  .dashboard-nav-item-active {
+    @apply text-emerald-400;
+  }
+
+  .dashboard-nav-item-inactive {
+    @apply text-muted-foreground hover:text-foreground;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-badge-priority {
+    @apply bg-amber-500/10 text-amber-400 border border-amber-500/20;
+  }
+
+  .status-badge-blocked {
+    @apply bg-destructive/10 text-destructive border border-destructive/20;
+  }
+
+  .status-badge-allowed {
+    @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/20;
+  }
+
+  .status-badge-protected {
+    @apply bg-blue-500/10 text-blue-400 border border-blue-500/20;
+  }
+
+  .glow-effect {
+    @apply relative;
+  }
+
+  .glow-effect::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/5 to-teal-500/5 blur-xl opacity-0 transition-opacity duration-300;
+  }
+
+  .glow-effect:hover::before {
+    @apply opacity-100;
   }
 }
 

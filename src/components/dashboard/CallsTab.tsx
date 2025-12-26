@@ -44,11 +44,22 @@ const CallsTab = () => {
   const getCallIcon = (type: Call["type"]) => {
     switch (type) {
       case "incoming":
-        return <PhoneIncoming className="w-4 h-4 text-green-400" />;
+        return <PhoneIncoming className="w-4 h-4 text-emerald-400" />;
       case "outgoing":
         return <PhoneOutgoing className="w-4 h-4 text-blue-400" />;
       case "missed":
         return <PhoneMissed className="w-4 h-4 text-destructive" />;
+    }
+  };
+
+  const getCallBgClass = (type: Call["type"]) => {
+    switch (type) {
+      case "incoming":
+        return "bg-emerald-500/10";
+      case "outgoing":
+        return "bg-blue-500/10";
+      case "missed":
+        return "bg-destructive/10";
     }
   };
 
@@ -72,42 +83,43 @@ const CallsTab = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-xl font-light text-foreground">Calls</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="dashboard-section-title">Calls</h2>
         <div className="flex gap-2">
-          <Button className="gap-2" onClick={() => setShowMakeCall(true)}>
+          <Button 
+            className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90" 
+            onClick={() => setShowMakeCall(true)}
+          >
             <Phone className="w-4 h-4" /> Make Call
           </Button>
-          <Button variant="outline" className="gap-2" onClick={() => setShowScheduleCall(true)}>
-            <Calendar className="w-4 h-4" /> Schedule Call
+          <Button variant="outline" className="gap-2 rounded-xl" onClick={() => setShowScheduleCall(true)}>
+            <Calendar className="w-4 h-4" /> Schedule
           </Button>
         </div>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="Search call history..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-secondary border border-border rounded-xl text-foreground placeholder:text-muted-foreground"
+          className="dashboard-input pl-11"
         />
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {(["all", "missed", "incoming", "outgoing"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-full text-sm capitalize transition-colors ${
-              filter === f
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-muted-foreground hover:text-foreground"
+            className={`dashboard-filter-btn capitalize ${
+              filter === f ? "dashboard-filter-btn-active" : "dashboard-filter-btn-inactive"
             }`}
           >
             {f}
@@ -116,45 +128,44 @@ const CallsTab = () => {
       </div>
 
       {/* Calls List */}
-      <div className="bg-card/50 border border-border rounded-2xl overflow-hidden">
+      <div className="dashboard-card overflow-hidden">
         {filteredCalls.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">No calls found</div>
+          <div className="p-12 text-center text-muted-foreground">
+            <Phone className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p>No calls found</p>
+          </div>
         ) : (
           filteredCalls.map((call) => (
-            <div
-              key={call.id}
-              className="flex items-center gap-4 p-4 border-b border-border last:border-b-0 hover:bg-secondary/30 transition-colors"
-            >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                call.type === "missed" ? "bg-destructive/20" : "bg-secondary"
-              }`}>
+            <div key={call.id} className="dashboard-list-item">
+              <div className={`dashboard-avatar w-12 h-12 ${getCallBgClass(call.type)} shrink-0`}>
                 {getCallIcon(call.type)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground">{call.contactName}</p>
-                <p className="text-sm text-muted-foreground">{call.phone}</p>
+                <p className="font-medium text-foreground truncate">{call.contactName}</p>
+                <p className="text-sm text-muted-foreground truncate">{call.phone}</p>
               </div>
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <p className="text-sm text-muted-foreground">{call.timestamp}</p>
-                <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end">
+                <p className="text-xs text-muted-foreground flex items-center gap-1 justify-end mt-1">
                   <Clock className="w-3 h-3" />
                   {call.duration || "Missed"}
                 </p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="rounded-xl"
                   onClick={() => makeCall(call.phone, call.contactName)}
                 >
                   <Phone className="w-4 h-4" />
                 </Button>
                 {call.isBlocked ? (
-                  <Button variant="ghost" size="icon" className="text-destructive">
+                  <Button variant="ghost" size="icon" className="rounded-xl text-destructive">
                     <Ban className="w-4 h-4" />
                   </Button>
                 ) : (
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" className="rounded-xl">
                     <Info className="w-4 h-4" />
                   </Button>
                 )}
@@ -166,42 +177,46 @@ const CallsTab = () => {
 
       {/* Make Call Modal */}
       {showMakeCall && (
-        <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-foreground">Make a Call</h3>
-              <Button variant="ghost" size="icon" onClick={() => setShowMakeCall(false)}>
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="dashboard-card w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="dashboard-section-title">Make a Call</h3>
+              <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => setShowMakeCall(false)}>
                 <X className="w-5 h-5" />
               </Button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   placeholder="Search contacts or enter number..."
                   value={dialNumber}
                   onChange={(e) => setDialNumber(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-secondary border border-border rounded-xl text-foreground placeholder:text-muted-foreground text-lg"
+                  className="dashboard-input pl-11 text-lg"
                 />
               </div>
 
               <div>
-                <p className="text-sm text-muted-foreground mb-2">Recent Contacts:</p>
+                <p className="text-sm text-muted-foreground mb-3">Recent Contacts:</p>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {mockContacts.slice(0, 5).map((contact) => (
                     <div
                       key={contact.id}
-                      className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50"
+                      className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary/50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
-                          <span className="text-sm text-foreground">{contact.name.charAt(0)}</span>
+                        <div className="dashboard-avatar w-10 h-10 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400">
+                          {contact.name.charAt(0)}
                         </div>
-                        <span className="text-foreground">{contact.name}</span>
+                        <span className="text-foreground font-medium">{contact.name}</span>
                       </div>
-                      <Button size="sm" onClick={() => makeCall(contact.phone, contact.name)}>
+                      <Button 
+                        size="sm" 
+                        className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90"
+                        onClick={() => makeCall(contact.phone, contact.name)}
+                      >
                         <Phone className="w-4 h-4 mr-1" /> Call
                       </Button>
                     </div>
@@ -209,12 +224,12 @@ const CallsTab = () => {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setShowMakeCall(false)}>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowMakeCall(false)}>
                   Cancel
                 </Button>
                 <Button
-                  className="flex-1"
+                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90"
                   onClick={() => dialNumber && makeCall(dialNumber)}
                   disabled={!dialNumber}
                 >
@@ -228,22 +243,22 @@ const CallsTab = () => {
 
       {/* Schedule Call Modal */}
       {showScheduleCall && (
-        <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-foreground">Schedule a Call</h3>
-              <Button variant="ghost" size="icon" onClick={() => setShowScheduleCall(false)}>
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="dashboard-card w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="dashboard-section-title">Schedule a Call</h3>
+              <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => setShowScheduleCall(false)}>
                 <X className="w-5 h-5" />
               </Button>
             </div>
             
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
                 <label className="text-sm text-muted-foreground">Contact</label>
                 <select
                   value={scheduleContact}
                   onChange={(e) => setScheduleContact(e.target.value)}
-                  className="w-full mt-1 px-4 py-2 bg-secondary border border-border rounded-xl text-foreground"
+                  className="dashboard-input mt-1.5"
                 >
                   <option value="">Select contact...</option>
                   {mockContacts.map((contact) => (
@@ -259,7 +274,7 @@ const CallsTab = () => {
                     type="date"
                     value={scheduleDate}
                     onChange={(e) => setScheduleDate(e.target.value)}
-                    className="w-full mt-1 px-4 py-2 bg-secondary border border-border rounded-xl text-foreground"
+                    className="dashboard-input mt-1.5"
                   />
                 </div>
                 <div>
@@ -268,14 +283,14 @@ const CallsTab = () => {
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
-                    className="w-full mt-1 px-4 py-2 bg-secondary border border-border rounded-xl text-foreground"
+                    className="dashboard-input mt-1.5"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="text-sm text-muted-foreground">Timezone</label>
-                <select className="w-full mt-1 px-4 py-2 bg-secondary border border-border rounded-xl text-foreground">
+                <select className="dashboard-input mt-1.5">
                   <option>Your Local Time</option>
                   <option>UTC</option>
                   <option>EST</option>
@@ -283,20 +298,22 @@ const CallsTab = () => {
                 </select>
               </div>
 
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl hover:bg-secondary/30 transition-colors">
                   <input
                     type="checkbox"
                     checked={remindBefore}
                     onChange={(e) => setRemindBefore(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-500 rounded"
                   />
                   <span className="text-sm text-foreground">Remind me 15 minutes before</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl hover:bg-secondary/30 transition-colors">
                   <input
                     type="checkbox"
                     checked={notifyContact}
                     onChange={(e) => setNotifyContact(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-500 rounded"
                   />
                   <span className="text-sm text-foreground">Send notification to contact</span>
                 </label>
@@ -308,15 +325,18 @@ const CallsTab = () => {
                   value={scheduleNotes}
                   onChange={(e) => setScheduleNotes(e.target.value)}
                   placeholder="Discuss project timeline..."
-                  className="w-full mt-1 px-4 py-2 bg-secondary border border-border rounded-xl text-foreground placeholder:text-muted-foreground resize-none h-20"
+                  className="dashboard-input mt-1.5 resize-none h-20"
                 />
               </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setShowScheduleCall(false)}>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowScheduleCall(false)}>
                   Cancel
                 </Button>
-                <Button className="flex-1" onClick={scheduleCall}>
+                <Button 
+                  className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90" 
+                  onClick={scheduleCall}
+                >
                   Schedule
                 </Button>
               </div>
