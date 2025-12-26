@@ -6,13 +6,9 @@ const HeroSection = () => {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 bg-background">
       <div className="absolute inset-0 z-0">
-        <img
-          src={heroImage}
-          alt="New York City"
-          className="w-full h-full object-cover"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
+        <div 
+          className="w-full h-full bg-cover bg-center"
+          style={{ backgroundImage: `url(${heroImage})` }}
         />
         <div
           className="absolute inset-0"

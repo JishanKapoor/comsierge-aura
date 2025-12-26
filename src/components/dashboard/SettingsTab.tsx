@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { languages, mockReminders, mockContacts } from "./mockData";
 import { useAuth } from "@/contexts/AuthContext";
 
-type SettingsSection = "main" | "profile" | "language" | "notifications" | "privacy" | "reminders" | "appearance" | "support";
+type SettingsSection = "main" | "profile" | "language" | "notifications" | "privacy" | "appearance";
 
 const SettingsTab = () => {
   const { user } = useAuth();
@@ -105,9 +105,7 @@ const SettingsTab = () => {
     { id: "language" as SettingsSection, icon: Globe, label: "Language & Translation", desc: "Set message languages" },
     { id: "notifications" as SettingsSection, icon: Bell, label: "Notifications & Sending", desc: "Control when messages are sent" },
     { id: "privacy" as SettingsSection, icon: Shield, label: "Privacy & Blocking", desc: "Spam filters, blocked contacts" },
-    { id: "reminders" as SettingsSection, icon: Clock, label: "Reminders & Scheduling", desc: "Manage scheduled events" },
     { id: "appearance" as SettingsSection, icon: Palette, label: "Appearance", desc: "Theme, display settings" },
-    { id: "support" as SettingsSection, icon: HelpCircle, label: "Help & Support", desc: "FAQ, contact support" },
   ];
 
   if (section !== "main") {
@@ -497,127 +495,6 @@ const SettingsTab = () => {
           </div>
         )}
 
-        {section === "reminders" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Reminders & Scheduling</h2>
-            
-            <div className="flex gap-2 flex-wrap">
-              <Button size="sm" className="rounded-lg" onClick={() => { setReminderType("personal"); setShowNewReminder(true); }}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> Reminder
-              </Button>
-              <Button size="sm" variant="outline" className="rounded-lg" onClick={() => { setReminderType("call"); setShowNewReminder(true); }}>
-                <Phone className="w-3.5 h-3.5 mr-1" /> Schedule Call
-              </Button>
-              <Button size="sm" variant="outline" className="rounded-lg" onClick={() => { setReminderType("message"); setShowNewReminder(true); }}>
-                <MessageSquare className="w-3.5 h-3.5 mr-1" /> Schedule Message
-              </Button>
-            </div>
-
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-foreground mb-3">Upcoming</h3>
-              {reminders.filter(r => !r.isCompleted).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No upcoming reminders</p>
-              ) : (
-                <div className="space-y-2">
-                  {reminders.filter(r => !r.isCompleted).map((reminder) => (
-                    <div key={reminder.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
-                      <div>
-                        <p className="text-sm text-foreground">{reminder.title}</p>
-                        <p className="text-xs text-muted-foreground">{reminder.datetime}</p>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                          setReminders(reminders.map(r => r.id === reminder.id ? { ...r, isCompleted: true } : r));
-                          toast.success("Completed");
-                        }}>
-                          <Clock className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                          setReminders(reminders.filter(r => r.id !== reminder.id));
-                        }}>
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {showNewReminder && (
-              <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-foreground">
-                    New {reminderType === "personal" ? "Reminder" : reminderType === "call" ? "Scheduled Call" : "Scheduled Message"}
-                  </h3>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewReminder(false)}>
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                {(reminderType === "call" || reminderType === "message") && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Contact</label>
-                    <select
-                      value={reminderContact}
-                      onChange={(e) => setReminderContact(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                    >
-                      <option value="">Select contact...</option>
-                      {mockContacts.map((contact) => (
-                        <option key={contact.id} value={contact.id}>{contact.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-xs text-muted-foreground">
-                    {reminderType === "personal" ? "Reminder" : reminderType === "call" ? "Notes" : "Message"}
-                  </label>
-                  <input
-                    type="text"
-                    value={reminderTitle}
-                    onChange={(e) => setReminderTitle(e.target.value)}
-                    placeholder={reminderType === "personal" ? "e.g., I have an exam" : "Add notes..."}
-                    className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Date</label>
-                    <input
-                      type="date"
-                      value={reminderDate}
-                      onChange={(e) => setReminderDate(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Time</label>
-                    <input
-                      type="time"
-                      value={reminderTime}
-                      onChange={(e) => setReminderTime(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="rounded-lg" onClick={() => setShowNewReminder(false)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" className="rounded-lg" onClick={saveReminder}>
-                    Create
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {section === "appearance" && (
           <div className="space-y-5">
             <h2 className="text-lg font-medium text-foreground">Appearance</h2>
@@ -638,29 +515,6 @@ const SettingsTab = () => {
                   <button className="flex-1 p-2 rounded-lg bg-secondary/50 text-muted-foreground text-base">Large</button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {section === "support" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Help & Support</h2>
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-2">
-              <button className="w-full text-left p-3 rounded-lg hover:bg-secondary/50 transition-colors text-sm text-foreground">
-                FAQ
-              </button>
-              <button className="w-full text-left p-3 rounded-lg hover:bg-secondary/50 transition-colors text-sm text-foreground">
-                Contact Support
-              </button>
-              <button className="w-full text-left p-3 rounded-lg hover:bg-secondary/50 transition-colors text-sm text-foreground">
-                Report a Problem
-              </button>
-              <button className="w-full text-left p-3 rounded-lg hover:bg-secondary/50 transition-colors text-sm text-foreground">
-                Privacy Policy
-              </button>
-              <button className="w-full text-left p-3 rounded-lg hover:bg-secondary/50 transition-colors text-sm text-foreground">
-                Terms of Service
-              </button>
             </div>
           </div>
         )}

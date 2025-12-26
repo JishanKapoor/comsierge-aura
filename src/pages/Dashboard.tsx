@@ -11,6 +11,8 @@ import {
   Bell,
   Copy,
   Check,
+  Clock,
+  Headphones,
 } from "lucide-react";
 import { toast } from "sonner";
 import MessagesTab from "@/components/dashboard/MessagesTab";
@@ -18,9 +20,11 @@ import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
 import AITab from "@/components/dashboard/AITab";
 import SettingsTab from "@/components/dashboard/SettingsTab";
+import RemindersTab from "@/components/dashboard/RemindersTab";
+import SupportTab from "@/components/dashboard/SupportTab";
 import Logo from "@/components/Logo";
 
-type Tab = "messages" | "calls" | "contacts" | "ai" | "settings";
+type Tab = "messages" | "calls" | "contacts" | "ai" | "settings" | "reminders" | "support";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -52,7 +56,9 @@ const Dashboard = () => {
     { id: "messages" as Tab, icon: MessageSquare, label: "Messages" },
     { id: "calls" as Tab, icon: Phone, label: "Calls" },
     { id: "contacts" as Tab, icon: Users, label: "Contacts" },
+    { id: "reminders" as Tab, icon: Clock, label: "Reminders" },
     { id: "ai" as Tab, icon: Bot, label: "AI" },
+    { id: "support" as Tab, icon: Headphones, label: "Support" },
     { id: "settings" as Tab, icon: Settings, label: "Settings" },
   ];
 
@@ -68,6 +74,10 @@ const Dashboard = () => {
         return <AITab initialContext={aiContext} />;
       case "settings":
         return <SettingsTab />;
+      case "reminders":
+        return <RemindersTab />;
+      case "support":
+        return <SupportTab />;
       default:
         return null;
     }
@@ -80,7 +90,7 @@ const Dashboard = () => {
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="text-lg">
-            <Logo iconClassName="w-5 h-5" />
+            <Logo />
           </Link>
 
           {/* Phone Number - Center (Desktop) */}

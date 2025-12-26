@@ -246,8 +246,8 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
               <div
                 className={`max-w-[75%] px-4 py-2.5 rounded-2xl ${
                   msg.isIncoming 
-                    ? "bg-secondary text-foreground rounded-bl-sm" 
-                    : "bg-foreground text-background rounded-br-sm"
+                    ? "bg-blue-500/15 text-foreground rounded-bl-sm border border-blue-500/20" 
+                    : "bg-emerald-500/15 text-foreground rounded-br-sm border border-emerald-500/20"
                 }`}
               >
                 <p className="text-sm">{msg.content}</p>
@@ -289,48 +289,46 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
         {/* Transfer Modal */}
         {showTransferModal && (
           <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-            <div className="bg-card border border-border rounded-t-2xl sm:rounded-xl w-full sm:max-w-md max-h-[85vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="shrink-0 bg-card border-b border-border/50 p-4 flex items-center justify-between">
-                <h3 className="font-medium text-foreground">Transfer Chat</h3>
-                <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => setShowTransferModal(false)}>
+            <div className="bg-card border border-border rounded-t-2xl sm:rounded-xl w-full sm:max-w-sm max-h-[70vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+              <div className="shrink-0 bg-card border-b border-border/50 px-4 py-3 flex items-center justify-between">
+                <h3 className="font-medium text-foreground text-sm">Transfer Chat</h3>
+                <Button variant="ghost" size="icon" className="rounded-lg h-7 w-7" onClick={() => setShowTransferModal(false)}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Transfer Criteria */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">Transfer messages:</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <p className="text-xs text-muted-foreground mb-1.5">Transfer messages:</p>
+                  <div className="grid grid-cols-2 gap-1.5">
                     {(["all", "priority", "sentiment", "label"] as TransferCriteria[]).map((opt) => (
                       <button
                         key={opt}
                         onClick={() => setTransferCriteria(opt)}
-                        className={`px-3 py-2.5 rounded-lg text-xs transition-colors ${
+                        className={`px-2 py-2 rounded-lg text-xs transition-colors ${
                           transferCriteria === opt
                             ? "bg-foreground text-background"
                             : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
                         }`}
                       >
-                        {opt === "all" && "All Messages"}
-                        {opt === "priority" && "Priority Only"}
-                        {opt === "sentiment" && "By Sentiment"}
+                        {opt === "all" && "All"}
+                        {opt === "priority" && "Priority"}
+                        {opt === "sentiment" && "Sentiment"}
                         {opt === "label" && "By Label"}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Label Selection */}
                 {transferCriteria === "label" && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2">Select label:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {transferLabels.map((label) => (
+                    <p className="text-xs text-muted-foreground mb-1.5">Select label:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {transferLabels.slice(0, 5).map((label) => (
                         <button
                           key={label}
                           onClick={() => setTransferLabel(label)}
-                          className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+                          className={`px-2 py-1 rounded-full text-xs transition-colors ${
                             transferLabel === label
                               ? "bg-foreground text-background"
                               : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
@@ -343,26 +341,25 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                   </div>
                 )}
 
-                {/* Custom Number Input */}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">Enter phone number:</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">Phone number:</p>
                   <input
                     type="tel"
                     value={customNumber}
                     onChange={(e) => setCustomNumber(e.target.value)}
                     placeholder="+1 (555) 123-4567"
-                    className="w-full px-3 py-2.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-border"
+                    className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
                   />
                 </div>
 
-                {/* Or Select Contact */}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">Or select contacts:</p>
-                  <div className="max-h-32 overflow-y-auto space-y-1 bg-secondary/30 rounded-lg p-2">
+                  <p className="text-xs text-muted-foreground mb-1.5">Or select contacts:</p>
+                  <div className="max-h-24 overflow-y-auto space-y-0.5 bg-secondary/30 rounded-lg p-1.5">
                     {mockContacts
                       .filter((c) => c.id !== selectedChat)
+                      .slice(0, 4)
                       .map((contact) => (
-                        <label key={contact.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-secondary/50 cursor-pointer">
+                        <label key={contact.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-secondary/50 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={transferTo.includes(contact.id)}
@@ -375,29 +372,18 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                             }}
                             className="accent-foreground rounded shrink-0"
                           />
-                          <div className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-foreground text-xs font-medium shrink-0">
-                            {contact.name.charAt(0)}
-                          </div>
-                          <span className="text-sm text-foreground truncate">{contact.name}</span>
+                          <span className="text-xs text-foreground truncate">{contact.name}</span>
                         </label>
                       ))}
                   </div>
                 </div>
-
-                {/* Summary */}
-                <div className="p-2.5 bg-secondary/30 rounded-lg text-xs text-muted-foreground">
-                  {transferCriteria === "all" && "All messages from this conversation will be transferred."}
-                  {transferCriteria === "priority" && "Only priority messages will be transferred."}
-                  {transferCriteria === "sentiment" && "Messages will be analyzed and transferred based on sentiment."}
-                  {transferCriteria === "label" && `Messages labeled "${transferLabel}" will be transferred.`}
-                </div>
               </div>
 
-              <div className="shrink-0 p-4 border-t border-border/50 bg-card flex gap-2">
-                <Button variant="outline" className="flex-1 rounded-lg" onClick={() => setShowTransferModal(false)}>
+              <div className="shrink-0 px-3 py-2.5 border-t border-border/50 bg-card flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1 rounded-lg h-8" onClick={() => setShowTransferModal(false)}>
                   Cancel
                 </Button>
-                <Button className="flex-1 rounded-lg" onClick={handleTransferChat}>
+                <Button size="sm" className="flex-1 rounded-lg h-8" onClick={handleTransferChat}>
                   Create Rule
                 </Button>
               </div>
