@@ -34,12 +34,12 @@
 
     --radius: 0.5rem;
 
-    /* Dashboard-specific tokens */
+    /* Dashboard-specific tokens - light green */
     --dashboard-header: 0 0% 4%;
     --dashboard-nav: 0 0% 5%;
-    --dashboard-active: 142 70% 45%;
-    --dashboard-gradient-start: 142 70% 45%;
-    --dashboard-gradient-end: 180 70% 45%;
+    --dashboard-active: 142 50% 55%;
+    --dashboard-gradient-start: 142 50% 55%;
+    --dashboard-gradient-end: 160 50% 55%;
 
     --sidebar-background: 0 0% 3%;
     --sidebar-foreground: 45 20% 96%;
@@ -128,7 +128,7 @@
   }
 
   .dashboard-filter-btn-active {
-    @apply bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30;
+    @apply bg-foreground text-background;
   }
 
   .dashboard-filter-btn-inactive {
@@ -152,7 +152,7 @@
   }
 
   .dashboard-nav-item-active {
-    @apply text-emerald-400;
+    @apply text-foreground;
   }
 
   .dashboard-nav-item-inactive {
@@ -172,24 +172,11 @@
   }
 
   .status-badge-allowed {
-    @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/20;
+    @apply bg-green-400/10 text-green-400 border border-green-400/20;
   }
 
   .status-badge-protected {
     @apply bg-blue-500/10 text-blue-400 border border-blue-500/20;
-  }
-
-  .glow-effect {
-    @apply relative;
-  }
-
-  .glow-effect::before {
-    content: '';
-    @apply absolute inset-0 rounded-2xl bg-gradient-to-r from-emerald-500/5 to-teal-500/5 blur-xl opacity-0 transition-opacity duration-300;
-  }
-
-  .glow-effect:hover::before {
-    @apply opacity-100;
   }
 }
 
