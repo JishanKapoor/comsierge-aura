@@ -14,12 +14,12 @@ import {
   Pin,
   BellOff,
   Trash2,
-  Globe,
   Send,
   Paperclip,
   MessageSquare,
-  Smile,
   X,
+  Languages,
+  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -60,26 +60,13 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
   const getStatusIcon = (status: Message["status"]) => {
     switch (status) {
       case "protected":
-        return <Shield className="w-4 h-4 text-blue-400" />;
+        return <Shield className="w-3.5 h-3.5" />;
       case "allowed":
-        return <ShieldCheck className="w-4 h-4 text-emerald-400" />;
+        return <ShieldCheck className="w-3.5 h-3.5" />;
       case "blocked":
-        return <ShieldX className="w-4 h-4 text-destructive" />;
+        return <ShieldX className="w-3.5 h-3.5" />;
       case "priority":
-        return <Crown className="w-4 h-4 text-amber-400" />;
-    }
-  };
-
-  const getStatusBadgeClass = (status: Message["status"]) => {
-    switch (status) {
-      case "protected":
-        return "status-badge-protected";
-      case "allowed":
-        return "status-badge-allowed";
-      case "blocked":
-        return "status-badge-blocked";
-      case "priority":
-        return "status-badge-priority";
+        return <Crown className="w-3.5 h-3.5" />;
     }
   };
 
@@ -111,7 +98,7 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
     };
     setChatMessages([...chatMessages, msg]);
     setNewMessage("");
-    toast.success("Message sent!");
+    toast.success("Message sent");
   };
 
   const handleForwardChat = () => {
@@ -129,55 +116,53 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
   // Chat View
   if (selectedChat && selectedContact) {
     return (
-      <div className="flex flex-col h-[calc(100vh-200px)] md:h-[calc(100vh-220px)]">
+      <div className="flex flex-col h-[calc(100vh-180px)]">
         {/* Chat Header */}
-        <div className="dashboard-card flex items-center justify-between p-4 mb-4">
+        <div className="flex items-center justify-between p-3 mb-4 bg-card/50 border border-border/50 rounded-xl">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedChat(null)} className="rounded-xl">
-              <ArrowLeft className="w-5 h-5" />
+            <Button variant="ghost" size="icon" onClick={() => setSelectedChat(null)} className="rounded-lg h-8 w-8">
+              <ArrowLeft className="w-4 h-4" />
             </Button>
-            <div className="dashboard-avatar w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+            <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium">
               {selectedContact.name.charAt(0)}
             </div>
             <div>
-              <h3 className="font-medium text-foreground">{selectedContact.name}</h3>
+              <h3 className="font-medium text-foreground text-sm">{selectedContact.name}</h3>
               <p className="text-xs text-muted-foreground">{selectedContact.phone}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => toast.info("Initiating call...")}>
-              <Phone className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => toast.info("Calling...")}>
+              <Phone className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-xl"
-              onClick={() => onOpenAI(`Analyze chat with ${selectedContact.name}: ${chatMessages.map(m => m.content).join(", ")}`)}
+              className="rounded-lg h-8 w-8"
+              onClick={() => onOpenAI(`Analyze chat with ${selectedContact.name}`)}
             >
-              <Bot className="w-5 h-5" />
+              <Bot className="w-4 h-4" />
             </Button>
             <div className="relative">
-              <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => setShowChatMenu(!showChatMenu)}>
-                <MoreVertical className="w-5 h-5" />
+              <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => setShowChatMenu(!showChatMenu)}>
+                <MoreVertical className="w-4 h-4" />
               </Button>
               {showChatMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowChatMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-2xl shadow-2xl z-50 py-2">
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-xl shadow-xl z-50 py-1">
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50"
-                      onClick={() => toast.info("Initiating call...")}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
+                      onClick={() => {
+                        setShowTranslation(!showTranslation);
+                        setShowChatMenu(false);
+                        toast.info(showTranslation ? "Translation off" : "Translation enabled");
+                      }}
                     >
-                      <Phone className="w-4 h-4" /> Voice Call
+                      <Languages className="w-4 h-4" /> Translate Messages
                     </button>
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50"
-                      onClick={() => onOpenAI(`Analyze chat with ${selectedContact.name}`)}
-                    >
-                      <Bot className="w-4 h-4" /> Ask AI About This Chat
-                    </button>
-                    <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
                       onClick={() => {
                         setShowChatMenu(false);
                         setShowForwardModal(true);
@@ -186,26 +171,26 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                       <Forward className="w-4 h-4" /> Forward Chat
                     </button>
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
                       onClick={() => toast.success("Conversation pinned")}
                     >
                       <Pin className="w-4 h-4" /> Pin Conversation
                     </button>
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-secondary/50"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
                       onClick={() => toast.success("Notifications muted")}
                     >
-                      <BellOff className="w-4 h-4" /> Mute Notifications
+                      <BellOff className="w-4 h-4" /> Mute
                     </button>
                     <div className="my-1 border-t border-border" />
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
                       onClick={() => {
                         toast.success("Chat deleted");
                         setSelectedChat(null);
                       }}
                     >
-                      <Trash2 className="w-4 h-4" /> Delete Chat
+                      <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   </div>
                 </>
@@ -215,93 +200,74 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
         </div>
 
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-          <div className="flex justify-center">
-            <button
-              className="text-xs text-emerald-400 hover:underline flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500/10"
-              onClick={() => onOpenAI(`Summarize my chat with ${selectedContact.name}`)}
-            >
-              <Bot className="w-3 h-3" /> Ask AI about this chat
-            </button>
-          </div>
+        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
           {chatMessages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.isIncoming ? "justify-start" : "justify-end"}`}>
               <div
-                className={`max-w-[75%] px-4 py-3 rounded-2xl ${
+                className={`max-w-[75%] px-4 py-2.5 rounded-2xl ${
                   msg.isIncoming 
-                    ? "bg-secondary text-foreground rounded-bl-md" 
-                    : "bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-br-md"
+                    ? "bg-secondary text-foreground rounded-bl-sm" 
+                    : "bg-foreground text-background rounded-br-sm"
                 }`}
               >
                 <p className="text-sm">{msg.content}</p>
-                {msg.translated && (
-                  <p className="text-xs mt-1 opacity-70 italic">{msg.translated}</p>
+                {msg.translated && showTranslation && (
+                  <p className="text-xs mt-1 opacity-60 italic">{msg.translated}</p>
                 )}
-                <p className="text-[10px] mt-1.5 opacity-50">{msg.timestamp}</p>
+                <p className="text-[10px] mt-1 opacity-40">{msg.timestamp}</p>
               </div>
             </div>
           ))}
         </div>
 
         {/* Message Input */}
-        <div className="dashboard-card p-3 mt-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="rounded-xl shrink-0">
-              <Paperclip className="w-5 h-5" />
-            </Button>
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Type message..."
-              className="dashboard-input flex-1"
-            />
-            <Button variant="ghost" size="icon" className="rounded-xl shrink-0">
-              <Smile className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`rounded-xl shrink-0 ${showTranslation ? "text-emerald-400 bg-emerald-500/10" : ""}`}
-              onClick={() => {
-                setShowTranslation(!showTranslation);
-                toast.info(showTranslation ? "Translation off" : "Translation on (EN → ES)");
-              }}
-            >
-              <Globe className="w-5 h-5" />
-            </Button>
-            <Button size="icon" className="rounded-xl shrink-0 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90" onClick={sendMessage}>
-              <Send className="w-5 h-5" />
-            </Button>
-          </div>
-          {showTranslation && (
-            <p className="text-xs text-emerald-400 mt-2 ml-12">🌐 Translating: English → Spanish</p>
-          )}
+        <div className="flex items-center gap-2 p-3 mt-4 bg-card/50 border border-border/50 rounded-xl">
+          <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8 shrink-0">
+            <Paperclip className="w-4 h-4" />
+          </Button>
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            placeholder="Type message..."
+            className="flex-1 px-3 py-2 bg-transparent text-foreground placeholder:text-muted-foreground text-sm focus:outline-none"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-lg h-8 w-8 shrink-0"
+            onClick={() => toast.info("Rewrite with AI")}
+          >
+            <PenLine className="w-4 h-4" />
+          </Button>
+          <Button size="icon" className="rounded-lg h-8 w-8 shrink-0" onClick={sendMessage}>
+            <Send className="w-4 h-4" />
+          </Button>
         </div>
 
         {/* Forward Modal */}
         {showForwardModal && (
           <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="dashboard-card w-full max-w-md p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="dashboard-section-title">Forward Chat</h3>
-                <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => setShowForwardModal(false)}>
-                  <X className="w-5 h-5" />
+            <div className="bg-card border border-border rounded-xl w-full max-w-md p-5">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-medium text-foreground">Forward Chat</h3>
+                <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => setShowForwardModal(false)}>
+                  <X className="w-4 h-4" />
                 </Button>
               </div>
               
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-3">Select messages to forward:</p>
-                  <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground mb-2">Select messages:</p>
+                  <div className="space-y-1">
                     {(["all", "last10", "last24h"] as const).map((opt) => (
-                      <label key={opt} className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/30 cursor-pointer transition-colors">
+                      <label key={opt} className="flex items-center gap-2 p-2 rounded-lg hover:bg-secondary/30 cursor-pointer">
                         <input
                           type="radio"
                           checked={forwardOption === opt}
                           onChange={() => setForwardOption(opt)}
-                          className="w-4 h-4 text-emerald-500 accent-emerald-500"
+                          className="accent-foreground"
                         />
                         <span className="text-sm text-foreground">
                           {opt === "all" && "All messages"}
@@ -314,12 +280,12 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                 </div>
 
                 <div>
-                  <p className="text-sm text-muted-foreground mb-3">Forward to:</p>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                  <p className="text-sm text-muted-foreground mb-2">Forward to:</p>
+                  <div className="max-h-40 overflow-y-auto space-y-1">
                     {mockContacts
                       .filter((c) => c.id !== selectedChat)
                       .map((contact) => (
-                        <label key={contact.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-secondary/30 cursor-pointer transition-colors">
+                        <label key={contact.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-secondary/30 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={forwardTo.includes(contact.id)}
@@ -330,7 +296,7 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                                 setForwardTo(forwardTo.filter((id) => id !== contact.id));
                               }
                             }}
-                            className="w-4 h-4 text-emerald-500 accent-emerald-500 rounded"
+                            className="accent-foreground rounded"
                           />
                           <span className="text-sm text-foreground">{contact.name}</span>
                         </label>
@@ -338,12 +304,12 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-2">
-                  <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setShowForwardModal(false)}>
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" className="flex-1 rounded-lg" onClick={() => setShowForwardModal(false)}>
                     Cancel
                   </Button>
-                  <Button className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90" onClick={handleForwardChat}>
-                    Forward →
+                  <Button className="flex-1 rounded-lg" onClick={handleForwardChat}>
+                    Forward
                   </Button>
                 </div>
               </div>
@@ -356,35 +322,37 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
 
   // Messages List View
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="dashboard-section-title">Messages</h2>
-        <Button className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-90">
-          <Plus className="w-4 h-4" /> New Chat
+        <h2 className="text-lg font-medium text-foreground">Messages</h2>
+        <Button size="sm" className="gap-1.5 rounded-lg">
+          <Plus className="w-4 h-4" /> New
         </Button>
       </div>
 
       {/* Search */}
       <div className="relative">
-        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="Search messages..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="dashboard-input pl-11"
+          className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-border"
         />
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2">
         {(["all", "unread", "priority", "blocked"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`dashboard-filter-btn capitalize ${
-              filter === f ? "dashboard-filter-btn-active" : "dashboard-filter-btn-inactive"
+            className={`px-3 py-1.5 rounded-lg text-sm capitalize transition-colors ${
+              filter === f
+                ? "bg-foreground text-background"
+                : "bg-secondary/50 text-muted-foreground hover:text-foreground"
             }`}
           >
             {f}
@@ -393,46 +361,40 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
       </div>
 
       {/* Messages List */}
-      <div className="dashboard-card overflow-hidden">
+      <div className="bg-card/30 border border-border/50 rounded-xl overflow-hidden">
         {filteredMessages.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">
-            <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <p>No messages found</p>
+          <div className="p-10 text-center text-muted-foreground">
+            <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No messages found</p>
           </div>
         ) : (
           filteredMessages.map((msg) => (
             <div
               key={msg.id}
               onClick={() => openChat(msg.contactId)}
-              className={`dashboard-list-item ${!msg.isRead ? "bg-secondary/30" : ""}`}
+              className={`flex items-center gap-3 p-4 border-b border-border/30 last:border-b-0 hover:bg-secondary/20 transition-colors cursor-pointer ${
+                !msg.isRead ? "bg-secondary/10" : ""
+              }`}
             >
-              <div className="dashboard-avatar w-12 h-12 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 shrink-0">
+              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium shrink-0">
                 {msg.contactName.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`font-medium truncate ${!msg.isRead ? "text-foreground" : "text-muted-foreground"}`}>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={`text-sm truncate ${!msg.isRead ? "font-medium text-foreground" : "text-muted-foreground"}`}>
                     {msg.contactName}
                   </span>
-                  {!msg.isRead && <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />}
+                  {!msg.isRead && <span className="w-1.5 h-1.5 rounded-full bg-foreground shrink-0" />}
                 </div>
-                <p className="text-sm text-muted-foreground truncate">{msg.content}</p>
+                <p className="text-xs text-muted-foreground truncate">{msg.content}</p>
               </div>
-              <div className="shrink-0 text-right space-y-1.5">
-                <p className="text-xs text-muted-foreground">{msg.timestamp}</p>
-                <span className={`status-badge ${getStatusBadgeClass(msg.status)}`}>
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-muted-foreground mb-1">{msg.timestamp}</p>
+                <div className="flex items-center gap-1 justify-end text-muted-foreground">
                   {getStatusIcon(msg.status)}
-                  <span>{getStatusLabel(msg.status)}</span>
-                </span>
+                  <span className="text-[10px]">{getStatusLabel(msg.status)}</span>
+                </div>
               </div>
-              {msg.status === "blocked" && (
-                <Button variant="ghost" size="sm" className="ml-2 rounded-xl" onClick={(e) => {
-                  e.stopPropagation();
-                  toast.success("Message restored");
-                }}>
-                  Restore
-                </Button>
-              )}
             </div>
           ))
         )}

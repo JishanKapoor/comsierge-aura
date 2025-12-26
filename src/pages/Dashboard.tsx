@@ -48,7 +48,7 @@ const Dashboard = () => {
   const copyPhoneNumber = () => {
     navigator.clipboard.writeText(phoneNumber);
     setCopied(true);
-    toast.success("Phone number copied!");
+    toast.success("Phone number copied");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -82,104 +82,97 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header - Sticky, not fixed */}
-      <header className="sticky top-0 z-40 bg-gradient-to-b from-background via-background to-background/95 backdrop-blur-xl border-b border-border/50">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border/50">
+        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           {/* Logo */}
           <Link
             to="/"
-            className="flex items-center gap-2.5 text-lg font-medium tracking-tight text-foreground hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 text-lg font-medium tracking-tight text-foreground"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Phone className="w-4 h-4 text-white" />
-            </div>
+            <Phone className="w-5 h-5" />
             <span className="hidden sm:inline">comsierge.</span>
           </Link>
 
           {/* Phone Number - Center (Desktop) */}
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 border border-border/50">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm font-medium text-foreground">{phoneNumber}</span>
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-foreground/50" />
+            <span className="text-sm text-muted-foreground">{phoneNumber}</span>
             <button
               onClick={copyPhoneNumber}
-              className="p-1 rounded-md hover:bg-secondary transition-colors"
-              title="Copy phone number"
+              className="p-1 rounded hover:bg-secondary transition-colors"
             >
               {copied ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <Check className="w-3 h-3 text-foreground" />
               ) : (
-                <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                <Copy className="w-3 h-3 text-muted-foreground" />
               )}
             </button>
           </div>
 
           {/* Right Side */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {/* Notifications */}
-            <button className="relative p-2 rounded-xl hover:bg-secondary/50 transition-colors">
+            <button className="relative p-2 rounded-lg hover:bg-secondary/50 transition-colors">
               <Bell className="w-5 h-5 text-muted-foreground" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-foreground" />
             </button>
 
             {/* User Menu */}
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 p-1.5 pr-3 rounded-xl hover:bg-secondary/50 transition-colors"
+                className="flex items-center gap-2 p-1.5 pr-2 rounded-lg hover:bg-secondary/50 transition-colors"
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white text-sm font-medium">
+                <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium">
                   {user?.name?.charAt(0).toUpperCase() || "U"}
                 </div>
-                <span className="hidden sm:inline text-sm font-medium text-foreground">
-                  {user?.name || "User"}
-                </span>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
 
               {showUserMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
-                    <div className="p-4 border-b border-border/50">
-                      <p className="font-medium text-foreground">{user?.name || "Demo User"}</p>
-                      <p className="text-sm text-muted-foreground">{user?.email || "user@example.com"}</p>
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="p-3 border-b border-border/50">
+                      <p className="font-medium text-foreground text-sm">{user?.name || "Demo User"}</p>
+                      <p className="text-xs text-muted-foreground">{user?.email || "user@example.com"}</p>
                       {/* Mobile Phone Display */}
-                      <div className="mt-3 flex items-center gap-2 p-2 rounded-lg bg-secondary/50">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span className="text-xs font-medium text-foreground">{phoneNumber}</span>
+                      <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-secondary/30">
+                        <span className="text-xs text-muted-foreground">{phoneNumber}</span>
                         <button onClick={copyPhoneNumber} className="ml-auto">
                           {copied ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <Check className="w-3 h-3 text-foreground" />
                           ) : (
-                            <Copy className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
+                            <Copy className="w-3 h-3 text-muted-foreground" />
                           )}
                         </button>
                       </div>
                     </div>
-                    <div className="p-2">
+                    <div className="p-1">
                       <button
                         onClick={() => {
                           setActiveTab("profile");
                           setShowUserMenu(false);
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground hover:bg-secondary/50 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-foreground hover:bg-secondary/50 transition-colors"
                       >
-                        <User className="w-4 h-4" />
-                        View Profile
+                        <User className="w-4 h-4 text-muted-foreground" />
+                        Profile
                       </button>
                       <button
                         onClick={() => {
                           setActiveTab("settings");
                           setShowUserMenu(false);
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-foreground hover:bg-secondary/50 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-foreground hover:bg-secondary/50 transition-colors"
                       >
-                        <Settings className="w-4 h-4" />
+                        <Settings className="w-4 h-4 text-muted-foreground" />
                         Settings
                       </button>
                       <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/50 transition-colors"
                       >
                         <LogOut className="w-4 h-4" />
                         Log Out
@@ -194,39 +187,15 @@ const Dashboard = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 pb-24 md:pb-8">
+      <main className="flex-1 pb-20">
         <div className="max-w-5xl mx-auto px-4 py-6">
-          {/* Desktop Tab Navigation */}
-          <div className="hidden md:flex items-center gap-1 mb-8 p-1 bg-secondary/30 rounded-2xl w-fit">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  if (item.id !== "ai") setAiContext(undefined);
-                }}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  activeTab === item.id
-                    ? "bg-card text-foreground shadow-lg"
-                    : "text-muted-foreground hover:text-foreground hover:bg-card/50"
-                }`}
-              >
-                <item.icon className="w-4 h-4" />
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Content Area */}
-          <div className="min-h-[calc(100vh-220px)]">
-            {renderContent()}
-          </div>
+          {renderContent()}
         </div>
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-xl border-t border-border/50 safe-area-bottom">
-        <div className="flex items-center justify-around px-2 py-3">
+      {/* Bottom Navigation - Both Mobile and Desktop */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50">
+        <div className="max-w-5xl mx-auto flex items-center justify-around px-2 py-2">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -234,13 +203,13 @@ const Dashboard = () => {
                 setActiveTab(item.id);
                 if (item.id !== "ai") setAiContext(undefined);
               }}
-              className={`dashboard-nav-item ${
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
                 activeTab === item.id
-                  ? "dashboard-nav-item-active"
-                  : "dashboard-nav-item-inactive"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <item.icon className={`w-5 h-5 ${activeTab === item.id ? "text-emerald-400" : ""}`} />
+              <item.icon className={`w-5 h-5 ${activeTab === item.id ? "text-foreground" : ""}`} />
               <span className="text-[10px] font-medium">{item.label}</span>
             </button>
           ))}
