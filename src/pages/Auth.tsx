@@ -89,17 +89,6 @@ const Auth = () => {
               : "Create an account to start managing your communications"}
           </p>
 
-          {/* Demo hint */}
-          {isLogin && (
-            <div className="mt-4 p-3 bg-secondary/50 border border-border rounded-xl space-y-1.5">
-              <p className="text-xs text-muted-foreground text-center">
-                <span className="text-foreground font-medium">User Demo:</span> <code className="bg-background/50 px-1.5 py-0.5 rounded">user</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">user</code>
-              </p>
-              <p className="text-xs text-muted-foreground text-center">
-                <span className="text-foreground font-medium">Admin Demo:</span> <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code> / <code className="bg-background/50 px-1.5 py-0.5 rounded">admin</code>
-              </p>
-            </div>
-          )}
 
           {isLogin ? (
             <form onSubmit={loginForm.handleSubmit(handleLoginSubmit)} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
