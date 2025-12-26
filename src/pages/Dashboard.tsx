@@ -96,16 +96,16 @@ const Dashboard = () => {
 
           {/* Phone Number - Center (Desktop) */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-foreground/50" />
-            <span className="text-sm text-muted-foreground">{phoneNumber}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60" />
+            <span className="text-sm text-amber-500/80">{phoneNumber}</span>
             <button
               onClick={copyPhoneNumber}
               className="p-1 rounded hover:bg-secondary transition-colors"
             >
               {copied ? (
-                <Check className="w-3 h-3 text-foreground" />
+                <Check className="w-3 h-3 text-amber-500" />
               ) : (
-                <Copy className="w-3 h-3 text-muted-foreground" />
+                <Copy className="w-3 h-3 text-amber-500/60" />
               )}
             </button>
           </div>
@@ -139,12 +139,12 @@ const Dashboard = () => {
                       <p className="text-xs text-muted-foreground">{user?.email || "user@example.com"}</p>
                       {/* Mobile Phone Display */}
                       <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-secondary/30">
-                        <span className="text-xs text-muted-foreground">{phoneNumber}</span>
+                        <span className="text-xs text-amber-500/80">{phoneNumber}</span>
                         <button onClick={copyPhoneNumber} className="ml-auto">
                           {copied ? (
-                            <Check className="w-3 h-3 text-foreground" />
+                            <Check className="w-3 h-3 text-amber-500" />
                           ) : (
-                            <Copy className="w-3 h-3 text-muted-foreground" />
+                            <Copy className="w-3 h-3 text-amber-500/60" />
                           )}
                         </button>
                       </div>
