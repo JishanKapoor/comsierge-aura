@@ -1,27 +1,50 @@
+import { useEffect, useRef, useState } from "react";
 import { Shield, Zap, MessageSquare, Phone } from "lucide-react";
 
 const SolutionSection = () => {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-background relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-blue-500/5 pointer-events-none" />
+    <section ref={sectionRef} className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-background relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 via-transparent to-blue-500/5 pointer-events-none" />
       
       <div className="max-w-5xl mx-auto relative">
         <div className="text-center">
-          <span className="text-xs uppercase tracking-[0.2em] text-green-400/80">The Solution</span>
-          <h2 className="mt-4 text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-light text-foreground leading-tight animate-fade-in">
+          <span className={`text-xs uppercase tracking-[0.2em] text-green-400/80 transition-all duration-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+            The Solution
+          </span>
+          <h2 className={`mt-4 text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-light text-foreground leading-tight transition-all duration-700 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
             Meet Your Chief of Staff
             <br />
             <span className="italic text-muted-foreground">for Communication.</span>
           </h2>
-          <p className="mt-6 text-sm sm:text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+          <p className={`mt-6 text-sm sm:text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed transition-all duration-700 delay-200 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
             Comsierge listens, screens, responds, and routes messages intelligently across all platforms.
           </p>
         </div>
 
-        <div className="mt-12 sm:mt-16">
+        <div className={`mt-12 sm:mt-16 transition-all duration-700 delay-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           <div className="bg-gradient-to-br from-card/60 to-card/30 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 md:p-10 hover:border-white/20 transition-colors duration-300">
             <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-green-500/20 to-blue-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-green-400/20 to-blue-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
                 <Phone className="w-8 h-8 sm:w-10 sm:h-10 text-foreground" />
               </div>
               

@@ -34,12 +34,15 @@
 
     --radius: 0.5rem;
 
-    /* Dashboard-specific tokens - light green */
+    /* Premium gold color */
+    --gold: 43 74% 66%;
+
+    /* Dashboard-specific tokens */
     --dashboard-header: 0 0% 4%;
     --dashboard-nav: 0 0% 5%;
-    --dashboard-active: 142 50% 55%;
-    --dashboard-gradient-start: 142 50% 55%;
-    --dashboard-gradient-end: 160 50% 55%;
+    --dashboard-active: 142 40% 60%;
+    --dashboard-gradient-start: 142 40% 60%;
+    --dashboard-gradient-end: 160 40% 60%;
 
     --sidebar-background: 0 0% 3%;
     --sidebar-foreground: 45 20% 96%;

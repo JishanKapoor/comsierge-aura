@@ -10,27 +10,23 @@ import {
   Bot,
   User,
   Bell,
-  ChevronDown,
   Copy,
   Check,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import MessagesTab from "@/components/dashboard/MessagesTab";
 import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
 import AITab from "@/components/dashboard/AITab";
 import SettingsTab from "@/components/dashboard/SettingsTab";
-import ProfileTab from "@/components/dashboard/ProfileTab";
 
-type Tab = "messages" | "calls" | "contacts" | "ai" | "settings" | "profile";
+type Tab = "messages" | "calls" | "contacts" | "ai" | "settings";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("messages");
   const [aiContext, setAiContext] = useState<string | undefined>();
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const phoneNumber = "+1 (437) 239-2448";
@@ -58,7 +54,6 @@ const Dashboard = () => {
     { id: "contacts" as Tab, icon: Users, label: "Contacts" },
     { id: "ai" as Tab, icon: Bot, label: "AI" },
     { id: "settings" as Tab, icon: Settings, label: "Settings" },
-    { id: "profile" as Tab, icon: User, label: "Profile" },
   ];
 
   const renderContent = () => {
@@ -73,8 +68,6 @@ const Dashboard = () => {
         return <AITab initialContext={aiContext} />;
       case "settings":
         return <SettingsTab />;
-      case "profile":
-        return <ProfileTab onNavigate={(tab) => setActiveTab(tab as Tab)} />;
       default:
         return null;
     }
@@ -96,92 +89,44 @@ const Dashboard = () => {
 
           {/* Phone Number - Center (Desktop) */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60" />
-            <span className="text-sm text-amber-500/80">{phoneNumber}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-gold/60" />
+            <span className="text-sm text-gold">{phoneNumber}</span>
             <button
               onClick={copyPhoneNumber}
               className="p-1 rounded hover:bg-secondary transition-colors"
             >
               {copied ? (
-                <Check className="w-3 h-3 text-amber-500" />
+                <Check className="w-3 h-3 text-gold" />
               ) : (
-                <Copy className="w-3 h-3 text-amber-500/60" />
+                <Copy className="w-3 h-3 text-gold/60" />
               )}
             </button>
           </div>
 
           {/* Right Side */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {/* Notifications */}
             <button className="relative p-2 rounded-lg hover:bg-secondary/50 transition-colors">
               <Bell className="w-5 h-5 text-muted-foreground" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-foreground" />
             </button>
 
-            {/* User Menu */}
-            <div className="relative">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 p-1.5 pr-2 rounded-lg hover:bg-secondary/50 transition-colors"
-              >
-                <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium">
-                  {user?.name?.charAt(0).toUpperCase() || "U"}
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-
-              {showUserMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
-                    <div className="p-3 border-b border-border/50">
-                      <p className="font-medium text-foreground text-sm">{user?.name || "Demo User"}</p>
-                      <p className="text-xs text-muted-foreground">{user?.email || "user@example.com"}</p>
-                      {/* Mobile Phone Display */}
-                      <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-secondary/30">
-                        <span className="text-xs text-amber-500/80">{phoneNumber}</span>
-                        <button onClick={copyPhoneNumber} className="ml-auto">
-                          {copied ? (
-                            <Check className="w-3 h-3 text-amber-500" />
-                          ) : (
-                            <Copy className="w-3 h-3 text-amber-500/60" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="p-1">
-                      <button
-                        onClick={() => {
-                          setActiveTab("profile");
-                          setShowUserMenu(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-foreground hover:bg-secondary/50 transition-colors"
-                      >
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        Profile
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveTab("settings");
-                          setShowUserMenu(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-foreground hover:bg-secondary/50 transition-colors"
-                      >
-                        <Settings className="w-4 h-4 text-muted-foreground" />
-                        Settings
-                      </button>
-                      <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary/50 transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Log Out
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
+            {/* User Avatar + Name */}
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+              <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium">
+                {user?.name?.charAt(0).toUpperCase() || "U"}
+              </div>
+              <span className="text-sm text-foreground hidden sm:inline">{user?.name || "User"}</span>
             </div>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="p-2 rounded-lg hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
+              title="Log out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
@@ -193,7 +138,7 @@ const Dashboard = () => {
         </div>
       </main>
 
-      {/* Bottom Navigation - Both Mobile and Desktop */}
+      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-border/50">
         <div className="max-w-5xl mx-auto flex items-center justify-around px-2 py-2">
           {navItems.map((item) => (

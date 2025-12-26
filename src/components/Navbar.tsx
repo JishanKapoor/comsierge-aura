@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
   const lastScrollY = useRef(0);
@@ -12,6 +13,10 @@ const Navbar = () => {
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
+      
+      // Add background when scrolled
+      setScrolled(currentScrollY > 50);
+      
       const faqSection = document.getElementById("faq-section");
       
       // Hide header when FAQ section is in view
@@ -24,6 +29,7 @@ const Navbar = () => {
         }
       }
 
+      // Hide on scroll down, show on scroll up (like micro1.ai)
       if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
         setHidden(true);
       } else if (currentScrollY < lastScrollY.current) {
@@ -41,9 +47,10 @@ const Navbar = () => {
     <>
       <nav
         className={[
-          "fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 sm:py-6",
-          "transition-all duration-500 ease-out will-change-transform",
+          "fixed top-0 left-0 right-0 z-50 px-4 sm:px-6",
+          "transition-all duration-300 ease-out will-change-transform",
           hidden && !isAuthPage ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100",
+          scrolled && !isAuthPage ? "py-3 bg-background/80 backdrop-blur-md border-b border-border/30" : "py-4 sm:py-6",
         ].join(" ")}
       >
         <div className="max-w-7xl mx-auto flex items-center">
