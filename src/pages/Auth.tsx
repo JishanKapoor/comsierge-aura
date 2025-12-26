@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowRight, ArrowLeft, Phone, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -11,8 +11,17 @@ const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useNavigate();
   const { login, signup, loginWithGoogle, isLoading } = useAuth();
+
+  // Preload background image
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setImageLoaded(true);
+    img.src = preloadedImages.heroNyc;
+  }, []);
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -27,7 +36,6 @@ const Auth = () => {
   const handleLoginSubmit = async (data: LoginFormData) => {
     const success = await login(data.email, data.password);
     if (success) {
-      // Check if admin to redirect appropriately
       if (data.email === "admin" && data.password === "admin") {
         navigate("/admin");
       } else {
@@ -44,26 +52,34 @@ const Auth = () => {
   };
 
   const toggleMode = () => {
-    setIsLogin(!isLogin);
-    loginForm.reset();
-    signupForm.reset();
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setIsLogin(!isLogin);
+      loginForm.reset();
+      signupForm.reset();
+      setTimeout(() => setIsTransitioning(false), 50);
+    }, 150);
   };
-
-  const currentErrors = isLogin ? loginForm.formState.errors : signupForm.formState.errors;
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-background">
-      {/* Background */}
-      <div className="absolute inset-0 z-0">
+      {/* Background with fade-in */}
+      <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}>
         <img
           src={preloadedImages.heroNyc}
           alt="New York City"
           className="w-full h-full object-cover brightness-125"
           loading="eager"
           decoding="async"
+          fetchPriority="high"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/50" />
       </div>
+
+      {/* Fallback background color while loading */}
+      {!imageLoaded && (
+        <div className="absolute inset-0 z-0 bg-background" />
+      )}
 
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
@@ -78,9 +94,9 @@ const Auth = () => {
           </Link>
         </div>
 
-        {/* Card */}
-        <div className="w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl">
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center animate-fade-in">
+        {/* Card with smooth transition */}
+        <div className={`w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center">
             {isLogin ? "Welcome back" : "Get started"}
           </h1>
           <p className="mt-2 text-xs sm:text-sm text-muted-foreground text-center">
@@ -88,7 +104,6 @@ const Auth = () => {
               ? "Sign in to your account to continue"
               : "Create an account to start managing your communications"}
           </p>
-
 
           {isLogin ? (
             <form onSubmit={loginForm.handleSubmit(handleLoginSubmit)} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
@@ -266,7 +281,7 @@ const Auth = () => {
 
           <p className="mt-5 sm:mt-6 text-xs sm:text-sm text-muted-foreground text-center">
             {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button type="button" onClick={toggleMode} className="text-foreground hover:underline">
+            <button type="button" onClick={toggleMode} className="text-foreground hover:underline transition-all duration-200">
               {isLogin ? "Sign up" : "Sign in"}
             </button>
           </p>
