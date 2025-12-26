@@ -1,4 +1,5 @@
-import { X, AlertTriangle, Bell, Clock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, AlertTriangle, Clock } from "lucide-react";
 
 const AnimatedDots = () => {
   return (
@@ -11,6 +12,26 @@ const AnimatedDots = () => {
 };
 
 const ProblemSection = () => {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
   const messages = [
     { text: "You've won $5000!", type: "spam", urgent: true },
     { text: "Meeting rescheduled to 2pm", type: "normal", urgent: false },
@@ -19,23 +40,25 @@ const ProblemSection = () => {
   ];
 
   return (
-    <section className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-background via-card/20 to-background">
+    <section ref={sectionRef} className="py-20 sm:py-24 px-4 sm:px-6 md:px-16 bg-gradient-to-b from-background via-card/20 to-background">
       <div className="max-w-6xl mx-auto">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           {/* Left - Content */}
           <div>
-            <span className="text-xs uppercase tracking-[0.2em] text-red-400/80">The Problem</span>
-            <h2 className="mt-4 text-2xl sm:text-3xl md:text-4xl font-light text-foreground leading-tight animate-fade-in">
+            <span className={`text-xs uppercase tracking-[0.2em] text-red-400/80 transition-all duration-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+              The Problem
+            </span>
+            <h2 className={`mt-4 text-2xl sm:text-3xl md:text-4xl font-light text-foreground leading-tight transition-all duration-700 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
               End Communication
               <br />
               <span className="italic text-muted-foreground">Overload</span>
             </h2>
-            <p className="mt-6 text-sm sm:text-base text-muted-foreground leading-relaxed">
+            <p className={`mt-6 text-sm sm:text-base text-muted-foreground leading-relaxed transition-all duration-700 delay-200 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
               With dozens of texts and emails daily, staying focused is a challenge. Comsierge ensures you never miss what's important.
             </p>
 
             {/* Stats */}
-            <div className="mt-8 space-y-4">
+            <div className={`mt-8 space-y-4 transition-all duration-700 delay-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
               <div className="flex items-center gap-3">
                 <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center">
                   <X className="w-3 h-3 text-red-400" />
@@ -64,13 +87,10 @@ const ProblemSection = () => {
           </div>
 
           {/* Right - Visual Demo */}
-          <div className="relative">
+          <div className={`relative transition-all duration-700 delay-400 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
             <div className="relative bg-card/30 backdrop-blur-xl border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Notifications</span>
-                </div>
+                <span className="text-xs text-muted-foreground">Notifications</span>
                 <span className="text-xs text-red-400">4 unread</span>
               </div>
 
@@ -82,7 +102,7 @@ const ProblemSection = () => {
                       msg.type === 'spam' 
                         ? 'bg-red-500/5 border-red-500/20' 
                         : msg.type === 'important'
-                        ? 'bg-green-500/10 border-green-500/30'
+                        ? 'bg-green-400/10 border-green-400/30'
                         : 'bg-white/5 border-white/10'
                     }`}
                   >

@@ -37,7 +37,7 @@ const IntroSection = () => {
       <div className="max-w-4xl mx-auto text-center relative">
         <p
           className={`text-2xl md:text-3xl lg:text-4xl font-serif font-light leading-relaxed text-foreground transition-all duration-1000 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           Comsierge transforms how you manage communications, intelligently
@@ -48,7 +48,7 @@ const IntroSection = () => {
 
         <p
           className={`mt-8 text-lg md:text-xl text-muted-foreground font-light leading-relaxed transition-all duration-1000 delay-200 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
         >
           Behind every peaceful moment lies a sophisticated AI that screens,

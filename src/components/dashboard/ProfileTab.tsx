@@ -1,14 +1,9 @@
-import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Settings, BarChart2, Palette, HelpCircle, Copy, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Copy, Check } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-interface ProfileTabProps {
-  onNavigate: (tab: string) => void;
-}
-
-const ProfileTab = ({ onNavigate }: ProfileTabProps) => {
+const ProfileTab = () => {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
   const phoneNumber = "+1 (437) 239-2448";
@@ -31,20 +26,17 @@ const ProfileTab = ({ onNavigate }: ProfileTabProps) => {
             </span>
           </div>
           <h2 className="text-xl font-medium text-foreground">{user?.name || "Demo User"}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{user?.email || "user@example.com"}</p>
           
-          <div className="flex items-center gap-2 mt-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/30">
-            <span className="w-1.5 h-1.5 rounded-full bg-foreground/50" />
-            <span className="text-sm text-muted-foreground">{phoneNumber}</span>
+          <div className="flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-gold/60" />
+            <span className="text-sm text-gold">{phoneNumber}</span>
             <button onClick={copyPhoneNumber} className="p-0.5">
-              {copied ? <Check className="w-3 h-3 text-foreground" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+              {copied ? <Check className="w-3 h-3 text-gold" /> : <Copy className="w-3 h-3 text-gold/60" />}
             </button>
           </div>
           
-          <p className="text-sm text-muted-foreground mt-2">Available</p>
-          
-          <Button variant="outline" size="sm" className="mt-4 rounded-lg" onClick={() => onNavigate("settings")}>
-            Edit Profile
-          </Button>
+          <p className="text-xs text-muted-foreground mt-3">Available</p>
         </div>
       </div>
 
@@ -67,24 +59,23 @@ const ProfileTab = ({ onNavigate }: ProfileTabProps) => {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Button variant="outline" className="h-auto py-4 flex-col gap-1.5 rounded-xl" onClick={() => onNavigate("settings")}>
-          <Settings className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm">Settings</span>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-1.5 rounded-xl">
-          <BarChart2 className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm">Stats</span>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-1.5 rounded-xl">
-          <Palette className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm">Theme</span>
-        </Button>
-        <Button variant="outline" className="h-auto py-4 flex-col gap-1.5 rounded-xl" onClick={() => onNavigate("settings")}>
-          <HelpCircle className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm">Help</span>
-        </Button>
+      {/* Account Info */}
+      <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-3">
+        <h3 className="text-sm font-medium text-foreground">Account</h3>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between py-2 border-b border-border/30">
+            <span className="text-muted-foreground">Plan</span>
+            <span className="text-foreground">Premium</span>
+          </div>
+          <div className="flex justify-between py-2 border-b border-border/30">
+            <span className="text-muted-foreground">Member since</span>
+            <span className="text-foreground">Jan 2024</span>
+          </div>
+          <div className="flex justify-between py-2">
+            <span className="text-muted-foreground">Messages this month</span>
+            <span className="text-foreground">1,247</span>
+          </div>
+        </div>
       </div>
     </div>
   );
