@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-type SupportView = "main" | "new-ticket" | "history";
+type SupportView = "main" | "new-ticket";
 
 interface Ticket {
   id: string;
@@ -101,7 +102,7 @@ const SupportTab = () => {
 
   if (selectedTicket) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 max-w-lg">
         <button
           onClick={() => setSelectedTicket(null)}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -110,9 +111,9 @@ const SupportTab = () => {
         </button>
 
         <div className="bg-card/30 border border-border/50 rounded-xl p-4">
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between mb-4">
             <div>
-              <h3 className="font-medium text-foreground text-sm">{selectedTicket.subject}</h3>
+              <h3 className="font-medium text-foreground">{selectedTicket.subject}</h3>
               <p className="text-xs text-muted-foreground">{selectedTicket.createdAt}</p>
             </div>
             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary/50 text-xs">
@@ -121,12 +122,13 @@ const SupportTab = () => {
             </div>
           </div>
 
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-3 max-h-80 overflow-y-auto">
             {selectedTicket.replies?.map((reply, idx) => (
-              <div key={idx} className={`flex ${reply.isSupport ? "justify-start" : "justify-end"}`}>
-                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
+              <div key={idx} className={cn("flex", reply.isSupport ? "justify-start" : "justify-end")}>
+                <div className={cn(
+                  "max-w-[85%] px-3 py-2 rounded-xl text-sm",
                   reply.isSupport ? "bg-secondary/50 text-foreground" : "bg-foreground/10 text-foreground"
-                }`}>
+                )}>
                   <p>{reply.message}</p>
                   <p className="text-[10px] mt-1 opacity-50">{reply.timestamp}</p>
                 </div>
@@ -140,7 +142,7 @@ const SupportTab = () => {
 
   if (view === "new-ticket") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 max-w-lg">
         <button
           onClick={() => setView("main")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -191,7 +193,7 @@ const SupportTab = () => {
             />
           </div>
 
-          <Button className="rounded-lg w-full" onClick={submitTicket}>
+          <Button className="w-full" onClick={submitTicket}>
             <Send className="w-4 h-4 mr-2" /> Submit Ticket
           </Button>
         </div>
@@ -200,7 +202,7 @@ const SupportTab = () => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-lg">
       <h2 className="text-lg font-medium text-foreground">Support</h2>
 
       <button
@@ -211,7 +213,7 @@ const SupportTab = () => {
           <Send className="w-5 h-5 text-foreground" />
         </div>
         <div>
-          <p className="font-medium text-foreground text-sm">Contact Support</p>
+          <p className="font-medium text-foreground">Contact Support</p>
           <p className="text-xs text-muted-foreground">Submit a new ticket</p>
         </div>
       </button>

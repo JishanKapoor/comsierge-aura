@@ -7,9 +7,11 @@ import {
   MessageSquare,
   CheckCircle2,
   ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { mockReminders, mockContacts } from "./mockData";
 
 type ReminderType = "personal" | "call" | "message";
@@ -53,59 +55,66 @@ const RemindersTab = () => {
   const selectedContactName = mockContacts.find(c => c.id === reminderContact)?.name;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 max-w-lg">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium text-foreground">Reminders</h2>
-        <Button size="sm" className="rounded-lg gap-1" onClick={() => setShowNewReminder(true)}>
+        <Button size="sm" className="gap-1.5" onClick={() => setShowNewReminder(true)}>
           <Plus className="w-4 h-4" /> Add
         </Button>
       </div>
 
+      {/* AI Detection Note */}
+      <div className="flex items-center gap-2 p-3 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+        <Sparkles className="w-4 h-4 text-violet-400 shrink-0" />
+        <p className="text-xs text-foreground">AI auto-detects dates in messages. Click "Create Reminder" in any chat.</p>
+      </div>
+
       {/* Quick Add Buttons */}
-      <div className="flex gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button
           onClick={() => { setReminderType("call"); setShowNewReminder(true); }}
-          className="flex-1 flex items-center justify-center gap-2 p-3 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
+          className="flex flex-col items-center gap-2 p-4 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
         >
-          <Phone className="w-4 h-4 text-blue-500" />
+          <Phone className="w-5 h-5 text-blue-400" />
           <span className="text-sm text-foreground">Call</span>
         </button>
         <button
           onClick={() => { setReminderType("message"); setShowNewReminder(true); }}
-          className="flex-1 flex items-center justify-center gap-2 p-3 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
+          className="flex flex-col items-center gap-2 p-4 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
         >
-          <MessageSquare className="w-4 h-4 text-emerald-500" />
+          <MessageSquare className="w-5 h-5 text-emerald-400" />
           <span className="text-sm text-foreground">Message</span>
         </button>
         <button
           onClick={() => { setReminderType("personal"); setShowNewReminder(true); }}
-          className="flex-1 flex items-center justify-center gap-2 p-3 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
+          className="flex flex-col items-center gap-2 p-4 bg-card/30 border border-border/50 rounded-xl hover:bg-secondary/30 transition-colors"
         >
-          <Clock className="w-4 h-4 text-amber-500" />
+          <Clock className="w-5 h-5 text-amber-400" />
           <span className="text-sm text-foreground">Reminder</span>
         </button>
       </div>
 
       {/* New Reminder Form */}
       {showNewReminder && (
-        <div className="bg-card/50 border border-border/50 rounded-xl p-4 space-y-3">
+        <div className="bg-card/50 border border-border/50 rounded-xl p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               {(["personal", "call", "message"] as ReminderType[]).map((type) => (
                 <button
                   key={type}
                   onClick={() => setReminderType(type)}
-                  className={`px-3 py-1 rounded-lg text-xs transition-colors ${
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs transition-colors capitalize",
                     reminderType === type ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
-                  }`}
+                  )}
                 >
-                  {type === "personal" ? "Reminder" : type === "call" ? "Call" : "Message"}
+                  {type === "personal" ? "Reminder" : type}
                 </button>
               ))}
             </div>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowNewReminder(false)}>
+            <button onClick={() => setShowNewReminder(false)} className="p-1 hover:bg-secondary/50 rounded">
               <X className="w-4 h-4" />
-            </Button>
+            </button>
           </div>
 
           {(reminderType === "call" || reminderType === "message") && (
@@ -113,7 +122,7 @@ const RemindersTab = () => {
               <label className="text-xs text-muted-foreground">Contact</label>
               <button
                 onClick={() => setShowContactDropdown(!showContactDropdown)}
-                className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm text-left flex items-center justify-between"
+                className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm text-left flex items-center justify-between"
               >
                 <span className={selectedContactName ? "text-foreground" : "text-muted-foreground"}>
                   {selectedContactName || "Select contact"}
@@ -141,7 +150,7 @@ const RemindersTab = () => {
 
           <div>
             <label className="text-xs text-muted-foreground">
-              {reminderType === "personal" ? "What do you need to remember?" : reminderType === "call" ? "Call about..." : "Message to send"}
+              {reminderType === "personal" ? "What to remember" : reminderType === "call" ? "Call about" : "Message to send"}
             </label>
             <input
               type="text"
@@ -152,7 +161,7 @@ const RemindersTab = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Date</label>
               <input
@@ -174,12 +183,8 @@ const RemindersTab = () => {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setShowNewReminder(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" className="rounded-lg" onClick={saveReminder}>
-              Create
-            </Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowNewReminder(false)}>Cancel</Button>
+            <Button className="flex-1" onClick={saveReminder}>Create</Button>
           </div>
         </div>
       )}
@@ -192,12 +197,13 @@ const RemindersTab = () => {
         ) : (
           upcomingReminders.map((reminder) => (
             <div key={reminder.id} className="flex items-center gap-3 p-3 bg-card/30 border border-border/50 rounded-xl">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              <div className={cn(
+                "w-9 h-9 rounded-lg flex items-center justify-center",
                 reminder.type === "call" ? "bg-blue-500/15" : reminder.type === "message" ? "bg-emerald-500/15" : "bg-amber-500/15"
-              }`}>
-                {reminder.type === "call" && <Phone className="w-4 h-4 text-blue-500" />}
-                {reminder.type === "message" && <MessageSquare className="w-4 h-4 text-emerald-500" />}
-                {reminder.type === "personal" && <Clock className="w-4 h-4 text-amber-500" />}
+              )}>
+                {reminder.type === "call" && <Phone className="w-4 h-4 text-blue-400" />}
+                {reminder.type === "message" && <MessageSquare className="w-4 h-4 text-emerald-400" />}
+                {reminder.type === "personal" && <Clock className="w-4 h-4 text-amber-400" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-foreground truncate">{reminder.title}</p>
@@ -207,7 +213,7 @@ const RemindersTab = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8"
                   onClick={() => {
                     setReminders(reminders.map(r => r.id === reminder.id ? { ...r, isCompleted: true } : r));
                     toast.success("Done");
@@ -218,7 +224,7 @@ const RemindersTab = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8"
                   onClick={() => setReminders(reminders.filter(r => r.id !== reminder.id))}
                 >
                   <X className="w-4 h-4" />
@@ -243,7 +249,7 @@ const RemindersTab = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 shrink-0"
+                className="h-7 w-7 shrink-0"
                 onClick={() => setReminders(reminders.filter(r => r.id !== reminder.id))}
               >
                 <X className="w-3 h-3" />

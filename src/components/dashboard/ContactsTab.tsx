@@ -6,10 +6,7 @@ import {
   MessageSquare,
   Star,
   MoreVertical,
-  ArrowLeft,
   Trash2,
-  Ban,
-  Share2,
   Calendar,
   X,
   Camera,
@@ -17,10 +14,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { mockContacts } from "./mockData";
 import { Contact } from "./types";
 
-type Sort = "az" | "recent" | "favorites" | "groups";
+type Sort = "az" | "favorites";
 
 const availableTags = ["Family", "Work", "Friend", "VIP", "Business", "School", "Gym", "Medical"];
 
@@ -29,10 +27,11 @@ const ContactsTab = () => {
   const [sort, setSort] = useState<Sort>("az");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [isNewContact, setIsNewContact] = useState(false);
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showTagFilter, setShowTagFilter] = useState(false);
+  
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
@@ -41,7 +40,6 @@ const ContactsTab = () => {
     notes: "",
     isFavorite: false,
     tags: [] as string[],
-    photo: "",
   });
 
   const allTags = [...new Set(contacts.flatMap(c => c.tags))];
@@ -76,34 +74,34 @@ const ContactsTab = () => {
     return groups;
   };
 
-  const openEditModal = (contact: Contact) => {
-    const [firstName, ...lastNameParts] = contact.name.split(" ");
-    setEditForm({
-      firstName,
-      lastName: lastNameParts.join(" "),
-      phone: contact.phone,
-      email: contact.email || "",
-      notes: contact.notes || "",
-      isFavorite: contact.isFavorite,
-      tags: contact.tags,
-      photo: "",
-    });
-    setSelectedContact(contact);
-    setShowEditModal(true);
-  };
-
-  const openAddModal = () => {
-    setEditForm({
-      firstName: "",
-      lastName: "",
-      phone: "",
-      email: "",
-      notes: "",
-      isFavorite: false,
-      tags: [],
-      photo: "",
-    });
-    setShowAddModal(true);
+  const openModal = (contact?: Contact) => {
+    if (contact) {
+      const [firstName, ...lastNameParts] = contact.name.split(" ");
+      setEditForm({
+        firstName,
+        lastName: lastNameParts.join(" "),
+        phone: contact.phone,
+        email: contact.email || "",
+        notes: contact.notes || "",
+        isFavorite: contact.isFavorite,
+        tags: contact.tags,
+      });
+      setSelectedContact(contact);
+      setIsNewContact(false);
+    } else {
+      setEditForm({
+        firstName: "",
+        lastName: "",
+        phone: "",
+        email: "",
+        notes: "",
+        isFavorite: false,
+        tags: [],
+      });
+      setSelectedContact(null);
+      setIsNewContact(true);
+    }
+    setShowModal(true);
   };
 
   const saveContact = () => {
@@ -141,60 +139,32 @@ const ContactsTab = () => {
       toast.success("Contact added");
     }
 
-    setShowEditModal(false);
-    setShowAddModal(false);
+    setShowModal(false);
     setSelectedContact(null);
   };
 
-  const deleteContact = (contact: Contact) => {
-    setContacts(contacts.filter((c) => c.id !== contact.id));
+  const deleteContact = () => {
+    if (!selectedContact) return;
+    setContacts(contacts.filter((c) => c.id !== selectedContact.id));
     toast.success("Contact deleted");
-    setShowEditModal(false);
+    setShowModal(false);
     setSelectedContact(null);
   };
 
   const toggleTag = (tag: string) => {
-    if (editForm.tags.includes(tag)) {
-      setEditForm({ ...editForm, tags: editForm.tags.filter((t) => t !== tag) });
-    } else {
-      setEditForm({ ...editForm, tags: [...editForm.tags, tag] });
-    }
+    setEditForm(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
+    }));
   };
 
-  const ContactCard = ({ contact }: { contact: Contact }) => (
-    <div className="flex items-center gap-3 p-3 hover:bg-secondary/30 rounded-xl transition-colors cursor-pointer">
-      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
-        <span className="text-foreground font-medium">{contact.name.charAt(0)}</span>
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-foreground truncate text-sm">{contact.name}</p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <p className="text-xs text-muted-foreground truncate">{contact.phone}</p>
-          {contact.tags.slice(0, 2).map((tag) => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-[9px] bg-secondary/50 text-muted-foreground">
-              {tag}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div className="flex gap-1 shrink-0">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); toast.success(`Calling ${contact.name}...`); }}>
-          <Phone className="w-4 h-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); openEditModal(contact); }}>
-          <MoreVertical className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-2xl">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-medium text-foreground">Contacts</h2>
-        <Button size="sm" className="gap-1.5 rounded-lg" onClick={openAddModal}>
-          <Plus className="w-4 h-4" />
+        <Button size="sm" className="gap-1.5" onClick={() => openModal()}>
+          <Plus className="w-4 h-4" /> Add
         </Button>
       </div>
 
@@ -206,19 +176,20 @@ const ContactsTab = () => {
           placeholder="Search contacts..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-border"
+          className="w-full pl-10 pr-4 py-2.5 bg-secondary/30 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-border"
         />
       </div>
 
       {/* Sort & Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex gap-2">
         {(["az", "favorites"] as Sort[]).map((s) => (
           <button
             key={s}
             onClick={() => setSort(s)}
-            className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors shrink-0 ${
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm transition-colors",
               sort === s ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground hover:text-foreground"
-            }`}
+            )}
           >
             {s === "az" ? "A-Z" : "Favorites"}
           </button>
@@ -226,9 +197,10 @@ const ContactsTab = () => {
         <div className="relative">
           <button
             onClick={() => setShowTagFilter(!showTagFilter)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors shrink-0 ${
+            className={cn(
+              "flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm transition-colors",
               filterTag ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
-            }`}
+            )}
           >
             <Tag className="w-3 h-3" />
             {filterTag || "Filter"}
@@ -239,7 +211,7 @@ const ContactsTab = () => {
               <div className="absolute left-0 top-full mt-1 w-32 bg-card border border-border rounded-xl shadow-xl z-50 py-1">
                 <button
                   onClick={() => { setFilterTag(null); setShowTagFilter(false); }}
-                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 ${!filterTag ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                  className={cn("w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50", !filterTag && "text-foreground font-medium")}
                 >
                   All
                 </button>
@@ -247,7 +219,7 @@ const ContactsTab = () => {
                   <button
                     key={tag}
                     onClick={() => { setFilterTag(tag); setShowTagFilter(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 ${filterTag === tag ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                    className={cn("w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50", filterTag === tag && "text-foreground font-medium")}
                   >
                     {tag}
                   </button>
@@ -267,7 +239,20 @@ const ContactsTab = () => {
               <span className="text-xs font-medium uppercase tracking-wider">Favorites</span>
             </div>
             {favorites.map((contact) => (
-              <ContactCard key={contact.id} contact={contact} />
+              <button
+                key={contact.id}
+                onClick={() => openModal(contact)}
+                className="w-full flex items-center gap-3 p-3 hover:bg-secondary/30 transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                  <span className="text-foreground font-medium">{contact.name.charAt(0)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground text-sm truncate">{contact.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{contact.phone}</p>
+                </div>
+                <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+              </button>
             ))}
           </div>
         )}
@@ -278,7 +263,27 @@ const ContactsTab = () => {
               <span className="text-xs font-medium text-muted-foreground">{letter}</span>
             </div>
             {contactList.map((contact) => (
-              <ContactCard key={contact.id} contact={contact} />
+              <button
+                key={contact.id}
+                onClick={() => openModal(contact)}
+                className="w-full flex items-center gap-3 p-3 hover:bg-secondary/30 transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                  <span className="text-foreground font-medium">{contact.name.charAt(0)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground text-sm truncate">{contact.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-xs text-muted-foreground truncate">{contact.phone}</p>
+                    {contact.tags.slice(0, 2).map((tag) => (
+                      <span key={tag} className="px-1.5 py-0.5 rounded text-[9px] bg-secondary/50 text-muted-foreground">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+              </button>
             ))}
           </div>
         ))}
@@ -288,42 +293,39 @@ const ContactsTab = () => {
         )}
       </div>
 
-      {/* Edit Contact Modal */}
-      {showEditModal && selectedContact && (
+      {/* Contact Modal */}
+      {showModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-xl w-full max-w-sm max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-3 border-b border-border/50 shrink-0">
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowEditModal(false)}>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <span className="font-medium text-foreground text-sm">Edit Contact</span>
-              </div>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={saveContact}>Save</Button>
+          <div className="bg-card border border-border rounded-xl w-full max-w-sm max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border/50 shrink-0">
+              <span className="font-medium text-foreground">{isNewContact ? "Add Contact" : "Edit Contact"}</span>
+              <button onClick={() => setShowModal(false)} className="p-1 hover:bg-secondary/50 rounded">
+                <X className="w-4 h-4" />
+              </button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* Photo */}
               <div className="flex flex-col items-center">
                 <div className="relative">
-                  <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
                     <span className="text-xl text-foreground">{editForm.firstName.charAt(0) || "?"}</span>
                   </div>
-                  <button className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-foreground text-background flex items-center justify-center">
-                    <Camera className="w-3 h-3" />
+                  <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-foreground text-background flex items-center justify-center">
+                    <Camera className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
               {/* Form */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-muted-foreground">First Name</label>
+                  <label className="text-xs text-muted-foreground">First Name *</label>
                   <input
                     type="text"
                     value={editForm.firstName}
                     onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
-                    className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                    className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
                   />
                 </div>
                 <div>
@@ -332,18 +334,19 @@ const ContactsTab = () => {
                     type="text"
                     value={editForm.lastName}
                     onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
-                    className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                    className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs text-muted-foreground">Phone</label>
+                <label className="text-xs text-muted-foreground">Phone *</label>
                 <input
                   type="tel"
                   value={editForm.phone}
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  placeholder="+1 (555) 123-4567"
+                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
                 />
               </div>
 
@@ -353,20 +356,21 @@ const ContactsTab = () => {
                   type="email"
                   value={editForm.email}
                   onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                  className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">Tags</label>
+                <label className="text-xs text-muted-foreground mb-2 block">Tags</label>
                 <div className="flex flex-wrap gap-1.5">
                   {availableTags.map((tag) => (
                     <button
                       key={tag}
                       onClick={() => toggleTag(tag)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        editForm.tags.includes(tag) ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
-                      }`}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-xs transition-colors",
+                        editForm.tags.includes(tag) ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                      )}
                     >
                       {tag}
                     </button>
@@ -380,120 +384,48 @@ const ContactsTab = () => {
                   value={editForm.notes}
                   onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
                   placeholder="Add notes..."
-                  className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground resize-none h-12 focus:outline-none"
+                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground resize-none h-16 focus:outline-none"
                 />
               </div>
 
               <label className="flex items-center gap-2 cursor-pointer">
+                <Star className={cn("w-5 h-5", editForm.isFavorite ? "text-amber-500 fill-amber-500" : "text-muted-foreground")} />
+                <span className="text-sm text-foreground">Mark as favorite</span>
                 <input
                   type="checkbox"
                   checked={editForm.isFavorite}
                   onChange={(e) => setEditForm({ ...editForm, isFavorite: e.target.checked })}
-                  className="accent-foreground"
+                  className="sr-only"
                 />
-                <Star className="w-4 h-4 text-amber-500" />
-                <span className="text-sm text-foreground">Favorite</span>
               </label>
 
               {/* Quick Actions */}
-              <div className="grid grid-cols-3 gap-2">
-                <Button variant="outline" size="sm" className="gap-1 text-xs rounded-lg" onClick={() => toast.success("Calling...")}>
-                  <Phone className="w-3 h-3" /> Call
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1 text-xs rounded-lg" onClick={() => toast.info("Opening chat...")}>
-                  <MessageSquare className="w-3 h-3" /> Text
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1 text-xs rounded-lg" onClick={() => toast.info("Schedule...")}>
-                  <Calendar className="w-3 h-3" /> Schedule
-                </Button>
-              </div>
-
-              <Button variant="destructive" size="sm" className="w-full gap-1 text-xs" onClick={() => deleteContact(selectedContact)}>
-                <Trash2 className="w-3 h-3" /> Delete
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Contact Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-xl w-full max-w-sm max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-3 border-b border-border/50 shrink-0">
-              <span className="font-medium text-foreground text-sm">Add Contact</span>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowAddModal(false)}>
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs text-muted-foreground">First Name *</label>
-                  <input
-                    type="text"
-                    value={editForm.firstName}
-                    onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
-                    className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                  />
+              {!isNewContact && (
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/30">
+                  <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => toast.success("Calling...")}>
+                    <Phone className="w-3 h-3" /> Call
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => toast.info("Opening chat...")}>
+                    <MessageSquare className="w-3 h-3" /> Text
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => toast.info("Schedule...")}>
+                    <Calendar className="w-3 h-3" /> Schedule
+                  </Button>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Last Name</label>
-                  <input
-                    type="text"
-                    value={editForm.lastName}
-                    onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
-                    className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Phone *</label>
-                <input
-                  type="tel"
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                  className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Email</label>
-                <input
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                  className="w-full mt-1 px-2.5 py-1.5 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground mb-1.5 block">Tags</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {availableTags.slice(0, 6).map((tag) => (
-                    <button
-                      key={tag}
-                      onClick={() => toggleTag(tag)}
-                      className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                        editForm.tags.includes(tag) ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
 
-            <div className="shrink-0 p-3 border-t border-border/50 flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1 rounded-lg" onClick={() => setShowAddModal(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" className="flex-1 rounded-lg" onClick={saveContact}>
-                Add
-              </Button>
+            {/* Footer */}
+            <div className="p-4 border-t border-border/50 space-y-2 shrink-0">
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowModal(false)}>Cancel</Button>
+                <Button className="flex-1" onClick={saveContact}>Save</Button>
+              </div>
+              {!isNewContact && (
+                <Button variant="destructive" size="sm" className="w-full gap-1" onClick={deleteContact}>
+                  <Trash2 className="w-3 h-3" /> Delete Contact
+                </Button>
+              )}
             </div>
           </div>
         </div>
