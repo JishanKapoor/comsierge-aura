@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -16,28 +16,25 @@ import {
   Trash2,
   Send,
   Paperclip,
-  MessageSquare,
   X,
   Languages,
   PenLine,
   Ban,
   ChevronDown,
-  Tag,
+  Sparkles,
+  Globe,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { mockMessages, mockChatHistory, mockContacts } from "./mockData";
-import { Message, ChatMessage } from "./types";
+import { mockMessages, mockChatHistory, mockContacts, languages } from "./mockData";
+import { Message, ChatMessage, AIMessage } from "./types";
 
 type Filter = "all" | "unread" | "priority" | "blocked";
 type PriorityLabel = "all" | "urgent" | "high" | "meeting" | "deadline" | "follow-up";
 type TransferCriteria = "all" | "priority" | "sentiment" | "label";
 
-interface MessagesTabProps {
-  onOpenAI: (context?: string) => void;
-}
-
-const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
+const MessagesTab = () => {
   const [messages] = useState<Message[]>(mockMessages);
   const [filter, setFilter] = useState<Filter>("all");
   const [priorityLabel, setPriorityLabel] = useState<PriorityLabel>("all");
@@ -49,6 +46,16 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [receiveLanguage, setReceiveLanguage] = useState("en");
+  const [sendLanguage, setSendLanguage] = useState("en");
+  
+  // AI Assistant State
+  const [showAIBubble, setShowAIBubble] = useState(false);
+  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [aiInput, setAiInput] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const aiMessagesEndRef = useRef<HTMLDivElement>(null);
   
   // Transfer state
   const [transferCriteria, setTransferCriteria] = useState<TransferCriteria>("all");
@@ -67,6 +74,17 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
 
   const transferLabels = ["Urgent", "High", "Meeting", "Deadline", "Follow-up", "Important", "Personal", "Work"];
 
+  const aiSuggestions = [
+    "Summarize this chat",
+    "Suggest a reply",
+    "What action items are pending?",
+    "Translate last message",
+  ];
+
+  useEffect(() => {
+    aiMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [aiMessages]);
+
   const filteredMessages = messages.filter((msg) => {
     const matchesSearch =
       msg.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -76,7 +94,6 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
     if (filter === "unread") return matchesSearch && !msg.isRead;
     if (filter === "priority") {
       if (priorityLabel === "all") return matchesSearch && msg.status === "priority";
-      // In real implementation, would filter by specific label
       return matchesSearch && msg.status === "priority";
     }
     if (filter === "blocked") return matchesSearch && msg.status === "blocked";
@@ -111,7 +128,11 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
 
   const openChat = (contactId: string) => {
     setSelectedChat(contactId);
-    setChatMessages(mockChatHistory[contactId] || []);
+    const history = mockChatHistory[contactId] || [];
+    setChatMessages(history);
+    // Reset AI bubble when opening new chat
+    setAiMessages([]);
+    setShowAIBubble(false);
   };
 
   const sendMessage = () => {
@@ -145,12 +166,54 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
     setShowChatMenu(false);
   };
 
+  const handleAISend = (text?: string) => {
+    const messageText = text || aiInput;
+    if (!messageText.trim()) return;
+
+    const userMessage: AIMessage = {
+      id: `user-${Date.now()}`,
+      content: messageText,
+      isUser: true,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    setAiMessages(prev => [...prev, userMessage]);
+    setAiInput("");
+
+    // Simulate AI response
+    setTimeout(() => {
+      let response = "";
+      const contact = selectedContact?.name || "this person";
+      
+      if (messageText.toLowerCase().includes("summarize")) {
+        response = `Summary of chat with ${contact}:\n\nYou've had ${chatMessages.length} messages. The conversation appears to be about scheduling and coordination. Key points include meeting times and confirmations.`;
+      } else if (messageText.toLowerCase().includes("reply") || messageText.toLowerCase().includes("suggest")) {
+        response = `Here are some reply suggestions:\n\n1. "Sounds good, I'll be there!"\n2. "Thanks for letting me know"\n3. "Can we reschedule to a different time?"`;
+      } else if (messageText.toLowerCase().includes("action") || messageText.toLowerCase().includes("pending")) {
+        response = `Action items from this chat:\n\n• Confirm meeting time\n• Send follow-up message\n• Update calendar`;
+      } else if (messageText.toLowerCase().includes("translate")) {
+        response = `The last message translated:\n\n"${chatMessages[chatMessages.length - 1]?.content || 'No messages to translate'}"`;
+      } else {
+        response = `I can help you with:\n• Summarizing this chat\n• Suggesting replies\n• Finding action items\n• Translating messages\n\nWhat would you like to know?`;
+      }
+
+      const aiMessage: AIMessage = {
+        id: `ai-${Date.now()}`,
+        content: response,
+        isUser: false,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+
+      setAiMessages(prev => [...prev, aiMessage]);
+    }, 600);
+  };
+
   const selectedContact = mockContacts.find((c) => c.id === selectedChat);
 
   // Chat View
   if (selectedChat && selectedContact) {
     return (
-      <div className="flex flex-col h-[calc(100vh-180px)]">
+      <div className="flex flex-col h-[calc(100vh-180px)] relative">
         {/* Chat Header */}
         <div className="flex items-center justify-between p-3 mb-4 bg-card/50 border border-border/50 rounded-xl">
           <div className="flex items-center gap-3">
@@ -166,16 +229,11 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => setShowLanguageModal(true)}>
+              <Globe className="w-4 h-4" />
+            </Button>
             <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => toast.info("Calling...")}>
               <Phone className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-lg h-8 w-8"
-              onClick={() => onOpenAI(`Analyze chat with ${selectedContact.name}`)}
-            >
-              <Bot className="w-4 h-4" />
             </Button>
             <div className="relative">
               <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8" onClick={() => setShowChatMenu(!showChatMenu)}>
@@ -184,35 +242,32 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
               {showChatMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowChatMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-52 bg-card border border-border rounded-xl shadow-xl z-50 py-1">
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-border rounded-xl shadow-xl z-50 py-1">
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
                       onClick={() => {
                         setShowTranslation(!showTranslation);
                         setShowChatMenu(false);
-                        toast.info(showTranslation ? "Translation off" : "Translation enabled");
+                        toast.info(showTranslation ? "Translation off" : "Translation on");
                       }}
                     >
-                      <Languages className="w-4 h-4" /> Translate Messages
+                      <Languages className="w-4 h-4" /> Translate
                     </button>
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
-                      onClick={() => {
-                        setShowChatMenu(false);
-                        setShowTransferModal(true);
-                      }}
+                      onClick={() => { setShowChatMenu(false); setShowTransferModal(true); }}
                     >
-                      <Forward className="w-4 h-4" /> Transfer Chat
+                      <Forward className="w-4 h-4" /> Transfer
                     </button>
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
-                      onClick={() => toast.success("Conversation pinned")}
+                      onClick={() => toast.success("Pinned")}
                     >
-                      <Pin className="w-4 h-4" /> Pin Conversation
+                      <Pin className="w-4 h-4" /> Pin
                     </button>
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary/50"
-                      onClick={() => toast.success("Notifications muted")}
+                      onClick={() => toast.success("Muted")}
                     >
                       <BellOff className="w-4 h-4" /> Mute
                     </button>
@@ -221,16 +276,13 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
                       onClick={handleBlockNumber}
                     >
-                      <Ban className="w-4 h-4" /> Block Number
+                      <Ban className="w-4 h-4" /> Block
                     </button>
                     <button
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
-                      onClick={() => {
-                        toast.success("Chat deleted");
-                        setSelectedChat(null);
-                      }}
+                      onClick={() => { toast.success("Deleted"); setSelectedChat(null); }}
                     >
-                      <Trash2 className="w-4 h-4" /> Delete Chat
+                      <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   </div>
                 </>
@@ -260,8 +312,30 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
           ))}
         </div>
 
+        {/* AI Suggestions Bar */}
+        {showSuggestions && (
+          <div className="py-2 flex items-center gap-2 overflow-x-auto">
+            <button
+              onClick={() => setShowSuggestions(false)}
+              className="shrink-0 p-1 rounded hover:bg-secondary/50"
+            >
+              <X className="w-3 h-3 text-muted-foreground" />
+            </button>
+            <Lightbulb className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            {aiSuggestions.slice(0, 3).map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => { setShowAIBubble(true); handleAISend(suggestion); }}
+                className="shrink-0 px-2.5 py-1 text-xs bg-secondary/50 hover:bg-secondary text-foreground rounded-full transition-colors border border-border/30"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Message Input */}
-        <div className="flex items-center gap-2 p-3 mt-4 bg-card/50 border border-border/50 rounded-xl">
+        <div className="flex items-center gap-2 p-3 mt-2 bg-card/50 border border-border/50 rounded-xl">
           <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8 shrink-0">
             <Paperclip className="w-4 h-4" />
           </Button>
@@ -273,12 +347,7 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
             placeholder="Type message..."
             className="flex-1 px-3 py-2 bg-transparent text-foreground placeholder:text-muted-foreground text-sm focus:outline-none min-w-0"
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-lg h-8 w-8 shrink-0"
-            onClick={() => toast.info("Rewrite with AI")}
-          >
+          <Button variant="ghost" size="icon" className="rounded-lg h-8 w-8 shrink-0" onClick={() => toast.info("Rewrite with AI")}>
             <PenLine className="w-4 h-4" />
           </Button>
           <Button size="icon" className="rounded-lg h-8 w-8 shrink-0" onClick={sendMessage}>
@@ -286,63 +355,140 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
           </Button>
         </div>
 
+        {/* AI Bubble Chat - Right Side */}
+        {showAIBubble && (
+          <div className="absolute right-0 top-16 bottom-24 w-72 bg-card border border-border rounded-xl shadow-xl z-30 flex flex-col overflow-hidden">
+            <div className="shrink-0 px-3 py-2 border-b border-border/50 flex items-center justify-between bg-secondary/30">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-foreground" />
+                <span className="text-xs font-medium text-foreground">AI Assistant</span>
+              </div>
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowAIBubble(false)}>
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {aiMessages.length === 0 && (
+                <div className="text-center py-4">
+                  <Bot className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">Ask me about this conversation</p>
+                </div>
+              )}
+              {aiMessages.map((msg) => (
+                <div key={msg.id} className={`flex ${msg.isUser ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[90%] px-2.5 py-1.5 rounded-lg text-xs ${
+                    msg.isUser
+                      ? "bg-foreground text-background"
+                      : "bg-secondary/50 text-foreground"
+                  }`}>
+                    <p className="whitespace-pre-line">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+              <div ref={aiMessagesEndRef} />
+            </div>
+
+            <div className="shrink-0 p-2 border-t border-border/50">
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAISend()}
+                  placeholder="Ask AI..."
+                  className="flex-1 px-2 py-1.5 bg-secondary/50 rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+                />
+                <Button size="icon" className="h-7 w-7 rounded-lg shrink-0" onClick={() => handleAISend()}>
+                  <Send className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI Bubble Toggle Button */}
+        {!showAIBubble && (
+          <button
+            onClick={() => setShowAIBubble(true)}
+            className="absolute right-2 bottom-20 w-10 h-10 rounded-full bg-foreground text-background flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+          >
+            <Bot className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Language Modal */}
+        {showLanguageModal && (
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border rounded-xl w-full max-w-xs p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium text-foreground text-sm">Language Settings</h3>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowLanguageModal(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Receive messages in</label>
+                <select
+                  value={receiveLanguage}
+                  onChange={(e) => setReceiveLanguage(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                >
+                  {languages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>{lang.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Send messages in</label>
+                <select
+                  value={sendLanguage}
+                  onChange={(e) => setSendLanguage(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                >
+                  {languages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>{lang.name}</option>
+                  ))}
+                </select>
+              </div>
+              <Button size="sm" className="w-full rounded-lg" onClick={() => { setShowLanguageModal(false); toast.success("Language settings saved"); }}>
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Transfer Modal */}
         {showTransferModal && (
-          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-            <div className="bg-card border border-border rounded-t-2xl sm:rounded-xl w-full sm:max-w-sm max-h-[70vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
-              <div className="shrink-0 bg-card border-b border-border/50 px-4 py-3 flex items-center justify-between">
+          <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border rounded-xl w-full max-w-xs max-h-[60vh] overflow-hidden flex flex-col">
+              <div className="shrink-0 px-4 py-3 flex items-center justify-between border-b border-border/50">
                 <h3 className="font-medium text-foreground text-sm">Transfer Chat</h3>
-                <Button variant="ghost" size="icon" className="rounded-lg h-7 w-7" onClick={() => setShowTransferModal(false)}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowTransferModal(false)}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
               
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">Transfer messages:</p>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <p className="text-xs text-muted-foreground mb-1.5">Transfer:</p>
+                  <div className="grid grid-cols-2 gap-1">
                     {(["all", "priority", "sentiment", "label"] as TransferCriteria[]).map((opt) => (
                       <button
                         key={opt}
                         onClick={() => setTransferCriteria(opt)}
-                        className={`px-2 py-2 rounded-lg text-xs transition-colors ${
-                          transferCriteria === opt
-                            ? "bg-foreground text-background"
-                            : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                        className={`px-2 py-1.5 rounded-lg text-xs ${
+                          transferCriteria === opt ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
                         }`}
                       >
-                        {opt === "all" && "All"}
-                        {opt === "priority" && "Priority"}
-                        {opt === "sentiment" && "Sentiment"}
-                        {opt === "label" && "By Label"}
+                        {opt.charAt(0).toUpperCase() + opt.slice(1)}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {transferCriteria === "label" && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1.5">Select label:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {transferLabels.slice(0, 5).map((label) => (
-                        <button
-                          key={label}
-                          onClick={() => setTransferLabel(label)}
-                          className={`px-2 py-1 rounded-full text-xs transition-colors ${
-                            transferLabel === label
-                              ? "bg-foreground text-background"
-                              : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">Phone number:</p>
+                  <p className="text-xs text-muted-foreground mb-1">Phone number:</p>
                   <input
                     type="tel"
                     value={customNumber}
@@ -351,40 +497,14 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
                     className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
                   />
                 </div>
-
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1.5">Or select contacts:</p>
-                  <div className="max-h-24 overflow-y-auto space-y-0.5 bg-secondary/30 rounded-lg p-1.5">
-                    {mockContacts
-                      .filter((c) => c.id !== selectedChat)
-                      .slice(0, 4)
-                      .map((contact) => (
-                        <label key={contact.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-secondary/50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={transferTo.includes(contact.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setTransferTo([...transferTo, contact.id]);
-                              } else {
-                                setTransferTo(transferTo.filter((id) => id !== contact.id));
-                              }
-                            }}
-                            className="accent-foreground rounded shrink-0"
-                          />
-                          <span className="text-xs text-foreground truncate">{contact.name}</span>
-                        </label>
-                      ))}
-                  </div>
-                </div>
               </div>
 
-              <div className="shrink-0 px-3 py-2.5 border-t border-border/50 bg-card flex gap-2">
+              <div className="shrink-0 px-3 py-2 border-t border-border/50 flex gap-2">
                 <Button variant="outline" size="sm" className="flex-1 rounded-lg h-8" onClick={() => setShowTransferModal(false)}>
                   Cancel
                 </Button>
                 <Button size="sm" className="flex-1 rounded-lg h-8" onClick={handleTransferChat}>
-                  Create Rule
+                  Transfer
                 </Button>
               </div>
             </div>
@@ -396,13 +516,18 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
 
   // Messages List View
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium text-foreground">Messages</h2>
-        <Button size="sm" className="gap-1.5 rounded-lg">
-          <Plus className="w-4 h-4" /> New
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setShowLanguageModal(true)}>
+            <Globe className="w-4 h-4" />
+          </Button>
+          <Button size="sm" className="gap-1.5 rounded-lg">
+            <Plus className="w-4 h-4" /> New
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -418,110 +543,130 @@ const MessagesTab = ({ onOpenAI }: MessagesTabProps) => {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {(["all", "unread", "priority", "blocked"] as Filter[]).map((f) => (
-          <div key={f} className="relative">
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors shrink-0 ${
+              filter === f ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+        {filter === "priority" && (
+          <div className="relative">
             <button
-              onClick={() => {
-                setFilter(f);
-                if (f !== "priority") setShowPriorityDropdown(false);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-sm capitalize transition-colors inline-flex items-center gap-1 ${
-                filter === f
-                  ? "bg-foreground text-background"
-                  : "bg-secondary/50 text-muted-foreground hover:text-foreground"
-              }`}
+              onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-secondary/50 text-muted-foreground"
             >
-              {f}
-              {f === "priority" && filter === "priority" && (
-                <ChevronDown
-                  className={`w-3 h-3 transition-transform ${showPriorityDropdown ? "rotate-180" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowPriorityDropdown(!showPriorityDropdown);
-                  }}
-                />
-              )}
+              {priorityLabels.find((p) => p.id === priorityLabel)?.label}
+              <ChevronDown className="w-3 h-3" />
             </button>
-            
-            {/* Priority Label Dropdown */}
-            {f === "priority" && filter === "priority" && showPriorityDropdown && (
+            {showPriorityDropdown && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowPriorityDropdown(false)} />
-                <div className="absolute left-0 top-full mt-1 w-36 bg-card border border-border rounded-lg shadow-xl z-50 py-1">
-                  {priorityLabels.map((label) => (
+                <div className="absolute left-0 top-full mt-1 w-36 bg-card border border-border rounded-xl shadow-xl z-50 py-1">
+                  {priorityLabels.map((p) => (
                     <button
-                      key={label.id}
-                      onClick={() => {
-                        setPriorityLabel(label.id);
-                        setShowPriorityDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
-                        priorityLabel === label.id
-                          ? "bg-secondary text-foreground"
-                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                      key={p.id}
+                      onClick={() => { setPriorityLabel(p.id); setShowPriorityDropdown(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/50 ${
+                        priorityLabel === p.id ? "text-foreground font-medium" : "text-muted-foreground"
                       }`}
                     >
-                      {label.label}
+                      {p.label}
                     </button>
                   ))}
                 </div>
               </>
             )}
           </div>
-        ))}
-        
-        {/* Show selected priority label badge */}
-        {filter === "priority" && priorityLabel !== "all" && (
-          <span className="px-2 py-1 rounded-full text-xs bg-accent/20 text-accent-foreground flex items-center gap-1">
-            <Tag className="w-3 h-3" />
-            {priorityLabels.find(l => l.id === priorityLabel)?.label}
-            <button onClick={() => setPriorityLabel("all")} className="ml-1 hover:text-foreground">
-              <X className="w-3 h-3" />
-            </button>
-          </span>
         )}
       </div>
 
       {/* Messages List */}
-      <div className="bg-card/30 border border-border/50 rounded-xl overflow-hidden">
-        {filteredMessages.length === 0 ? (
-          <div className="p-10 text-center text-muted-foreground">
-            <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No messages found</p>
-          </div>
-        ) : (
-          filteredMessages.map((msg) => (
-            <div
-              key={msg.id}
-              onClick={() => openChat(msg.contactId)}
-              className={`flex items-center gap-3 p-4 border-b border-border/30 last:border-b-0 hover:bg-secondary/20 transition-colors cursor-pointer ${
-                !msg.isRead ? "bg-secondary/10" : ""
-              }`}
-            >
-              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium shrink-0">
-                {msg.contactName.charAt(0)}
+      <div className="space-y-2">
+        {filteredMessages.map((msg) => (
+          <button
+            key={msg.id}
+            onClick={() => openChat(msg.contactId)}
+            className="w-full flex items-start gap-3 p-3 rounded-xl bg-card/30 border border-border/50 hover:bg-secondary/20 transition-colors text-left"
+          >
+            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium shrink-0">
+              {msg.contactName.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-foreground text-sm truncate">{msg.contactName}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{msg.timestamp}</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-sm truncate ${!msg.isRead ? "font-medium text-foreground" : "text-muted-foreground"}`}>
-                    {msg.contactName}
-                  </span>
-                  {!msg.isRead && <span className="w-1.5 h-1.5 rounded-full bg-foreground shrink-0" />}
-                </div>
-                <p className="text-xs text-muted-foreground truncate">{msg.content}</p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-muted-foreground mb-1">{msg.timestamp}</p>
-                <div className="flex items-center gap-1 justify-end text-muted-foreground">
+              <p className="text-sm text-muted-foreground truncate mt-0.5">{msg.content}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] ${
+                    msg.status === "priority"
+                      ? "bg-amber-500/15 text-amber-500"
+                      : msg.status === "blocked"
+                      ? "bg-destructive/15 text-destructive"
+                      : "bg-secondary/50 text-muted-foreground"
+                  }`}
+                >
                   {getStatusIcon(msg.status)}
-                  <span className="text-[10px] hidden sm:inline">{getStatusLabel(msg.status)}</span>
-                </div>
+                  {getStatusLabel(msg.status)}
+                </span>
+                {msg.rule && <span className="text-[10px] text-muted-foreground">{msg.rule}</span>}
               </div>
             </div>
-          ))
+            {!msg.isRead && <span className="w-2 h-2 rounded-full bg-foreground shrink-0 mt-2" />}
+          </button>
+        ))}
+        {filteredMessages.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground text-sm">No messages found</div>
         )}
       </div>
+
+      {/* Language Modal for List View */}
+      {showLanguageModal && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-xs p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-foreground text-sm">Language Settings</h3>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowLanguageModal(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Receive messages in</label>
+              <select
+                value={receiveLanguage}
+                onChange={(e) => setReceiveLanguage(e.target.value)}
+                className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+              >
+                {languages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>{lang.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Send messages in</label>
+              <select
+                value={sendLanguage}
+                onChange={(e) => setSendLanguage(e.target.value)}
+                className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+              >
+                {languages.map((lang) => (
+                  <option key={lang.code} value={lang.code}>{lang.name}</option>
+                ))}
+              </select>
+            </div>
+            <Button size="sm" className="w-full rounded-lg" onClick={() => { setShowLanguageModal(false); toast.success("Language settings saved"); }}>
+              Save
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

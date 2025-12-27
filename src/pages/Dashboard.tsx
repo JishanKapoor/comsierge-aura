@@ -18,19 +18,18 @@ import { toast } from "sonner";
 import MessagesTab from "@/components/dashboard/MessagesTab";
 import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
-import AITab from "@/components/dashboard/AITab";
+
 import SettingsTab from "@/components/dashboard/SettingsTab";
 import RemindersTab from "@/components/dashboard/RemindersTab";
 import SupportTab from "@/components/dashboard/SupportTab";
 import Logo from "@/components/Logo";
 
-type Tab = "messages" | "calls" | "contacts" | "ai" | "settings" | "reminders" | "support";
+type Tab = "messages" | "calls" | "contacts" | "settings" | "reminders" | "support";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("messages");
-  const [aiContext, setAiContext] = useState<string | undefined>();
   const [copied, setCopied] = useState(false);
 
   const phoneNumber = "+1 (437) 239-2448";
@@ -38,11 +37,6 @@ const Dashboard = () => {
   const handleLogout = () => {
     logout();
     navigate("/");
-  };
-
-  const openAI = (context?: string) => {
-    setAiContext(context);
-    setActiveTab("ai");
   };
 
   const copyPhoneNumber = () => {
@@ -57,7 +51,6 @@ const Dashboard = () => {
     { id: "calls" as Tab, icon: Phone, label: "Calls" },
     { id: "contacts" as Tab, icon: Users, label: "Contacts" },
     { id: "reminders" as Tab, icon: Clock, label: "Reminders" },
-    { id: "ai" as Tab, icon: Bot, label: "AI" },
     { id: "support" as Tab, icon: Headphones, label: "Support" },
     { id: "settings" as Tab, icon: Settings, label: "Settings" },
   ];
@@ -65,13 +58,11 @@ const Dashboard = () => {
   const renderContent = () => {
     switch (activeTab) {
       case "messages":
-        return <MessagesTab onOpenAI={openAI} />;
+        return <MessagesTab />;
       case "calls":
         return <CallsTab />;
       case "contacts":
         return <ContactsTab />;
-      case "ai":
-        return <AITab initialContext={aiContext} />;
       case "settings":
         return <SettingsTab />;
       case "reminders":
@@ -150,10 +141,7 @@ const Dashboard = () => {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => {
-                setActiveTab(item.id);
-                if (item.id !== "ai") setAiContext(undefined);
-              }}
+              onClick={() => setActiveTab(item.id)}
               className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
                 activeTab === item.id
                   ? "text-foreground"
