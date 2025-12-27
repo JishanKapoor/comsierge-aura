@@ -4,27 +4,22 @@ import {
   Globe,
   Bell,
   Shield,
-  Clock,
-  HelpCircle,
-  ChevronRight,
   Phone,
   Key,
   Smartphone,
   Trash2,
-  Plus,
-  X,
-  Calendar,
-  MessageSquare,
-  Palette,
-  Save,
+  ChevronRight,
   ChevronLeft,
+  Forward,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { languages, mockReminders, mockContacts } from "./mockData";
+import { cn } from "@/lib/utils";
+import { languages } from "./mockData";
 import { useAuth } from "@/contexts/AuthContext";
 
-type SettingsSection = "main" | "profile" | "language" | "notifications" | "privacy" | "appearance";
+type SettingsSection = "main" | "profile" | "language" | "notifications" | "privacy" | "offline";
 
 const SettingsTab = () => {
   const { user } = useAuth();
@@ -34,89 +29,40 @@ const SettingsTab = () => {
   const [name, setName] = useState(user?.name || "Demo User");
   const [phoneNumber] = useState("+1 (437) 239-2448");
   const [email, setEmail] = useState(user?.email || "user@example.com");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   
   // Language settings
   const [receiveLanguage, setReceiveLanguage] = useState("en");
   const [sendLanguage, setSendLanguage] = useState("en");
   const [autoTranslate, setAutoTranslate] = useState(true);
-  const [showOriginal, setShowOriginal] = useState(true);
-  const [previewTranslation, setPreviewTranslation] = useState(true);
   
   // Notification settings
-  const [sendingMode, setSendingMode] = useState<"all" | "high_medium" | "high_only" | "dnd">("all");
-  const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [scheduleFrom, setScheduleFrom] = useState("22:00");
-  const [scheduleTo, setScheduleTo] = useState("07:00");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [previewEnabled, setPreviewEnabled] = useState(true);
   
   // Privacy settings
-  const [priorityContacts, setPriorityContacts] = useState<string[]>(["Mom", "Boss"]);
-  const [priorityKeywords, setPriorityKeywords] = useState<string[]>(["Emergency", "Urgent", "Family", "Bank"]);
-  const [blockedNumbers, setBlockedNumbers] = useState<string[]>(["+1 (437) 239-2448", "+1 (437) 239-2447"]);
-  const [spamKeywords, setSpamKeywords] = useState<string[]>(["car warranty", "free gift", "click here"]);
-  const [newBlockedNumber, setNewBlockedNumber] = useState("");
-  const [newSpamKeyword, setNewSpamKeyword] = useState("");
+  const [spamProtection, setSpamProtection] = useState(true);
   
-  // Reminders
-  const [reminders, setReminders] = useState(mockReminders);
-  const [showNewReminder, setShowNewReminder] = useState(false);
-  const [reminderType, setReminderType] = useState<"personal" | "call" | "message">("personal");
-  const [reminderTitle, setReminderTitle] = useState("");
-  const [reminderDate, setReminderDate] = useState("");
-  const [reminderTime, setReminderTime] = useState("");
-  const [reminderContact, setReminderContact] = useState("");
-
-  const sendingModeOptions = [
-    { value: "all", label: "Send All Messages", color: "bg-foreground/20" },
-    { value: "high_medium", label: "High & Medium Priority Only", color: "bg-foreground/15" },
-    { value: "high_only", label: "High Priority Only", color: "bg-foreground/10" },
-    { value: "dnd", label: "Do Not Disturb", color: "bg-foreground/5" },
-  ];
-
-  const saveReminder = () => {
-    if (!reminderTitle || !reminderDate || !reminderTime) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-    const newReminder = {
-      id: `new-${Date.now()}`,
-      type: reminderType,
-      title: reminderTitle,
-      datetime: `${reminderDate}, ${reminderTime}`,
-      contactId: reminderContact || undefined,
-      contactName: mockContacts.find(c => c.id === reminderContact)?.name,
-      isCompleted: false,
-    };
-    setReminders([...reminders, newReminder]);
-    setShowNewReminder(false);
-    setReminderTitle("");
-    setReminderDate("");
-    setReminderTime("");
-    setReminderContact("");
-    toast.success("Reminder created");
-  };
+  // Offline routing
+  const [offlineForwardEnabled, setOfflineForwardEnabled] = useState(false);
+  const [offlineForwardNumber, setOfflineForwardNumber] = useState("");
+  const [offlineForwardPriority, setOfflineForwardPriority] = useState<"all" | "urgent" | "high">("urgent");
 
   const menuItems = [
-    { id: "profile" as SettingsSection, icon: User, label: "Profile & Account", desc: "Manage your profile, phone number" },
-    { id: "language" as SettingsSection, icon: Globe, label: "Language & Translation", desc: "Set message languages" },
-    { id: "notifications" as SettingsSection, icon: Bell, label: "Notifications & Sending", desc: "Control when messages are sent" },
-    { id: "privacy" as SettingsSection, icon: Shield, label: "Privacy & Blocking", desc: "Spam filters, blocked contacts" },
-    { id: "appearance" as SettingsSection, icon: Palette, label: "Appearance", desc: "Theme, display settings" },
+    { id: "profile" as SettingsSection, icon: User, label: "Profile & Account", desc: "Manage your profile" },
+    { id: "language" as SettingsSection, icon: Globe, label: "Language", desc: "Translation settings" },
+    { id: "notifications" as SettingsSection, icon: Bell, label: "Notifications", desc: "Sound & alerts" },
+    { id: "privacy" as SettingsSection, icon: Shield, label: "Spam Protection", desc: "Block unwanted messages" },
+    { id: "offline" as SettingsSection, icon: Forward, label: "Offline Routing", desc: "Forward when offline" },
   ];
 
   if (section !== "main") {
     return (
-      <div className="space-y-5">
+      <div className="space-y-5 max-w-lg">
         <button
           onClick={() => setSection("main")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
-          <ChevronLeft className="w-4 h-4" />
-          Back
+          <ChevronLeft className="w-4 h-4" /> Back
         </button>
 
         {section === "profile" && (
@@ -128,7 +74,7 @@ const SettingsTab = () => {
                 <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-2">
                   <span className="text-2xl text-foreground">{name.charAt(0)}</span>
                 </div>
-                <Button variant="outline" size="sm" className="rounded-lg">Change Photo</Button>
+                <Button variant="outline" size="sm">Change Photo</Button>
               </div>
 
               <div>
@@ -143,15 +89,12 @@ const SettingsTab = () => {
 
               <div>
                 <label className="text-sm text-muted-foreground">Phone Number</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="text"
-                    value={phoneNumber}
-                    readOnly
-                    className="flex-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm"
-                  />
-                  <Button variant="outline" size="sm" className="rounded-lg">Change</Button>
-                </div>
+                <input
+                  type="text"
+                  value={phoneNumber}
+                  readOnly
+                  className="w-full mt-1 px-3 py-2 bg-secondary/30 border border-border/50 rounded-lg text-foreground text-sm"
+                />
               </div>
 
               <div>
@@ -164,36 +107,7 @@ const SettingsTab = () => {
                 />
               </div>
 
-              <Button size="sm" className="rounded-lg" onClick={() => toast.success("Profile saved")}>
-                Save Changes
-              </Button>
-            </div>
-
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-medium text-foreground">Change Password</h3>
-              <div>
-                <label className="text-sm text-muted-foreground">Current Password</label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">New Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                />
-              </div>
-              <Button size="sm" variant="outline" className="rounded-lg" onClick={() => {
-                toast.success("Password updated");
-                setCurrentPassword("");
-                setNewPassword("");
-              }}>Update Password</Button>
+              <Button size="sm" onClick={() => toast.success("Profile saved")}>Save Changes</Button>
             </div>
 
             <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-2">
@@ -203,8 +117,8 @@ const SettingsTab = () => {
                 <span className="text-foreground">Connected Devices</span>
               </button>
               <button className="w-full text-left p-2.5 rounded-lg hover:bg-secondary/50 transition-colors flex items-center gap-2 text-sm">
-                <Shield className="w-4 h-4 text-muted-foreground" />
-                <span className="text-foreground">Two-Factor Authentication</span>
+                <Key className="w-4 h-4 text-muted-foreground" />
+                <span className="text-foreground">Change Password</span>
               </button>
               <button className="w-full text-left p-2.5 rounded-lg hover:bg-destructive/10 transition-colors flex items-center gap-2 text-sm text-destructive">
                 <Trash2 className="w-4 h-4" />
@@ -216,7 +130,7 @@ const SettingsTab = () => {
 
         {section === "language" && (
           <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Language & Translation</h2>
+            <h2 className="text-lg font-medium text-foreground">Language</h2>
             
             <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
               <div>
@@ -232,28 +146,6 @@ const SettingsTab = () => {
                 </select>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
-                  checked={autoTranslate}
-                  onChange={(e) => setAutoTranslate(e.target.checked)}
-                  className="accent-foreground"
-                />
-                <span className="text-foreground">Auto-translate incoming messages</span>
-              </label>
-
-              {autoTranslate && (
-                <label className="flex items-center gap-2 cursor-pointer ml-5 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={showOriginal}
-                    onChange={(e) => setShowOriginal(e.target.checked)}
-                    className="accent-foreground"
-                  />
-                  <span className="text-muted-foreground">Show original text</span>
-                </label>
-              )}
-
               <div>
                 <label className="text-sm text-muted-foreground">Send Messages In</label>
                 <select
@@ -267,255 +159,169 @@ const SettingsTab = () => {
                 </select>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
-                  checked={previewTranslation}
-                  onChange={(e) => setPreviewTranslation(e.target.checked)}
-                  className="accent-foreground"
-                />
-                <span className="text-foreground">Preview translation before sending</span>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm text-foreground">Auto-translate messages</span>
+                <button
+                  onClick={() => setAutoTranslate(!autoTranslate)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors relative",
+                    autoTranslate ? "bg-emerald-500" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                    autoTranslate ? "left-5" : "left-0.5"
+                  )} />
+                </button>
               </label>
             </div>
 
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-foreground mb-3">Saved Language Pairs</h3>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                  <span className="text-foreground">English - Spanish</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"><X className="w-3 h-3" /></Button>
-                </div>
-                <div className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                  <span className="text-foreground">English - French</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"><X className="w-3 h-3" /></Button>
-                </div>
-                <Button variant="outline" size="sm" className="gap-1 rounded-lg">
-                  <Plus className="w-3 h-3" /> Add Pair
-                </Button>
-              </div>
-            </div>
-
-            <Button size="sm" className="rounded-lg" onClick={() => toast.success("Settings saved")}>
-              Save Changes
-            </Button>
+            <Button size="sm" onClick={() => toast.success("Language settings saved")}>Save Changes</Button>
           </div>
         )}
 
         {section === "notifications" && (
           <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Notifications & Sending</h2>
+            <h2 className="text-lg font-medium text-foreground">Notifications</h2>
             
             <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-medium text-foreground">Sending Mode</h3>
-              <div className="space-y-1">
-                {sendingModeOptions.map((opt) => (
-                  <label key={opt.value} className="flex items-center gap-2 p-2.5 rounded-lg hover:bg-secondary/30 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="sendingMode"
-                      checked={sendingMode === opt.value}
-                      onChange={() => setSendingMode(opt.value as typeof sendingMode)}
-                      className="accent-foreground"
-                    />
-                    <span className="text-sm text-foreground">{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-medium text-foreground">Schedule Do Not Disturb</h3>
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
-                  checked={scheduleEnabled}
-                  onChange={(e) => setScheduleEnabled(e.target.checked)}
-                  className="accent-foreground"
-                />
-                <span className="text-foreground">Enable scheduled DND</span>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm text-foreground">Sound</span>
+                <button
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors relative",
+                    soundEnabled ? "bg-emerald-500" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                    soundEnabled ? "left-5" : "left-0.5"
+                  )} />
+                </button>
               </label>
-              {scheduleEnabled && (
-                <div className="grid grid-cols-2 gap-3 ml-5">
-                  <div>
-                    <label className="text-xs text-muted-foreground">From</label>
-                    <input
-                      type="time"
-                      value={scheduleFrom}
-                      onChange={(e) => setScheduleFrom(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">Until</label>
-                    <input
-                      type="time"
-                      value={scheduleTo}
-                      onChange={(e) => setScheduleTo(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-2">
-              <h3 className="text-sm font-medium text-foreground mb-2">Notifications</h3>
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input type="checkbox" checked={soundEnabled} onChange={(e) => setSoundEnabled(e.target.checked)} className="accent-foreground" />
-                <span className="text-foreground">Sound</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input type="checkbox" checked={vibrationEnabled} onChange={(e) => setVibrationEnabled(e.target.checked)} className="accent-foreground" />
-                <span className="text-foreground">Vibration</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input type="checkbox" checked={previewEnabled} onChange={(e) => setPreviewEnabled(e.target.checked)} className="accent-foreground" />
-                <span className="text-foreground">Show message preview</span>
+              
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm text-foreground">Vibration</span>
+                <button
+                  onClick={() => setVibrationEnabled(!vibrationEnabled)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors relative",
+                    vibrationEnabled ? "bg-emerald-500" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                    vibrationEnabled ? "left-5" : "left-0.5"
+                  )} />
+                </button>
               </label>
             </div>
 
-            <Button size="sm" className="rounded-lg" onClick={() => toast.success("Settings saved")}>
-              Save Changes
-            </Button>
+            <Button size="sm" onClick={() => toast.success("Notification settings saved")}>Save Changes</Button>
           </div>
         )}
 
         {section === "privacy" && (
           <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Priority & Spam Rules</h2>
+            <h2 className="text-lg font-medium text-foreground">Spam Protection</h2>
             
             <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-foreground">High Priority Rules</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">These bypass Do Not Disturb</p>
-              </div>
-              
-              <div>
-                <label className="text-xs text-muted-foreground">Priority Contacts</label>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {priorityContacts.map((contact) => (
-                    <span key={contact} className="px-2 py-1 rounded-md bg-secondary/50 text-foreground text-xs flex items-center gap-1">
-                      {contact}
-                      <button onClick={() => setPriorityContacts(priorityContacts.filter(c => c !== contact))}>
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                  <Button variant="outline" size="sm" className="h-6 text-xs rounded-md" onClick={() => {
-                    const newContact = prompt("Enter contact name:");
-                    if (newContact) setPriorityContacts([...priorityContacts, newContact]);
-                  }}>+ Add</Button>
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="text-sm text-foreground block">Enable Spam Protection</span>
+                  <span className="text-xs text-muted-foreground">Automatically filter suspicious messages</span>
                 </div>
-              </div>
+                <button
+                  onClick={() => setSpamProtection(!spamProtection)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors relative shrink-0",
+                    spamProtection ? "bg-emerald-500" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                    spamProtection ? "left-5" : "left-0.5"
+                  )} />
+                </button>
+              </label>
 
-              <div>
-                <label className="text-xs text-muted-foreground">Priority Keywords</label>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {priorityKeywords.map((keyword) => (
-                    <span key={keyword} className="px-2 py-1 rounded-md bg-secondary/30 text-foreground text-xs flex items-center gap-1">
-                      {keyword}
-                      <button onClick={() => setPriorityKeywords(priorityKeywords.filter(k => k !== keyword))}>
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                  <Button variant="outline" size="sm" className="h-6 text-xs rounded-md" onClick={() => {
-                    const newKeyword = prompt("Enter keyword:");
-                    if (newKeyword) setPriorityKeywords([...priorityKeywords, newKeyword]);
-                  }}>+ Add</Button>
-                </div>
-              </div>
+              {spamProtection && (
+                <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
+                  Messages containing spam keywords will be automatically moved to blocked folder. 
+                  Configure priority routing rules in the Routing section.
+                </p>
+              )}
             </div>
-
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
-              <h3 className="text-sm font-medium text-foreground">Spam & Block Rules</h3>
-              
-              <div>
-                <label className="text-xs text-muted-foreground">Blocked Numbers</label>
-                <div className="space-y-1.5 mt-1.5">
-                  {blockedNumbers.map((number) => (
-                    <div key={number} className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 text-sm">
-                      <span className="text-foreground">{number}</span>
-                      <button onClick={() => setBlockedNumbers(blockedNumbers.filter(n => n !== number))}>
-                        <X className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                    </div>
-                  ))}
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newBlockedNumber}
-                      onChange={(e) => setNewBlockedNumber(e.target.value)}
-                      placeholder="Enter number..."
-                      className="flex-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
-                    />
-                    <Button size="sm" className="rounded-lg" onClick={() => {
-                      if (newBlockedNumber) {
-                        setBlockedNumbers([...blockedNumbers, newBlockedNumber]);
-                        setNewBlockedNumber("");
-                      }
-                    }}>Block</Button>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Spam Keywords</label>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {spamKeywords.map((keyword) => (
-                    <span key={keyword} className="px-2 py-1 rounded-md bg-destructive/10 text-destructive text-xs flex items-center gap-1">
-                      {keyword}
-                      <button onClick={() => setSpamKeywords(spamKeywords.filter(k => k !== keyword))}>
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    type="text"
-                    value={newSpamKeyword}
-                    onChange={(e) => setNewSpamKeyword(e.target.value)}
-                    placeholder="Add keyword..."
-                    className="flex-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
-                  />
-                  <Button size="sm" variant="outline" className="rounded-lg" onClick={() => {
-                    if (newSpamKeyword) {
-                      setSpamKeywords([...spamKeywords, newSpamKeyword]);
-                      setNewSpamKeyword("");
-                    }
-                  }}>Add</Button>
-                </div>
-              </div>
-            </div>
-
-            <Button size="sm" className="rounded-lg" onClick={() => toast.success("Settings saved")}>
-              Save Changes
-            </Button>
           </div>
         )}
 
-        {section === "appearance" && (
+        {section === "offline" && (
           <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Appearance</h2>
+            <h2 className="text-lg font-medium text-foreground">Offline Routing</h2>
+            <p className="text-sm text-muted-foreground">Forward messages to your phone when the app is offline or disconnected.</p>
+            
             <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground">Theme</label>
-                <div className="flex gap-2 mt-2">
-                  <button className="flex-1 p-3 rounded-lg bg-foreground text-background text-sm font-medium">Dark</button>
-                  <button className="flex-1 p-3 rounded-lg bg-secondary/50 text-muted-foreground text-sm">Light</button>
-                  <button className="flex-1 p-3 rounded-lg bg-secondary/50 text-muted-foreground text-sm">System</button>
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="text-sm text-foreground block">Enable Offline Forwarding</span>
+                  <span className="text-xs text-muted-foreground">Forward to your phone when offline</span>
                 </div>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Font Size</label>
-                <div className="flex gap-2 mt-2">
-                  <button className="flex-1 p-2 rounded-lg bg-secondary/50 text-muted-foreground text-xs">Small</button>
-                  <button className="flex-1 p-2 rounded-lg bg-foreground text-background text-sm font-medium">Medium</button>
-                  <button className="flex-1 p-2 rounded-lg bg-secondary/50 text-muted-foreground text-base">Large</button>
-                </div>
-              </div>
+                <button
+                  onClick={() => setOfflineForwardEnabled(!offlineForwardEnabled)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors relative shrink-0",
+                    offlineForwardEnabled ? "bg-emerald-500" : "bg-secondary"
+                  )}
+                >
+                  <span className={cn(
+                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                    offlineForwardEnabled ? "left-5" : "left-0.5"
+                  )} />
+                </button>
+              </label>
+
+              {offlineForwardEnabled && (
+                <>
+                  <div>
+                    <label className="text-sm text-muted-foreground">Forward to Number</label>
+                    <input
+                      type="tel"
+                      value={offlineForwardNumber}
+                      onChange={(e) => setOfflineForwardNumber(e.target.value)}
+                      placeholder="+1 (555) 123-4567"
+                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm text-muted-foreground block mb-2">Forward Priority</label>
+                    <div className="flex gap-2">
+                      {(["all", "urgent", "high"] as const).map((priority) => (
+                        <button
+                          key={priority}
+                          onClick={() => setOfflineForwardPriority(priority)}
+                          className={cn(
+                            "flex-1 py-2 rounded-lg text-sm transition-colors capitalize",
+                            offlineForwardPriority === priority
+                              ? "bg-foreground text-background"
+                              : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          {priority}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
+                    When offline, messages matching the selected priority will be forwarded via SMS to your phone number.
+                  </p>
+                </>
+              )}
             </div>
+
+            <Button size="sm" onClick={() => toast.success("Offline routing settings saved")}>Save Changes</Button>
           </div>
         )}
       </div>
@@ -523,22 +329,25 @@ const SettingsTab = () => {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 max-w-lg">
       <h2 className="text-lg font-medium text-foreground">Settings</h2>
       
       <div className="bg-card/30 border border-border/50 rounded-xl overflow-hidden">
-        {menuItems.map((item) => (
+        {menuItems.map((item, index) => (
           <button
             key={item.id}
             onClick={() => setSection(item.id)}
-            className="w-full flex items-center gap-3 p-4 border-b border-border/30 last:border-b-0 hover:bg-secondary/20 transition-colors text-left"
+            className={cn(
+              "w-full flex items-center gap-3 p-4 hover:bg-secondary/30 transition-colors text-left",
+              index !== menuItems.length - 1 && "border-b border-border/30"
+            )}
           >
-            <div className="w-9 h-9 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
-              <item.icon className="w-4 h-4 text-muted-foreground" />
+            <div className="w-9 h-9 rounded-lg bg-secondary/50 flex items-center justify-center">
+              <item.icon className="w-4 h-4 text-foreground" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">{item.label}</p>
-              <p className="text-xs text-muted-foreground truncate">{item.desc}</p>
+              <p className="text-xs text-muted-foreground">{item.desc}</p>
             </div>
             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
           </button>
