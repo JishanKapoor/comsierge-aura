@@ -19,6 +19,7 @@ interface AuthContextType {
   signup: (name: string, email: string, password: string) => Promise<boolean>;
   loginWithGoogle: () => void;
   logout: () => void;
+  requestPasswordReset: (email: string) => Promise<boolean>;
   isAuthenticated: boolean;
   isAdmin: boolean;
 }
@@ -133,6 +134,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     toast.success("Logged out successfully");
   };
 
+  const requestPasswordReset = async (email: string): Promise<boolean> => {
+    setIsLoading(true);
+    
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // In a real app, this would send a password reset email via backend API
+    setIsLoading(false);
+    toast.success("Password reset link sent! Check your email.");
+    return true;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -142,6 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         signup,
         loginWithGoogle,
         logout,
+        requestPasswordReset,
         isAuthenticated: !!user,
         isAdmin: user?.role === "admin",
       }}

@@ -68,6 +68,47 @@
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   }
+
+  /* Dashboard-specific styling - Linear App exact colors */
+  .dashboard-layout {
+    font-family: 'Inter UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0;
+    
+    /* Linear's exact light theme colors */
+    --background: 0 0% 100%;
+    --foreground: 220 9% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 9% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 9% 20%;
+
+    /* Linear indigo accent */
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 13% 96%;
+    --secondary-foreground: 220 9% 20%;
+
+    --muted: 220 13% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 220 13% 96%;
+    --accent-foreground: 220 9% 20%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 239 84% 67%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+  }
+
+  .dashboard-layout * {
+    @apply antialiased;
+  }
 }
 
 @layer components {
@@ -117,49 +158,49 @@
     @apply relative rounded-[20px] overflow-hidden bg-card transition-all duration-500 ease-out hover:scale-[1.02];
   }
 
-  /* Dashboard Components */
+  /* Dashboard Components - Linear exact styling */
   .dashboard-card {
-    @apply bg-card/60 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-300 hover:border-border;
+    @apply bg-white border border-gray-100 rounded-lg;
   }
 
   .dashboard-input {
-    @apply w-full px-4 py-2.5 bg-secondary/50 border border-border/50 rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-200;
+    @apply w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-300 transition-colors;
   }
 
   .dashboard-filter-btn {
-    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+    @apply px-3 py-1.5 rounded text-sm font-medium transition-colors;
   }
 
   .dashboard-filter-btn-active {
-    @apply bg-foreground text-background;
+    @apply bg-gray-100 text-gray-800;
   }
 
   .dashboard-filter-btn-inactive {
-    @apply bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary;
+    @apply bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100;
   }
 
   .dashboard-list-item {
-    @apply flex items-center gap-4 p-4 border-b border-border/30 last:border-b-0 hover:bg-secondary/20 transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors cursor-pointer;
   }
 
   .dashboard-avatar {
-    @apply flex items-center justify-center rounded-full font-medium;
+    @apply flex items-center justify-center rounded-full font-medium text-sm;
   }
 
   .dashboard-section-title {
-    @apply text-lg font-medium text-foreground tracking-tight;
+    @apply text-sm font-semibold text-gray-800;
   }
 
   .dashboard-nav-item {
-    @apply flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200;
+    @apply flex flex-col items-center gap-1 px-3 py-2 rounded transition-colors;
   }
 
   .dashboard-nav-item-active {
-    @apply text-foreground;
+    @apply text-gray-800;
   }
 
   .dashboard-nav-item-inactive {
-    @apply text-muted-foreground hover:text-foreground;
+    @apply text-gray-500 hover:text-gray-700;
   }
 
   .status-badge {
@@ -167,19 +208,19 @@
   }
 
   .status-badge-priority {
-    @apply bg-amber-500/10 text-amber-400 border border-amber-500/20;
+    @apply bg-muted text-muted-foreground border border-border;
   }
 
   .status-badge-blocked {
-    @apply bg-destructive/10 text-destructive border border-destructive/20;
+    @apply bg-muted text-muted-foreground border border-border;
   }
 
   .status-badge-allowed {
-    @apply bg-green-400/10 text-green-400 border border-green-400/20;
+    @apply bg-muted text-muted-foreground border border-border;
   }
 
   .status-badge-protected {
-    @apply bg-blue-500/10 text-blue-400 border border-blue-500/20;
+    @apply bg-primary/10 text-primary border border-primary/20;
   }
 }
 

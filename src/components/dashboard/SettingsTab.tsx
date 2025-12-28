@@ -57,71 +57,71 @@ const SettingsTab = () => {
 
   if (section !== "main") {
     return (
-      <div className="space-y-5 max-w-lg">
+      <div className="space-y-4">
         <button
           onClick={() => setSection("main")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
         >
-          <ChevronLeft className="w-4 h-4" /> Back
+          <ChevronLeft className="w-3.5 h-3.5" /> Back
         </button>
 
         {section === "profile" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Profile & Account</h2>
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-gray-800">Profile & Account</h2>
             
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
-              <div className="flex flex-col items-center mb-4">
-                <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mb-2">
-                  <span className="text-2xl text-foreground">{name.charAt(0)}</span>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex flex-col items-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-2">
+                  <span className="text-lg text-gray-700">{name.charAt(0)}</span>
                 </div>
-                <Button variant="outline" size="sm">Change Photo</Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Change Photo</Button>
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground">Name</label>
+                <label className="text-xs text-gray-500">Name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground">Phone Number</label>
+                <label className="text-xs text-gray-500">Phone Number</label>
                 <input
                   type="text"
                   value={phoneNumber}
                   readOnly
-                  className="w-full mt-1 px-3 py-2 bg-secondary/30 border border-border/50 rounded-lg text-foreground text-sm"
+                  className="w-full mt-1 px-3 py-1.5 bg-gray-100 border border-gray-200 rounded text-gray-600 text-xs"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground">Email</label>
+                <label className="text-xs text-gray-500">Email</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 />
               </div>
 
-              <Button size="sm" onClick={() => toast.success("Profile saved")}>Save Changes</Button>
+              <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Profile saved")}>Save Changes</Button>
             </div>
 
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-2">
-              <h3 className="text-sm font-medium text-foreground mb-2">Account</h3>
-              <button className="w-full text-left p-2.5 rounded-lg hover:bg-secondary/50 transition-colors flex items-center gap-2 text-sm">
-                <Smartphone className="w-4 h-4 text-muted-foreground" />
-                <span className="text-foreground">Connected Devices</span>
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-1">
+              <h3 className="text-xs font-medium text-gray-800 mb-2">Account</h3>
+              <button className="w-full text-left p-2 rounded hover:bg-gray-50 transition-colors flex items-center gap-2 text-xs">
+                <Smartphone className="w-3.5 h-3.5 text-gray-500" />
+                <span className="text-gray-700">Connected Devices</span>
               </button>
-              <button className="w-full text-left p-2.5 rounded-lg hover:bg-secondary/50 transition-colors flex items-center gap-2 text-sm">
-                <Key className="w-4 h-4 text-muted-foreground" />
-                <span className="text-foreground">Change Password</span>
+              <button className="w-full text-left p-2 rounded hover:bg-gray-50 transition-colors flex items-center gap-2 text-xs">
+                <Key className="w-3.5 h-3.5 text-gray-500" />
+                <span className="text-gray-700">Change Password</span>
               </button>
-              <button className="w-full text-left p-2.5 rounded-lg hover:bg-destructive/10 transition-colors flex items-center gap-2 text-sm text-destructive">
-                <Trash2 className="w-4 h-4" />
+              <button className="w-full text-left p-2 rounded hover:bg-gray-50 transition-colors flex items-center gap-2 text-xs text-gray-400">
+                <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Account</span>
               </button>
             </div>
@@ -129,16 +129,16 @@ const SettingsTab = () => {
         )}
 
         {section === "language" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Language</h2>
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-gray-800">Language</h2>
             
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <div>
-                <label className="text-sm text-muted-foreground">Receive Messages In</label>
+                <label className="text-xs text-gray-500">Receive Messages In</label>
                 <select
                   value={receiveLanguage}
                   onChange={(e) => setReceiveLanguage(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 >
                   {languages.map((lang) => (
                     <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -147,11 +147,11 @@ const SettingsTab = () => {
               </div>
 
               <div>
-                <label className="text-sm text-muted-foreground">Send Messages In</label>
+                <label className="text-xs text-gray-500">Send Messages In</label>
                 <select
                   value={sendLanguage}
                   onChange={(e) => setSendLanguage(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 >
                   {languages.map((lang) => (
                     <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -160,94 +160,94 @@ const SettingsTab = () => {
               </div>
 
               <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-sm text-foreground">Auto-translate messages</span>
+                <span className="text-xs text-gray-700">Auto-translate messages</span>
                 <button
                   onClick={() => setAutoTranslate(!autoTranslate)}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-colors relative",
-                    autoTranslate ? "bg-emerald-500" : "bg-secondary"
+                    "w-8 h-4 rounded-full transition-colors relative",
+                    autoTranslate ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    autoTranslate ? "left-5" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    autoTranslate ? "left-4" : "left-0.5"
                   )} />
                 </button>
               </label>
             </div>
 
-            <Button size="sm" onClick={() => toast.success("Language settings saved")}>Save Changes</Button>
+            <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Language settings saved")}>Save Changes</Button>
           </div>
         )}
 
         {section === "notifications" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Notifications</h2>
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-gray-800">Notifications</h2>
             
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-3">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-sm text-foreground">Sound</span>
+                <span className="text-xs text-gray-700">Sound</span>
                 <button
                   onClick={() => setSoundEnabled(!soundEnabled)}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-colors relative",
-                    soundEnabled ? "bg-emerald-500" : "bg-secondary"
+                    "w-8 h-4 rounded-full transition-colors relative",
+                    soundEnabled ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    soundEnabled ? "left-5" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    soundEnabled ? "left-4" : "left-0.5"
                   )} />
                 </button>
               </label>
               
               <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-sm text-foreground">Vibration</span>
+                <span className="text-xs text-gray-700">Vibration</span>
                 <button
                   onClick={() => setVibrationEnabled(!vibrationEnabled)}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-colors relative",
-                    vibrationEnabled ? "bg-emerald-500" : "bg-secondary"
+                    "w-8 h-4 rounded-full transition-colors relative",
+                    vibrationEnabled ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    vibrationEnabled ? "left-5" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    vibrationEnabled ? "left-4" : "left-0.5"
                   )} />
                 </button>
               </label>
             </div>
 
-            <Button size="sm" onClick={() => toast.success("Notification settings saved")}>Save Changes</Button>
+            <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Notification settings saved")}>Save Changes</Button>
           </div>
         )}
 
         {section === "privacy" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Spam Protection</h2>
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-gray-800">Spam Protection</h2>
             
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <span className="text-sm text-foreground block">Enable Spam Protection</span>
-                  <span className="text-xs text-muted-foreground">Automatically filter suspicious messages</span>
+                  <span className="text-xs text-gray-700 block">Enable Spam Protection</span>
+                  <span className="text-xs text-gray-500">Automatically filter suspicious messages</span>
                 </div>
                 <button
                   onClick={() => setSpamProtection(!spamProtection)}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-colors relative shrink-0",
-                    spamProtection ? "bg-emerald-500" : "bg-secondary"
+                    "w-8 h-4 rounded-full transition-colors relative shrink-0",
+                    spamProtection ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    spamProtection ? "left-5" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    spamProtection ? "left-4" : "left-0.5"
                   )} />
                 </button>
               </label>
 
               {spamProtection && (
-                <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
+                <p className="text-xs text-gray-500 p-2.5 bg-gray-50 rounded">
                   Messages containing spam keywords will be automatically moved to blocked folder. 
                   Configure priority routing rules in the Routing section.
                 </p>
@@ -257,26 +257,26 @@ const SettingsTab = () => {
         )}
 
         {section === "offline" && (
-          <div className="space-y-5">
-            <h2 className="text-lg font-medium text-foreground">Offline Routing</h2>
-            <p className="text-sm text-muted-foreground">Forward messages to your phone when the app is offline or disconnected.</p>
+          <div className="space-y-4">
+            <h2 className="text-sm font-medium text-gray-800">Offline Routing</h2>
+            <p className="text-xs text-gray-500">Forward messages to your phone when the app is offline or disconnected.</p>
             
-            <div className="bg-card/30 border border-border/50 rounded-xl p-5 space-y-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <span className="text-sm text-foreground block">Enable Offline Forwarding</span>
-                  <span className="text-xs text-muted-foreground">Forward to your phone when offline</span>
+                  <span className="text-xs text-gray-700 block">Enable Offline Forwarding</span>
+                  <span className="text-xs text-gray-500">Forward to your phone when offline</span>
                 </div>
                 <button
                   onClick={() => setOfflineForwardEnabled(!offlineForwardEnabled)}
                   className={cn(
-                    "w-10 h-5 rounded-full transition-colors relative shrink-0",
-                    offlineForwardEnabled ? "bg-emerald-500" : "bg-secondary"
+                    "w-8 h-4 rounded-full transition-colors relative shrink-0",
+                    offlineForwardEnabled ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    offlineForwardEnabled ? "left-5" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    offlineForwardEnabled ? "left-4" : "left-0.5"
                   )} />
                 </button>
               </label>
@@ -284,28 +284,28 @@ const SettingsTab = () => {
               {offlineForwardEnabled && (
                 <>
                   <div>
-                    <label className="text-sm text-muted-foreground">Forward to Number</label>
+                    <label className="text-xs text-gray-500">Forward to Number</label>
                     <input
                       type="tel"
                       value={offlineForwardNumber}
                       onChange={(e) => setOfflineForwardNumber(e.target.value)}
                       placeholder="+1 (555) 123-4567"
-                      className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
+                      className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-gray-300"
                     />
                   </div>
 
                   <div>
-                    <label className="text-sm text-muted-foreground block mb-2">Forward Priority</label>
-                    <div className="flex gap-2">
+                    <label className="text-xs text-gray-500 block mb-1.5">Forward Priority</label>
+                    <div className="flex gap-1.5">
                       {(["all", "urgent", "high"] as const).map((priority) => (
                         <button
                           key={priority}
                           onClick={() => setOfflineForwardPriority(priority)}
                           className={cn(
-                            "flex-1 py-2 rounded-lg text-sm transition-colors capitalize",
+                            "flex-1 py-1.5 rounded text-xs font-medium transition-colors capitalize",
                             offlineForwardPriority === priority
-                              ? "bg-foreground text-background"
-                              : "bg-secondary/50 text-muted-foreground hover:text-foreground"
+                              ? "bg-gray-800 text-white"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                           )}
                         >
                           {priority}
@@ -314,14 +314,14 @@ const SettingsTab = () => {
                     </div>
                   </div>
 
-                  <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
+                  <p className="text-xs text-gray-500 p-2.5 bg-gray-50 rounded">
                     When offline, messages matching the selected priority will be forwarded via SMS to your phone number.
                   </p>
                 </>
               )}
             </div>
 
-            <Button size="sm" onClick={() => toast.success("Offline routing settings saved")}>Save Changes</Button>
+            <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Offline routing settings saved")}>Save Changes</Button>
           </div>
         )}
       </div>
@@ -329,27 +329,25 @@ const SettingsTab = () => {
   }
 
   return (
-    <div className="space-y-4 max-w-lg">
-      <h2 className="text-lg font-medium text-foreground">Settings</h2>
-      
-      <div className="bg-card/30 border border-border/50 rounded-xl overflow-hidden">
+    <div className="space-y-3">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {menuItems.map((item, index) => (
           <button
             key={item.id}
             onClick={() => setSection(item.id)}
             className={cn(
-              "w-full flex items-center gap-3 p-4 hover:bg-secondary/30 transition-colors text-left",
-              index !== menuItems.length - 1 && "border-b border-border/30"
+              "w-full flex items-center gap-2.5 p-3 hover:bg-gray-50 transition-colors text-left",
+              index !== menuItems.length - 1 && "border-b border-gray-100"
             )}
           >
-            <div className="w-9 h-9 rounded-lg bg-secondary/50 flex items-center justify-center">
-              <item.icon className="w-4 h-4 text-foreground" />
+            <div className="w-7 h-7 rounded bg-gray-100 flex items-center justify-center">
+              <item.icon className="w-3.5 h-3.5 text-gray-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">{item.label}</p>
-              <p className="text-xs text-muted-foreground">{item.desc}</p>
+              <p className="text-xs font-medium text-gray-800">{item.label}</p>
+              <p className="text-xs text-gray-500">{item.desc}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
           </button>
         ))}
       </div>

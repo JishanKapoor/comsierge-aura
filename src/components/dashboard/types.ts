@@ -14,6 +14,7 @@ export interface Message {
   id: string;
   contactId: string;
   contactName: string;
+  contactPhone?: string;
   content: string;
   timestamp: string;
   isIncoming: boolean;
@@ -21,6 +22,15 @@ export interface Message {
   rule?: string;
   isRead: boolean;
 }
+
+export type MailboxId =
+  | "inbox"
+  | "vips"
+  | "remind-me"
+  | "drafts"
+  | "sent"
+  | "trash"
+  | "archive";
 
 export interface ChatMessage {
   id: string;

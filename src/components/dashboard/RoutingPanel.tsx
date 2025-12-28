@@ -36,14 +36,14 @@ interface RoutingPanelProps {
 }
 
 const priorityTags = [
-  { id: "emergency", label: "Emergency", icon: AlertTriangle, color: "text-red-400" },
-  { id: "meeting", label: "Meeting", icon: Calendar, color: "text-blue-400" },
-  { id: "family", label: "Family", icon: Home, color: "text-pink-400" },
-  { id: "appointment", label: "Appointment", icon: Clock, color: "text-purple-400" },
-  { id: "task", label: "Task", icon: Briefcase, color: "text-amber-400" },
-  { id: "deadline", label: "Deadline", icon: Clock, color: "text-orange-400" },
-  { id: "bank", label: "Bank", icon: CreditCard, color: "text-emerald-400" },
-  { id: "other", label: "Other", icon: MoreHorizontal, color: "text-gray-400" },
+  { id: "emergency", label: "Emergency", icon: AlertTriangle, color: "text-gray-500" },
+  { id: "meeting", label: "Meeting", icon: Calendar, color: "text-gray-500" },
+  { id: "family", label: "Family", icon: Home, color: "text-gray-500" },
+  { id: "appointment", label: "Appointment", icon: Clock, color: "text-gray-500" },
+  { id: "task", label: "Task", icon: Briefcase, color: "text-gray-500" },
+  { id: "deadline", label: "Deadline", icon: Clock, color: "text-gray-500" },
+  { id: "bank", label: "Bank", icon: CreditCard, color: "text-gray-500" },
+  { id: "other", label: "Other", icon: MoreHorizontal, color: "text-gray-500" },
 ];
 
 const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
@@ -92,27 +92,26 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-4">
       {/* Header with Phone Number */}
-      <div className="flex items-center justify-between p-4 bg-card/50 border border-border/50 rounded-xl">
+      <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
         <div>
-          <h2 className="font-medium text-foreground">Smart Routing</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Configure how messages are prioritized and forwarded</p>
+          <p className="text-xs text-gray-500">Configure how messages are prioritized and forwarded</p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-2 bg-secondary/50 rounded-lg border border-border/30">
-          <Phone className="w-4 h-4 text-emerald-500" />
-          <span className="text-sm font-mono text-foreground">{phoneNumber}</span>
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 rounded border border-gray-200">
+          <Phone className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-xs font-mono text-gray-700">{phoneNumber}</span>
         </div>
       </div>
 
       {/* Routing Mode */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-4 space-y-3">
-        <div className="flex items-center gap-2 mb-3">
-          <Route className="w-4 h-4 text-blue-400" />
-          <h3 className="font-medium text-foreground text-sm">Routing Mode</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2.5">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Route className="w-3.5 h-3.5 text-gray-500" />
+          <h3 className="font-medium text-gray-800 text-xs">Routing Mode</h3>
         </div>
         
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {[
             { id: "all" as RoutingMode, label: "All Messages", desc: "Send everything" },
             { id: "high_medium" as RoutingMode, label: "High + Medium", desc: "Priority only" },
@@ -122,95 +121,95 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
               key={mode.id}
               onClick={() => setRoutingMode(mode.id)}
               className={cn(
-                "p-3 rounded-xl border text-left transition-all",
+                "p-2.5 rounded border text-left transition-all",
                 routingMode === mode.id
-                  ? "bg-foreground/10 border-foreground/30"
-                  : "bg-secondary/20 border-border/30 hover:border-border/60"
+                  ? "bg-gray-100 border-gray-300"
+                  : "bg-gray-50 border-gray-200 hover:border-gray-300"
               )}
             >
-              <p className="text-sm font-medium text-foreground">{mode.label}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{mode.desc}</p>
+              <p className="text-xs font-medium text-gray-800">{mode.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{mode.desc}</p>
             </button>
           ))}
         </div>
       </div>
 
       {/* Priority Tag Filters */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-4 space-y-3">
-        <div className="flex items-center gap-2 mb-3">
-          <Shield className="w-4 h-4 text-amber-400" />
-          <h3 className="font-medium text-foreground text-sm">High Priority Filters</h3>
-          <span className="text-xs text-muted-foreground ml-auto">{selectedTags.length} selected</span>
+      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2.5">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Shield className="w-3.5 h-3.5 text-gray-500" />
+          <h3 className="font-medium text-gray-800 text-xs">High Priority Filters</h3>
+          <span className="text-xs text-gray-500 ml-auto">{selectedTags.length} selected</span>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {priorityTags.map((tag) => (
             <button
               key={tag.id}
               onClick={() => toggleTag(tag.id)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left",
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded border transition-all text-left",
                 selectedTags.includes(tag.id)
-                  ? "bg-foreground/10 border-foreground/30"
-                  : "bg-secondary/20 border-border/30 hover:border-border/60"
+                  ? "bg-gray-100 border-gray-300"
+                  : "bg-gray-50 border-gray-200 hover:border-gray-300"
               )}
             >
-              <tag.icon className={cn("w-4 h-4", tag.color)} />
-              <span className="text-sm text-foreground">{tag.label}</span>
+              <tag.icon className={cn("w-3.5 h-3.5", tag.color)} />
+              <span className="text-xs text-gray-700">{tag.label}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Time-Based Rules */}
-      <div className="bg-card/30 border border-border/50 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-purple-400" />
-            <h3 className="font-medium text-foreground text-sm">Time-Based Rules</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2.5">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-gray-500" />
+            <h3 className="font-medium text-gray-800 text-xs">Time-Based Rules</h3>
           </div>
-          <Button size="sm" variant="outline" className="h-7 gap-1" onClick={() => setShowAddTimeRule(true)}>
+          <Button size="sm" variant="outline" className="h-6 gap-1 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50" onClick={() => setShowAddTimeRule(true)}>
             <Plus className="w-3 h-3" /> Add Rule
           </Button>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {timeRules.map((rule) => (
             <div
               key={rule.id}
               className={cn(
-                "flex items-center justify-between p-3 rounded-lg border transition-colors",
-                rule.active ? "bg-secondary/30 border-border/40" : "bg-secondary/10 border-border/20 opacity-60"
+                "flex items-center justify-between p-2.5 rounded border transition-colors",
+                rule.active ? "bg-gray-50 border-gray-200" : "bg-gray-50/50 border-gray-100 opacity-60"
               )}
             >
-              <div className="flex items-center gap-3">
-                <div className="text-sm">
-                  <span className="text-foreground font-mono">{rule.from}</span>
-                  <span className="text-muted-foreground mx-2">→</span>
-                  <span className="text-foreground font-mono">{rule.to}</span>
+              <div className="flex items-center gap-2">
+                <div className="text-xs">
+                  <span className="text-gray-700 font-mono">{rule.from}</span>
+                  <span className="text-gray-400 mx-1.5">→</span>
+                  <span className="text-gray-700 font-mono">{rule.to}</span>
                 </div>
                 <span className={cn(
-                  "px-2 py-0.5 rounded text-xs",
-                  rule.mode === "high_only" ? "bg-amber-500/15 text-amber-500" : "bg-red-500/15 text-red-400"
+                  "px-1.5 py-0.5 rounded text-xs",
+                  rule.mode === "high_only" ? "bg-indigo-50 text-indigo-500" : "bg-gray-100 text-gray-500"
                 )}>
                   {rule.mode === "high_only" ? "High Priority Only" : "Do Not Disturb"}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => toggleTimeRule(rule.id)}
                   className={cn(
-                    "w-9 h-5 rounded-full transition-colors relative",
-                    rule.active ? "bg-emerald-500" : "bg-secondary"
+                    "w-7 h-4 rounded-full transition-colors relative",
+                    rule.active ? "bg-indigo-500" : "bg-gray-300"
                   )}
                 >
                   <span className={cn(
-                    "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                    rule.active ? "left-4" : "left-0.5"
+                    "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                    rule.active ? "left-3.5" : "left-0.5"
                   )} />
                 </button>
-                <button onClick={() => deleteTimeRule(rule.id)} className="p-1 hover:bg-destructive/10 rounded text-muted-foreground hover:text-destructive">
-                  <X className="w-3.5 h-3.5" />
+                <button onClick={() => deleteTimeRule(rule.id)} className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600">
+                  <X className="w-3 h-3" />
                 </button>
               </div>
             </div>
@@ -218,33 +217,33 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         </div>
 
         {showAddTimeRule && (
-          <div className="p-3 rounded-lg border border-border/50 bg-secondary/20 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="p-2.5 rounded border border-gray-200 bg-gray-50 space-y-2.5">
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs text-muted-foreground">From</label>
+                <label className="text-xs text-gray-500">From</label>
                 <input
                   type="time"
                   value={newRuleFrom}
                   onChange={(e) => setNewRuleFrom(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">To</label>
+                <label className="text-xs text-gray-500">To</label>
                 <input
                   type="time"
                   value={newRuleTo}
                   onChange={(e) => setNewRuleTo(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full mt-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 onClick={() => setNewRuleMode("high_only")}
                 className={cn(
-                  "flex-1 py-2 rounded-lg text-sm transition-colors",
-                  newRuleMode === "high_only" ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
+                  "flex-1 py-1.5 rounded text-xs font-medium transition-colors",
+                  newRuleMode === "high_only" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600"
                 )}
               >
                 High Only
@@ -252,43 +251,43 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
               <button
                 onClick={() => setNewRuleMode("dnd")}
                 className={cn(
-                  "flex-1 py-2 rounded-lg text-sm transition-colors",
-                  newRuleMode === "dnd" ? "bg-foreground text-background" : "bg-secondary/50 text-muted-foreground"
+                  "flex-1 py-1.5 rounded text-xs font-medium transition-colors",
+                  newRuleMode === "dnd" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600"
                 )}
               >
                 DND
               </button>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowAddTimeRule(false)}>Cancel</Button>
-              <Button size="sm" className="flex-1" onClick={addTimeRule}>Add Rule</Button>
+            <div className="flex gap-1.5">
+              <Button variant="outline" size="sm" className="flex-1 h-7 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50" onClick={() => setShowAddTimeRule(false)}>Cancel</Button>
+              <Button size="sm" className="flex-1 h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={addTimeRule}>Add Rule</Button>
             </div>
           </div>
         )}
       </div>
 
       {/* Language Routing */}
-      <div className="bg-card/30 border border-border/50 rounded-xl overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <button
           onClick={() => setShowLanguageSection(!showLanguageSection)}
-          className="w-full flex items-center justify-between p-4 hover:bg-secondary/20 transition-colors"
+          className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
         >
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-cyan-400" />
-            <h3 className="font-medium text-foreground text-sm">Language Routing</h3>
+          <div className="flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-gray-500" />
+            <h3 className="font-medium text-gray-800 text-xs">Language Routing</h3>
           </div>
-          <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", showLanguageSection && "rotate-180")} />
+          <ChevronDown className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", showLanguageSection && "rotate-180")} />
         </button>
         
         {showLanguageSection && (
-          <div className="p-4 pt-0 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="px-3 pb-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-muted-foreground block mb-1">Incoming Languages</label>
+                <label className="text-xs text-gray-500 block mb-1">Incoming Languages</label>
                 <select
                   value={incomingLanguage}
                   onChange={(e) => setIncomingLanguage(e.target.value)}
-                  className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 >
                   {languages.map((lang) => (
                     <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -296,11 +295,11 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground block mb-1">Send Messages In</label>
+                <label className="text-xs text-gray-500 block mb-1">Send Messages In</label>
                 <select
                   value={outgoingLanguage}
                   onChange={(e) => setOutgoingLanguage(e.target.value)}
-                  className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-foreground text-sm focus:outline-none"
+                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
                 >
                   {languages.map((lang) => (
                     <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -308,7 +307,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                 </select>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-gray-500">
               Messages will be auto-translated based on these preferences
             </p>
           </div>
@@ -316,7 +315,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       </div>
 
       {/* Save Button */}
-      <Button className="w-full" onClick={() => toast.success("Routing settings saved")}>
+      <Button className="w-full h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Routing settings saved")}>
         Save Routing Settings
       </Button>
     </div>

@@ -1,29 +1,24 @@
-import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  MessageSquare,
-  Phone,
-  Users,
-  Settings,
-  Clock,
-  Headphones,
-  LogOut,
-  Bell,
-  Copy,
-  Check,
   Menu,
-  X,
+  Inbox,
+  Users,
+  HelpCircle,
+  UserPlus,
+  ChevronDown,
+  Settings,
+  LogOut,
+  Copy,
+  Phone,
+  Clock,
   Route,
-  Bot,
-  ChevronLeft,
-  ChevronRight,
+  Headphones,
 } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import Logo from "@/components/Logo";
+import { toast } from "sonner";
 
-// Dashboard Components
 import InboxView from "@/components/dashboard/InboxView";
 import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
@@ -31,56 +26,80 @@ import SettingsTab from "@/components/dashboard/SettingsTab";
 import RemindersTab from "@/components/dashboard/RemindersTab";
 import SupportTab from "@/components/dashboard/SupportTab";
 import RoutingPanel from "@/components/dashboard/RoutingPanel";
-import AIPanel from "@/components/dashboard/AIPanel";
+import InviteModal from "@/components/dashboard/InviteModal";
+import HelpModal from "@/components/dashboard/HelpModal";
 
 type Tab = "inbox" | "calls" | "contacts" | "routing" | "reminders" | "support" | "settings";
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [showMenu, setShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("inbox");
-  const [copied, setCopied] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [showAIPanel, setShowAIPanel] = useState(false);
+  const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   const phoneNumber = "+1 (437) 239-2448";
 
-  // Close mobile sidebar on route change
+  // Handle navigation from contacts
+  const handleNavigateFromContacts = (tab: string, contactPhone?: string) => {
+    setActiveTab(tab as Tab);
+    if (contactPhone) {
+      setSelectedContactPhone(contactPhone);
+    }
+  };
+
+  // Close menu on tab change (mobile)
   useEffect(() => {
-    setMobileSidebarOpen(false);
+    setShowMenu(false);
   }, [activeTab]);
+
+  // Close profile menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate("/");
   };
 
-  const copyPhoneNumber = () => {
-    navigator.clipboard.writeText(phoneNumber);
-    setCopied(true);
-    toast.success("Phone number copied");
-    setTimeout(() => setCopied(false), 2000);
+  const copyPhoneNumber = async () => {
+    try {
+      await navigator.clipboard.writeText(phoneNumber);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
   };
 
   const navItems = [
-    { id: "inbox" as Tab, icon: MessageSquare, label: "Inbox" },
-    { id: "calls" as Tab, icon: Phone, label: "Calls" },
-    { id: "contacts" as Tab, icon: Users, label: "Contacts" },
-    { id: "routing" as Tab, icon: Route, label: "Routing" },
-    { id: "reminders" as Tab, icon: Clock, label: "Reminders" },
-    { id: "support" as Tab, icon: Headphones, label: "Support" },
-    { id: "settings" as Tab, icon: Settings, label: "Settings" },
+    { id: "inbox" as Tab, label: "Inbox", icon: Inbox },
+    { id: "calls" as Tab, label: "Calls", icon: Phone },
+    { id: "contacts" as Tab, label: "Contacts", icon: Users },
+    { id: "routing" as Tab, label: "Routing", icon: Route },
+    { id: "reminders" as Tab, label: "Reminders", icon: Clock },
+    { id: "support" as Tab, label: "Support", icon: Headphones },
+    { id: "settings" as Tab, label: "Settings", icon: Settings },
   ];
 
   const renderContent = () => {
     switch (activeTab) {
       case "inbox":
-        return <InboxView onOpenAI={() => setShowAIPanel(true)} />;
+        return <InboxView selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />;
       case "calls":
-        return <CallsTab />;
+        return <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />;
       case "contacts":
-        return <ContactsTab />;
+        return <ContactsTab onNavigate={handleNavigateFromContacts} />;
       case "routing":
         return <RoutingPanel phoneNumber={phoneNumber} />;
       case "reminders":
@@ -95,154 +114,183 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Mobile Sidebar Overlay */}
-      {mobileSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setMobileSidebarOpen(false)}
+    <div className="dashboard-layout flex w-full h-screen overflow-hidden bg-white font-sans text-sm text-gray-700">
+      {/* Left Sidebar */}
+      <div
+        className={cn(
+          "absolute lg:static inset-0 transform duration-300 lg:relative lg:translate-x-0",
+          "bg-white flex flex-col flex-shrink-0 w-56 border-r border-gray-100 lg:shadow-none z-50",
+          showMenu ? "translate-x-0 ease-in shadow-xl" : "-translate-x-full ease-out shadow-none"
+        )}
+      >
+        {/* Mobile close button */}
+        <button
+          className="flex-shrink-0 px-5 ml-2 lg:hidden h-14 focus:outline-none"
+          onClick={() => setShowMenu(false)}
+        >
+          <Menu className="w-4 h-4 text-gray-500 hover:text-gray-800" />
+        </button>
+
+        {/* Top section */}
+        <div className="flex flex-col flex-grow-0 flex-shrink-0 px-5 py-3">
+          <div className="flex items-center justify-between">
+            {/* Brand */}
+            <div className="flex items-center p-2 pr-3 rounded cursor-pointer hover:bg-gray-100">
+              <div className="flex text-sm items-center justify-center rounded-sm w-5 h-5 text-white bg-indigo-500 mr-2.5 font-semibold">
+                C
+              </div>
+              <div className="text-sm font-medium text-gray-800">Comsierge</div>
+            </div>
+
+            {/* User avatar dropdown */}
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                className="flex items-center justify-center p-2 rounded cursor-pointer hover:bg-gray-100"
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+              >
+                <div className="relative w-6 h-6 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-medium">
+                  {user?.name?.charAt(0) || "U"}
+                  <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border border-white rounded-full" />
+                </div>
+                <ChevronDown className="w-3 h-3 ml-1 text-gray-500" />
+              </button>
+
+              {/* Profile dropdown */}
+              {showProfileMenu && (
+                <div className="absolute left-0 top-10 w-52 bg-[#F9F9F9] border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                  <div className="px-3 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-800 truncate">{user?.name || "User"}</p>
+                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                  </div>
+                  <button
+                    onClick={() => { setActiveTab("settings"); setShowProfileMenu(false); }}
+                    className="flex items-center w-full px-3 h-8 hover:bg-gray-100 text-gray-700"
+                  >
+                    <Settings className="w-3.5 h-3.5 mr-2 text-gray-500" />
+                    Settings
+                  </button>
+                  <div className="border-t border-gray-100 my-1" />
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center w-full px-3 h-8 hover:bg-gray-100 text-gray-700"
+                  >
+                    <LogOut className="w-3.5 h-3.5 mr-2 text-gray-500" />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Phone number */}
+          <button
+            onClick={copyPhoneNumber}
+            className="inline-flex items-center px-2 py-2 mt-3 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
+          >
+            <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
+            <span className="font-mono text-gray-600">{phoneNumber}</span>
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex flex-col flex-shrink flex-grow overflow-y-auto mb-0.5 px-4">
+          {/* Nav items */}
+          <nav className="mt-4 space-y-0.5">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={cn(
+                  "group relative w-full py-2 px-2 h-8 flex items-center rounded cursor-pointer transition-colors",
+                  activeTab === item.id
+                    ? "bg-gray-100 text-gray-900"
+                    : "hover:bg-gray-100 text-gray-600"
+                )}
+              >
+                <item.icon className={cn(
+                  "w-4 h-4 mr-3",
+                  activeTab === item.id ? "text-gray-700" : "text-gray-500 group-hover:text-gray-600"
+                )} />
+                <span className="text-sm">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* Spacer */}
+          <div className="flex-grow" />
+
+          {/* Bottom links */}
+          <div className="px-2 pb-4 text-gray-500 space-y-1">
+            <button 
+              onClick={() => setShowInviteModal(true)}
+              className="inline-flex items-center text-sm hover:text-gray-700 focus:outline-none"
+            >
+              <UserPlus className="w-3.5 h-3.5 mr-2" /> Invite people
+            </button>
+            <button 
+              onClick={() => setShowHelpModal(true)}
+              className="inline-flex items-center text-sm hover:text-gray-700 focus:outline-none"
+            >
+              <HelpCircle className="w-3.5 h-3.5 mr-2" /> Help & Feedback
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content area */}
+      <div className="flex flex-col flex-grow min-w-0 bg-white">
+        {/* Top bar */}
+        <div className="flex justify-between flex-shrink-0 pl-2 pr-6 border-b border-gray-200 h-14 lg:pl-6 bg-white">
+          {/* Left section */}
+          <div className="flex items-center">
+            <button
+              className="flex-shrink-0 h-full px-4 focus:outline-none lg:hidden"
+              onClick={() => setShowMenu(true)}
+            >
+              <Menu className="w-4 h-4 text-gray-500 hover:text-gray-800" />
+            </button>
+
+            <div className="p-1 font-semibold text-gray-800">
+              {navItems.find((n) => n.id === activeTab)?.label}
+            </div>
+            <button className="px-2 py-1 ml-3 border border-gray-300 border-dashed rounded text-gray-500 hover:border-gray-400 focus:outline-none hover:text-gray-700 text-xs">
+              + Filter
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className={cn(
+          "flex-1 bg-white",
+          activeTab === "inbox" ? "overflow-hidden" : "overflow-y-auto"
+        )}>
+          <div className={cn("h-full", activeTab === "inbox" ? "" : "p-6")}>
+            {renderContent()}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile overlay */}
+      {showMenu && (
+        <div
+          className="fixed inset-0 bg-black/20 z-40 lg:hidden"
+          onClick={() => setShowMenu(false)}
         />
       )}
 
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed lg:sticky top-0 left-0 z-50 h-screen bg-card/50 border-r border-border/50 flex flex-col transition-all duration-300 ease-out",
-          sidebarCollapsed ? "lg:w-16" : "lg:w-56",
-          mobileSidebarOpen ? "w-56 translate-x-0" : "-translate-x-full lg:translate-x-0"
-        )}
-      >
-        {/* Sidebar Header */}
-        <div className="h-14 px-4 flex items-center justify-between border-b border-border/30 shrink-0">
-          {!sidebarCollapsed && (
-            <Link to="/" className="text-lg">
-              <Logo />
-            </Link>
-          )}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="hidden lg:flex p-1.5 rounded-lg hover:bg-secondary/50 transition-colors"
-          >
-            {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={() => setMobileSidebarOpen(false)}
-            className="lg:hidden p-1.5 rounded-lg hover:bg-secondary/50"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Phone Number Card */}
-        {!sidebarCollapsed && (
-          <div className="px-3 py-3 border-b border-border/30">
-            <div className="flex items-center gap-2 px-2 py-2 rounded-lg bg-secondary/30 border border-border/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs text-foreground font-mono flex-1 truncate">{phoneNumber}</span>
-              <button onClick={copyPhoneNumber} className="p-1 hover:bg-secondary rounded transition-colors">
-                {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <nav className="flex-1 px-2 py-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                activeTab === item.id
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-              )}
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              {!sidebarCollapsed && <span className="text-sm font-medium">{item.label}</span>}
-            </button>
-          ))}
-        </nav>
-
-        {/* AI Button */}
-        <div className="px-2 pb-3">
-          <button
-            onClick={() => setShowAIPanel(true)}
-            className={cn(
-              "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gradient-to-r from-violet-500/20 to-blue-500/20 border border-violet-500/30 text-foreground hover:from-violet-500/30 hover:to-blue-500/30 transition-all duration-200",
-            )}
-          >
-            <Bot className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span className="text-sm font-medium">Comsierge AI</span>}
-          </button>
-        </div>
-
-        {/* User Section */}
-        <div className="px-2 py-3 border-t border-border/30">
-          <div className={cn("flex items-center gap-3 px-2", sidebarCollapsed && "justify-center")}>
-            <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium shrink-0">
-              {user?.name?.charAt(0).toUpperCase() || "U"}
-            </div>
-            {!sidebarCollapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{user?.name || "User"}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-              </div>
-            )}
-            <button
-              onClick={handleLogout}
-              className={cn("p-2 rounded-lg hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground", sidebarCollapsed && "hidden")}
-              title="Log out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen lg:min-w-0">
-        {/* Header */}
-        <header className="sticky top-0 z-30 h-14 bg-background/95 backdrop-blur-sm border-b border-border/50 px-4 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-secondary/50 transition-colors"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-medium text-foreground capitalize">
-              {activeTab === "inbox" ? "Messages" : activeTab}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Notifications */}
-            <button className="relative p-2 rounded-lg hover:bg-secondary/50 transition-colors">
-              <Bell className="w-5 h-5 text-muted-foreground" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500" />
-            </button>
-
-            {/* Mobile User Avatar */}
-            <div className="lg:hidden flex items-center gap-2 px-2 py-1.5 rounded-lg">
-              <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-foreground text-sm font-medium">
-                {user?.name?.charAt(0).toUpperCase() || "U"}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
-          <div className="max-w-6xl mx-auto animate-fade-in">
-            {renderContent()}
-          </div>
-        </main>
-      </div>
-
-      {/* AI Panel */}
-      <AIPanel isOpen={showAIPanel} onClose={() => setShowAIPanel(false)} />
+      {/* Modals */}
+      <InviteModal 
+        isOpen={showInviteModal} 
+        onClose={() => setShowInviteModal(false)} 
+      />
+      <HelpModal 
+        isOpen={showHelpModal} 
+        onClose={() => setShowHelpModal(false)}
+        onOpenSupport={() => {
+          setShowHelpModal(false);
+          setActiveTab("support");
+        }}
+      />
     </div>
   );
 };

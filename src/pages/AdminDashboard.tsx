@@ -249,11 +249,11 @@ const AdminDashboard = () => {
         <div className="p-6 border-b border-border">
           <div className="flex items-center gap-2.5 text-xl font-medium tracking-tight text-foreground">
             <Phone className="w-5 h-5" />
-            <span>comsierge.</span>
+            <span>Admin</span>
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-yellow-500" />
-            <span className="text-xs text-yellow-500 font-medium">Admin Panel</span>
+            <Shield className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground font-medium">Admin Panel</span>
           </div>
         </div>
 

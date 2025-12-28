@@ -19,7 +19,7 @@ const AITab = ({ initialContext }: AITabProps) => {
   const [messages, setMessages] = useState<AIMessage[]>([
     {
       id: "1",
-      content: "Hi! I'm your Comsierge AI assistant. I can help you analyze messages, summarize conversations, translate content, and more. What would you like to know?",
+      content: "Hi! I'm your AI assistant. I can help you analyze messages, summarize conversations, translate content, and more. What would you like to know?",
       isUser: false,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
@@ -87,7 +87,7 @@ const AITab = ({ initialContext }: AITabProps) => {
           <Bot className="w-5 h-5 text-foreground" />
         </div>
         <div>
-          <h2 className="text-sm font-medium text-foreground">Comsierge AI</h2>
+          <h2 className="text-sm font-medium text-foreground">AI Assistant</h2>
           <p className="text-xs text-muted-foreground">Ask about your messages</p>
         </div>
       </div>

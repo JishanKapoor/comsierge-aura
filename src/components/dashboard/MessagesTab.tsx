@@ -273,13 +273,13 @@ const MessagesTab = () => {
                     </button>
                     <div className="my-1 border-t border-border" />
                     <button
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
                       onClick={handleBlockNumber}
                     >
                       <Ban className="w-4 h-4" /> Block
                     </button>
                     <button
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
                       onClick={() => { toast.success("Deleted"); setSelectedChat(null); }}
                     >
                       <Trash2 className="w-4 h-4" /> Delete
@@ -298,8 +298,8 @@ const MessagesTab = () => {
               <div
                 className={`max-w-[75%] px-4 py-2.5 rounded-2xl ${
                   msg.isIncoming 
-                    ? "bg-blue-500/15 text-foreground rounded-bl-sm border border-blue-500/20" 
-                    : "bg-emerald-500/15 text-foreground rounded-br-sm border border-emerald-500/20"
+                    ? "bg-gray-100 text-foreground rounded-bl-sm" 
+                    : "bg-primary text-primary-foreground rounded-br-sm"
                 }`}
               >
                 <p className="text-sm">{msg.content}</p>
@@ -321,7 +321,7 @@ const MessagesTab = () => {
             >
               <X className="w-3 h-3 text-muted-foreground" />
             </button>
-            <Lightbulb className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <Lightbulb className="w-3.5 h-3.5 text-gray-400 shrink-0" />
             {aiSuggestions.slice(0, 3).map((suggestion) => (
               <button
                 key={suggestion}
@@ -500,7 +500,7 @@ const MessagesTab = () => {
               </div>
 
               <div className="shrink-0 px-3 py-2 border-t border-border/50 flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1 rounded-lg h-8" onClick={() => setShowTransferModal(false)}>
+                <Button variant="outline" size="sm" className="flex-1 rounded-lg h-8 bg-white text-gray-700 border-gray-200 hover:bg-gray-50" onClick={() => setShowTransferModal(false)}>
                   Cancel
                 </Button>
                 <Button size="sm" className="flex-1 rounded-lg h-8" onClick={handleTransferChat}>
@@ -521,7 +521,7 @@ const MessagesTab = () => {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium text-foreground">Messages</h2>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="rounded-lg" onClick={() => setShowLanguageModal(true)}>
+          <Button variant="outline" size="sm" className="rounded-lg bg-white text-gray-700 border-gray-200 hover:bg-gray-50" onClick={() => setShowLanguageModal(true)}>
             <Globe className="w-4 h-4" />
           </Button>
           <Button size="sm" className="gap-1.5 rounded-lg">
@@ -607,10 +607,10 @@ const MessagesTab = () => {
                 <span
                   className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] ${
                     msg.status === "priority"
-                      ? "bg-amber-500/15 text-amber-500"
+                      ? "bg-gray-100 text-gray-600"
                       : msg.status === "blocked"
-                      ? "bg-destructive/15 text-destructive"
-                      : "bg-secondary/50 text-muted-foreground"
+                      ? "bg-gray-100 text-gray-500"
+                      : "bg-gray-50 text-gray-500"
                   }`}
                 >
                   {getStatusIcon(msg.status)}

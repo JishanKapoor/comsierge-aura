@@ -113,11 +113,11 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
         {/* Header */}
         <div className="h-14 px-4 flex items-center justify-between border-b border-border/50 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h2 className="font-medium text-foreground text-sm">Comsierge AI</h2>
+              <h2 className="font-medium text-foreground text-sm">AI Assistant</h2>
               <p className="text-xs text-muted-foreground">Your intelligent assistant</p>
             </div>
           </div>
@@ -157,7 +157,7 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
               {messages.length === 0 && (
                 <div className="space-y-4">
                   <div className="text-center py-6">
-                    <Sparkles className="w-10 h-10 mx-auto mb-3 text-violet-400 opacity-60" />
+                    <Sparkles className="w-10 h-10 mx-auto mb-3 text-gray-400 opacity-60" />
                     <h3 className="font-medium text-foreground mb-1">Ask me anything</h3>
                     <p className="text-xs text-muted-foreground">I can search, summarize, and automate your messages</p>
                   </div>
@@ -213,7 +213,7 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  placeholder="Ask Comsierge AI..."
+                  placeholder="Ask AI Assistant..."
                   className="flex-1 px-4 py-2.5 bg-secondary/40 border border-border/30 rounded-xl text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:border-border/60"
                 />
                 <Button size="icon" className="h-10 w-10 shrink-0" onClick={handleSend} disabled={isLoading}>
@@ -241,7 +241,7 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
                       onClick={() => toggleCondition(condition.id)}
                       className={cn(
                         "w-10 h-5 rounded-full transition-colors relative",
-                        condition.active ? "bg-emerald-500" : "bg-secondary"
+                        condition.active ? "bg-primary" : "bg-muted"
                       )}
                     >
                       <span className={cn(
@@ -251,7 +251,7 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
                     </button>
                     <button
                       onClick={() => deleteCondition(condition.id)}
-                      className="p-1.5 hover:bg-destructive/10 rounded-lg text-muted-foreground hover:text-destructive transition-colors"
+                      className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

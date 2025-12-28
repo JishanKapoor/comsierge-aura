@@ -122,9 +122,9 @@ const Auth = () => {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs sm:text-sm text-muted-foreground">Password</label>
-                  <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300">
+                  <Link to="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-300">
                     Forgot password?
-                  </button>
+                  </Link>
                 </div>
                 <div className="relative">
                   <input
