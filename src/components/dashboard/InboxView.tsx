@@ -32,16 +32,19 @@ import {
   Plus,
   Clock,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mockMessages, languages, mockContacts } from "./mockData";
 import type { Contact, Message } from "./types";
 import { loadContacts, saveContacts } from "./contactsStore";
 import { loadRules, saveRules, ActiveRule } from "./rulesStore";
+import { loadTwilioAccounts } from "./adminStore";
 import { isValidUsPhoneNumber } from "@/lib/validations";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 type ChatBubble = {
   id: string;
@@ -86,6 +89,7 @@ type PriorityFilter = "all" | "emergency" | "meetings" | "deadlines" | "importan
 type ScheduleMode = "always" | "duration" | "custom";
 
 const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) => {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = safeParseJson<Message[]>(localStorage.getItem(STORAGE_KEYS.messages));
     return Array.isArray(saved) && saved.length > 0 ? saved : mockMessages;
@@ -96,6 +100,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [newMessage, setNewMessage] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "chat">("list");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [isSending, setIsSending] = useState(false);
   
   // Menu states
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -137,6 +142,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const processedMessageIds = useRef<Set<string>>(new Set());
 
   const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
   const isAllowedAttachment = (file: File) => {
@@ -439,6 +446,96 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const [threadsByContactId, setThreadsByContactId] = useState<Record<string, ChatBubble[]>>({});
 
+  // Poll for incoming messages from Twilio webhook
+  useEffect(() => {
+    const fetchIncomingMessages = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/api/twilio/incoming-messages");
+        const data = await res.json();
+        
+        if (data.success && data.data && data.data.length > 0) {
+          let hasNewMessages = false;
+          
+          // Process new incoming messages
+          data.data.forEach((incomingMsg: { id: string; from: string; to: string; body: string; timestamp: string }) => {
+            // Skip if already processed
+            if (processedMessageIds.current.has(incomingMsg.id)) return;
+            
+            // Mark as processed immediately
+            processedMessageIds.current.add(incomingMsg.id);
+            hasNewMessages = true;
+            
+            // Find or create conversation for this sender
+            const senderPhone = incomingMsg.from;
+            const existingConvo = messages.find(m => 
+              m.contactPhone?.replace(/[^\d+]/g, "") === senderPhone.replace(/[^\d+]/g, "")
+            );
+            
+            if (existingConvo) {
+              // Add to existing thread
+              setThreadsByContactId(prev => ({
+                ...prev,
+                [existingConvo.contactId]: [
+                  ...(prev[existingConvo.contactId] || []),
+                  {
+                    id: incomingMsg.id,
+                    role: "incoming" as const,
+                    content: incomingMsg.body,
+                    timestamp: new Date(incomingMsg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+                  }
+                ]
+              }));
+              // Update the conversation's last message
+              setMessages(prev => prev.map(m => 
+                m.id === existingConvo.id 
+                  ? { ...m, content: incomingMsg.body, timestamp: "Just now", isRead: false }
+                  : m
+              ));
+            } else {
+              // Create new conversation
+              const newConvo: Message = {
+                id: `twilio-${Date.now()}`,
+                contactId: `phone:${senderPhone}`,
+                contactName: senderPhone,
+                contactPhone: senderPhone,
+                content: incomingMsg.body,
+                timestamp: "Just now",
+                isIncoming: true,
+                status: "allowed",
+                rule: "New Contact",
+                isRead: false,
+              };
+              setMessages(prev => [newConvo, ...prev]);
+              setThreadsByContactId(prev => ({
+                ...prev,
+                [newConvo.contactId]: [{
+                  id: incomingMsg.id,
+                  role: "incoming" as const,
+                  content: incomingMsg.body,
+                  timestamp: new Date(incomingMsg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+                }]
+              }));
+            }
+          });
+          
+          // Clear processed messages from server
+          if (hasNewMessages) {
+            fetch("http://localhost:5000/api/twilio/incoming-messages", { method: "DELETE" }).catch(() => {});
+          }
+        }
+      } catch (error) {
+        // Silently fail - server might be down
+        console.log("Failed to fetch incoming messages");
+      }
+    };
+    
+    // Poll every 3 seconds
+    const interval = setInterval(fetchIncomingMessages, 3000);
+    fetchIncomingMessages(); // Initial fetch
+    
+    return () => clearInterval(interval);
+  }, [messages, threadsByContactId]);
+
   useEffect(() => {
     if (!selectedMessage) return;
     setThreadsByContactId((prev) => {
@@ -471,6 +568,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const activeThread = selectedMessage ? threadsByContactId[selectedMessage.contactId] ?? [] : [];
 
+  // Auto-scroll to bottom when new messages arrive in the active thread
+  useEffect(() => {
+    if (chatScrollRef.current && activeThread.length > 0) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [activeThread.length]);
+
   useEffect(() => {
     if (!showAiChat || !selectedMessage) return;
     setAiChatsByConversationId((prev) => {
@@ -492,14 +596,71 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (isMobile) setMobilePane("chat");
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!selectedMessage) return;
 
     const trimmed = newMessage.trim();
     if (!trimmed && !pendingAttachment) return;
+    if (isSending) return;
 
     const now = new Date();
     const timestamp = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+    
+    // Get Twilio credentials from localStorage
+    const twilioAccounts = loadTwilioAccounts();
+    const userPhone = user?.phoneNumber;
+    
+    // Find the Twilio account that has this phone number
+    const twilioAccount = twilioAccounts.find(acc => 
+      acc.phoneNumbers.some(p => {
+        const cleanP = p.replace(/[^\d+]/g, "");
+        const cleanUser = userPhone?.replace(/[^\d+]/g, "");
+        return cleanP === cleanUser;
+      })
+    );
+
+    // Get recipient phone - clean it up
+    const recipientPhone = selectedMessage.contactPhone?.replace(/[^\d+]/g, "") || "";
+    
+    // Try to send via Twilio if we have credentials
+    if (trimmed && twilioAccount && userPhone && recipientPhone) {
+      setIsSending(true);
+      try {
+        const response = await fetch("http://localhost:5000/api/twilio/send-sms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountSid: twilioAccount.accountSid,
+            authToken: twilioAccount.authToken,
+            fromNumber: userPhone,
+            toNumber: recipientPhone,
+            body: trimmed,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+          toast.error(data.message || "Failed to send SMS");
+          setIsSending(false);
+          return;
+        }
+        
+        // SMS sent successfully
+        toast.success("SMS sent!");
+      } catch (error) {
+        console.error("Send SMS error:", error);
+        toast.error("Failed to send SMS - check connection");
+        setIsSending(false);
+        return;
+      }
+      setIsSending(false);
+    } else if (trimmed && !twilioAccount) {
+      // No Twilio credentials - show warning but still add to UI
+      toast.warning("No Twilio account configured - message saved locally only");
+    }
+
+    // Add message to UI
     const toAppend: ChatBubble[] = [];
 
     if (trimmed) {
@@ -532,7 +693,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setAiAssistMode(null);
     setAiAssistRewrite("");
     setAiAssistSuggestions([]);
-    toast.success("Message sent");
   };
 
   // Status colors and labels
@@ -1331,7 +1491,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             </div>
 
             {/* Messages area */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 bg-gray-50">
               <div className="w-full space-y-4">
                 {/* Date separator */}
                 <div className="flex items-center justify-center">
@@ -1607,11 +1767,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   )}
                 </div>
                 <button
-                  className="p-2 rounded bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shrink-0"
+                  className={cn(
+                    "p-2 rounded bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shrink-0",
+                    isSending && "opacity-50 cursor-not-allowed"
+                  )}
                   aria-label="Send"
                   onClick={handleSend}
+                  disabled={isSending}
                 >
-                  <Send className="w-4 h-4" />
+                  {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </div>
             </div>

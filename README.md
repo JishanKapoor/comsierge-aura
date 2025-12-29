@@ -1,6 +1,28 @@
 # Comsierge - AI-Powered Communication Management
 
+**Last Updated:** December 29, 2025 at 11:00 AM EST
+
 Comsierge is a modern communication management platform that provides AI-powered phone number management, messaging, and call handling capabilities using Twilio integration.
+
+## 🚀 Recent Updates (December 29, 2025)
+
+### Real-Time SMS Integration
+- ✅ **Twilio SMS Sending** - Send real SMS messages from the inbox
+- ✅ **Twilio SMS Receiving** - Receive SMS via webhooks with ngrok tunnel
+- ✅ **Auto-scroll** - Chat automatically scrolls to show new messages
+- ✅ **No spam notifications** - Removed repetitive toast notifications for incoming messages
+- ✅ **Message polling** - Frontend polls for new messages every 3 seconds
+
+### Backend Enhancements
+- ✅ **Webhook endpoints** - `/api/twilio/webhook/sms` and `/api/twilio/webhook/voice`
+- ✅ **Configure webhooks** - `/api/twilio/configure-webhooks` to set up Twilio phone numbers
+- ✅ **In-memory message store** - Temporary storage for incoming messages
+- ✅ **URL-encoded body parsing** - For Twilio webhook payloads
+
+### AI Integration
+- ✅ **LangChain/LangGraph** - AI-powered message analysis
+- ✅ **Auto-response suggestions** - AI generates response suggestions
+- ✅ **Priority detection** - AI detects message priority
 
 ## Features
 
@@ -51,7 +73,12 @@ Create a `.env` file in the `server/` directory:
 MONGODB_URI=mongodb+srv://your-connection-string
 JWT_SECRET=your-jwt-secret-key
 PORT=5000
+TWILIO_ACCOUNT_SID=your-twilio-account-sid
+TWILIO_AUTH_TOKEN=your-twilio-auth-token
+OPENAI_API_KEY=your-openai-api-key
 ```
+
+> ⚠️ **IMPORTANT:** Never commit `.env` files to git! They are already in `.gitignore`.
 
 ### Installation
 

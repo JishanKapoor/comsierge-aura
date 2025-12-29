@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import authRoutes from "./routes/auth.js";
 import twilioRoutes from "./routes/twilio.js";
+import aiRoutes from "./routes/ai.js";
 
 // Load environment variables with explicit path
 const __filename = fileURLToPath(import.meta.url);
@@ -20,10 +21,28 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+// For Twilio webhooks (they send form-urlencoded data)
+app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/twilio", twilioRoutes);
+app.use("/api/ai", aiRoutes);
+
+// Root route - shows API info
+app.get("/", (req, res) => {
+  res.json({
+    name: "Comsierge API",
+    version: "1.0.0",
+    status: "running",
+    endpoints: {
+      auth: "/api/auth",
+      twilio: "/api/twilio",
+      ai: "/api/ai",
+      health: "/api/health",
+    },
+  });
+});
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -70,6 +89,13 @@ const startServer = async () => {
       console.log(`   PUT  /api/auth/profile - Update profile`);
       console.log(`   GET  /api/auth/users - List all users`);
       console.log(`   DELETE /api/auth/users/all - Delete all users`);
+      console.log(`   🤖 AI Endpoints:`);
+      console.log(`   POST /api/ai/analyze - Analyze a message`);
+      console.log(`   POST /api/ai/priority - Quick priority check`);
+      console.log(`   POST /api/ai/batch-analyze - Batch analyze messages`);
+      console.log(`   POST /api/ai/auto-response - Generate auto-response`);
+      console.log(`   POST /api/ai/should-hold - Check if should hold`);
+      console.log(`   POST /api/ai/process-incoming - Full incoming processing`);
     });
   } catch (error) {
     console.error("❌ MongoDB connection error:", error.message);
