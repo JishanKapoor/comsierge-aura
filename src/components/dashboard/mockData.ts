@@ -98,6 +98,30 @@ export const mockMessages: Message[] = [
     rule: "Family",
     isRead: false,
   },
+  {
+    id: "5",
+    contactId: "spam1",
+    contactName: "Prize Winner",
+    contactPhone: "+1 (888) 555-9999",
+    content: "Congratulations! You've won a $1000 gift card. Click here to claim...",
+    timestamp: "10:45am",
+    isIncoming: true,
+    status: "held",
+    rule: "Suspected Spam",
+    isRead: true,
+  },
+  {
+    id: "6",
+    contactId: "spam2",
+    contactName: "Crypto Alert",
+    contactPhone: "+1 (777) 555-1234",
+    content: "URGENT: Your Bitcoin wallet needs verification. Act now!",
+    timestamp: "9:20am",
+    isIncoming: true,
+    status: "held",
+    rule: "Suspected Spam",
+    isRead: false,
+  },
 ];
 
 export const mockChatHistory: Record<string, ChatMessage[]> = {

@@ -16,13 +16,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isValidUsPhoneNumber } from "@/lib/validations";
 import { languages } from "./mockData";
 import { useAuth } from "@/contexts/AuthContext";
 
 type SettingsSection = "main" | "profile" | "language" | "notifications" | "privacy" | "offline";
 
 const SettingsTab = () => {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [section, setSection] = useState<SettingsSection>("main");
   
   // Profile settings
@@ -107,7 +108,10 @@ const SettingsTab = () => {
                 />
               </div>
 
-              <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Profile saved")}>Save Changes</Button>
+              <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => {
+                updateProfile({ name, email });
+                toast.success("Profile saved");
+              }}>Save Changes</Button>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-1">
@@ -321,7 +325,19 @@ const SettingsTab = () => {
               )}
             </div>
 
-            <Button size="sm" className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => toast.success("Offline routing settings saved")}>Save Changes</Button>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
+              onClick={() => {
+                if (offlineForwardEnabled && !isValidUsPhoneNumber(offlineForwardNumber)) {
+                  toast.error("Enter a valid phone number (10 digits, optional +1)");
+                  return;
+                }
+                toast.success("Offline routing settings saved");
+              }}
+            >
+              Save Changes
+            </Button>
           </div>
         )}
       </div>

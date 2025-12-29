@@ -35,9 +35,9 @@ const Auth = () => {
   });
 
   const handleLoginSubmit = async (data: LoginFormData) => {
-    const success = await login(data.email, data.password);
-    if (success) {
-      if (data.email === "admin" && data.password === "admin") {
+    const loggedInUser = await login(data.email, data.password);
+    if (loggedInUser) {
+      if (loggedInUser.role === "admin") {
         navigate("/admin");
       } else {
         navigate("/dashboard");
@@ -48,7 +48,7 @@ const Auth = () => {
   const handleSignupSubmit = async (data: SignupFormData) => {
     const success = await signup(data.name, data.email, data.password);
     if (success) {
-      navigate("/dashboard");
+      navigate("/select-number");
     }
   };
 

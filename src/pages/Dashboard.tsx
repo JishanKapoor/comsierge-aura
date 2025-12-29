@@ -1,20 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Menu,
   Inbox,
   Users,
-  HelpCircle,
-  UserPlus,
-  ChevronDown,
-  Settings,
   LogOut,
   Copy,
   Phone,
-  Clock,
   Route,
   Headphones,
+  Zap,
+  ChevronUp,
+  User as UserIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -22,27 +20,62 @@ import { toast } from "sonner";
 import InboxView from "@/components/dashboard/InboxView";
 import CallsTab from "@/components/dashboard/CallsTab";
 import ContactsTab from "@/components/dashboard/ContactsTab";
-import SettingsTab from "@/components/dashboard/SettingsTab";
-import RemindersTab from "@/components/dashboard/RemindersTab";
 import SupportTab from "@/components/dashboard/SupportTab";
 import RoutingPanel from "@/components/dashboard/RoutingPanel";
-import InviteModal from "@/components/dashboard/InviteModal";
-import HelpModal from "@/components/dashboard/HelpModal";
+import ActiveRulesTab from "@/components/dashboard/ActiveRulesTab";
+import ProfileTab from "@/components/dashboard/ProfileTab";
 
-type Tab = "inbox" | "calls" | "contacts" | "routing" | "reminders" | "support" | "settings";
+type Tab = "inbox" | "calls" | "contacts" | "routing" | "rules" | "support" | "profile";
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser, isLoading } = useAuth();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("inbox");
   const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const phoneNumber = "+1 (437) 239-2448";
+  // Use the user's assigned phone number or a placeholder
+  const phoneNumber = user?.phoneNumber || "No number assigned";
+
+  // Redirect to select-number page if user has no phone number
+  useEffect(() => {
+    if (user && !user.phoneNumber) {
+      navigate("/select-number", { replace: true });
+    }
+  }, [user, navigate]);
+
+  // Periodically check if user still has a phone number (in case admin unassigns it)
+  useEffect(() => {
+    // Don't start polling until user has a phone
+    if (!user?.phoneNumber) return;
+    
+    const checkPhoneStatus = () => {
+      refreshUser();
+    };
+    
+    // Check every 15 seconds
+    const interval = setInterval(checkPhoneStatus, 15000);
+    
+    // Also check when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshUser();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshUser, user?.phoneNumber]);
+
+  // Don't render dashboard if user has no phone number - prevents flicker
+  if (isLoading || !user || !user.phoneNumber) {
+    return null;
+  }
 
   // Handle navigation from contacts
   const handleNavigateFromContacts = (tab: string, contactPhone?: string) => {
@@ -57,11 +90,11 @@ const Dashboard = () => {
     setShowMenu(false);
   }, [activeTab]);
 
-  // Close profile menu on outside click
+  // Close user menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
-        setShowProfileMenu(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -87,9 +120,8 @@ const Dashboard = () => {
     { id: "calls" as Tab, label: "Calls", icon: Phone },
     { id: "contacts" as Tab, label: "Contacts", icon: Users },
     { id: "routing" as Tab, label: "Routing", icon: Route },
-    { id: "reminders" as Tab, label: "Reminders", icon: Clock },
+    { id: "rules" as Tab, label: "Active Rules", icon: Zap },
     { id: "support" as Tab, label: "Support", icon: Headphones },
-    { id: "settings" as Tab, label: "Settings", icon: Settings },
   ];
 
   const renderContent = () => {
@@ -102,12 +134,12 @@ const Dashboard = () => {
         return <ContactsTab onNavigate={handleNavigateFromContacts} />;
       case "routing":
         return <RoutingPanel phoneNumber={phoneNumber} />;
-      case "reminders":
-        return <RemindersTab />;
+      case "rules":
+        return <ActiveRulesTab />;
       case "support":
         return <SupportTab />;
-      case "settings":
-        return <SettingsTab />;
+      case "profile":
+        return <ProfileTab />;
       default:
         return null;
     }
@@ -119,7 +151,7 @@ const Dashboard = () => {
       <div
         className={cn(
           "absolute lg:static inset-0 transform duration-300 lg:relative lg:translate-x-0",
-          "bg-white flex flex-col flex-shrink-0 w-56 border-r border-gray-100 lg:shadow-none z-50",
+          "bg-white flex flex-col flex-shrink-0 w-56 h-full border-r border-gray-100 lg:shadow-none z-50 overflow-hidden",
           showMenu ? "translate-x-0 ease-in shadow-xl" : "-translate-x-full ease-out shadow-none"
         )}
       >
@@ -141,59 +173,27 @@ const Dashboard = () => {
               </div>
               <div className="text-sm font-medium text-gray-800">Comsierge</div>
             </div>
-
-            {/* User avatar dropdown */}
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                className="flex items-center justify-center p-2 rounded cursor-pointer hover:bg-gray-100"
-                onClick={() => setShowProfileMenu(!showProfileMenu)}
-              >
-                <div className="relative w-6 h-6 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-medium">
-                  {user?.name?.charAt(0) || "U"}
-                  <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 border border-white rounded-full" />
-                </div>
-                <ChevronDown className="w-3 h-3 ml-1 text-gray-500" />
-              </button>
-
-              {/* Profile dropdown */}
-              {showProfileMenu && (
-                <div className="absolute left-0 top-10 w-52 bg-[#F9F9F9] border border-gray-200 rounded-lg shadow-lg py-1 z-50">
-                  <div className="px-3 py-2 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-800 truncate">{user?.name || "User"}</p>
-                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
-                  </div>
-                  <button
-                    onClick={() => { setActiveTab("settings"); setShowProfileMenu(false); }}
-                    className="flex items-center w-full px-3 h-8 hover:bg-gray-100 text-gray-700"
-                  >
-                    <Settings className="w-3.5 h-3.5 mr-2 text-gray-500" />
-                    Settings
-                  </button>
-                  <div className="border-t border-gray-100 my-1" />
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center w-full px-3 h-8 hover:bg-gray-100 text-gray-700"
-                  >
-                    <LogOut className="w-3.5 h-3.5 mr-2 text-gray-500" />
-                    Logout
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Phone number */}
-          <button
-            onClick={copyPhoneNumber}
-            className="inline-flex items-center px-2 py-2 mt-3 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
-          >
-            <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
-            <span className="font-mono text-gray-600">{phoneNumber}</span>
-          </button>
+          {user?.phoneNumber ? (
+            <button
+              onClick={copyPhoneNumber}
+              className="inline-flex items-center px-2 py-2 mt-3 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
+            >
+              <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
+              <span className="font-mono text-gray-600">{phoneNumber}</span>
+            </button>
+          ) : (
+            <div className="inline-flex items-center px-2 py-2 mt-3 bg-gray-50 border border-gray-200 rounded h-8 text-xs">
+              <Phone className="w-3.5 h-3.5 mr-2 text-gray-400" />
+              <span className="text-gray-500">No number assigned</span>
+            </div>
+          )}
         </div>
 
         {/* Navigation */}
-        <div className="flex flex-col flex-shrink flex-grow overflow-y-auto mb-0.5 px-4">
+        <div className="flex flex-col flex-shrink flex-grow overflow-y-auto mb-0.5 px-4 pb-4">
           {/* Nav items */}
           <nav className="mt-4 space-y-0.5">
             {navItems.map((item) => (
@@ -216,29 +216,55 @@ const Dashboard = () => {
             ))}
           </nav>
 
-          {/* Spacer */}
-          <div className="flex-grow" />
+          {/* Bottom user area */}
+          <div className="mt-auto pt-3 border-t border-gray-100 relative" ref={userMenuRef}>
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              {/* User button with dropdown */}
+              <button
+                type="button"
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 flex-1 min-w-0 rounded px-1.5 py-1 hover:bg-gray-100"
+              >
+                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0">
+                  {user?.name?.charAt(0) || "U"}
+                </div>
+                <span className="text-sm text-gray-700 truncate">{user?.name || "Demo User"}</span>
+                <ChevronUp className={cn("w-3.5 h-3.5 text-gray-400 transition-transform", showUserMenu ? "" : "rotate-180")} />
+              </button>
 
-          {/* Bottom links */}
-          <div className="px-2 pb-4 text-gray-500 space-y-1">
-            <button 
-              onClick={() => setShowInviteModal(true)}
-              className="inline-flex items-center text-sm hover:text-gray-700 focus:outline-none"
-            >
-              <UserPlus className="w-3.5 h-3.5 mr-2" /> Invite people
-            </button>
-            <button 
-              onClick={() => setShowHelpModal(true)}
-              className="inline-flex items-center text-sm hover:text-gray-700 focus:outline-none"
-            >
-              <HelpCircle className="w-3.5 h-3.5 mr-2" /> Help & Feedback
-            </button>
+              {/* Logout button */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center justify-center w-7 h-7 rounded text-gray-400 hover:bg-red-50 hover:text-red-500"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Dropdown menu */}
+            {showUserMenu && (
+              <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
+                <div className="px-3 py-2 border-b border-gray-100">
+                  <div className="text-xs text-gray-500">Current plan</div>
+                  <div className="text-sm font-medium text-gray-800">Free plan</div>
+                </div>
+                <button
+                  onClick={() => { setActiveTab("profile"); setShowUserMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <UserIcon className="w-4 h-4 text-gray-500" />
+                  Edit Profile
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-col flex-grow min-w-0 bg-white">
+      <div className="flex flex-col flex-grow min-w-0 h-full bg-white overflow-hidden">
         {/* Top bar */}
         <div className="flex justify-between flex-shrink-0 pl-2 pr-6 border-b border-gray-200 h-14 lg:pl-6 bg-white">
           {/* Left section */}
@@ -253,17 +279,17 @@ const Dashboard = () => {
             <div className="p-1 font-semibold text-gray-800">
               {navItems.find((n) => n.id === activeTab)?.label}
             </div>
-            <button className="px-2 py-1 ml-3 border border-gray-300 border-dashed rounded text-gray-500 hover:border-gray-400 focus:outline-none hover:text-gray-700 text-xs">
-              + Filter
-            </button>
           </div>
         </div>
 
         {/* Content */}
-        <div className={cn(
-          "flex-1 bg-white",
-          activeTab === "inbox" ? "overflow-hidden" : "overflow-y-auto"
-        )}>
+        <div 
+          className={cn(
+            "flex-1 min-h-0 bg-white",
+            activeTab === "inbox" ? "overflow-hidden" : "overflow-y-auto"
+          )}
+          style={activeTab !== "inbox" ? { scrollbarWidth: 'none', msOverflowStyle: 'none' } : undefined}
+        >
           <div className={cn("h-full", activeTab === "inbox" ? "" : "p-6")}>
             {renderContent()}
           </div>
@@ -278,19 +304,6 @@ const Dashboard = () => {
         />
       )}
 
-      {/* Modals */}
-      <InviteModal 
-        isOpen={showInviteModal} 
-        onClose={() => setShowInviteModal(false)} 
-      />
-      <HelpModal 
-        isOpen={showHelpModal} 
-        onClose={() => setShowHelpModal(false)}
-        onOpenSupport={() => {
-          setShowHelpModal(false);
-          setActiveTab("support");
-        }}
-      />
     </div>
   );
 };

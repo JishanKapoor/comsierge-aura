@@ -7,12 +7,15 @@ import {
   PhoneMissed,
   Calendar,
   Clock,
+  Volume2,
+  VolumeX,
+  ArrowRightLeft,
   X,
-  Info,
   Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { isValidUsPhoneNumber } from "@/lib/validations";
 import { mockCalls, mockContacts } from "./mockData";
 import { Call } from "./types";
 
@@ -30,6 +33,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const [showMakeCall, setShowMakeCall] = useState(false);
   const [showScheduleCall, setShowScheduleCall] = useState(false);
   const [dialNumber, setDialNumber] = useState("");
+  const [activeCall, setActiveCall] = useState<{
+    number: string;
+    name?: string;
+    startedAt: number;
+    isSpeakerOn: boolean;
+  } | null>(null);
+  const [callNowMs, setCallNowMs] = useState<number>(() => Date.now());
+  const [showTransferCall, setShowTransferCall] = useState(false);
+  const [transferCallTo, setTransferCallTo] = useState("");
   const [scheduleContact, setScheduleContact] = useState("");
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
@@ -43,12 +55,22 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       const contact = mockContacts.find(c => c.phone === selectedContactPhone);
       setDialNumber(selectedContactPhone);
       setShowMakeCall(true);
-      if (contact) {
-        toast.success(`Calling ${contact.name}...`);
-      }
       onClearSelection?.();
     }
   }, [selectedContactPhone]);
+
+  useEffect(() => {
+    if (!activeCall) return;
+    const t = setInterval(() => setCallNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [activeCall]);
+
+  const formatDuration = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
 
   const filteredCalls = calls.filter((call) => {
     const matchesSearch =
@@ -82,9 +104,45 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   };
 
   const makeCall = (number: string, name?: string) => {
+    if (!isValidUsPhoneNumber(number)) {
+      toast.error("Enter a valid phone number (10 digits, optional +1)");
+      return;
+    }
+    setActiveCall({ number, name, startedAt: Date.now(), isSpeakerOn: false });
+    setShowTransferCall(false);
+    setTransferCallTo("");
     toast.success(`Calling ${name || number}...`);
     setShowMakeCall(false);
     setDialNumber("");
+  };
+
+  const hangUp = () => {
+    if (!activeCall) return;
+    const durationMs = Date.now() - activeCall.startedAt;
+    toast.success(`Call ended (${formatDuration(durationMs)})`);
+    setActiveCall(null);
+    setShowTransferCall(false);
+    setTransferCallTo("");
+  };
+
+  const toggleSpeaker = () => {
+    if (!activeCall) return;
+    setActiveCall(prev => prev ? { ...prev, isSpeakerOn: !prev.isSpeakerOn } : prev);
+  };
+
+  const submitTransferCall = () => {
+    if (!activeCall) return;
+    if (!transferCallTo.trim()) {
+      toast.error("Enter a number to transfer to");
+      return;
+    }
+    if (!isValidUsPhoneNumber(transferCallTo.trim())) {
+      toast.error("Enter a valid phone number (10 digits, optional +1)");
+      return;
+    }
+    toast.success(`Transferring call to ${transferCallTo.trim()}`);
+    setShowTransferCall(false);
+    setTransferCallTo("");
   };
 
   const scheduleCall = () => {
@@ -175,7 +233,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   >
                     <Phone className="w-3.5 h-3.5" />
                   </Button>
-                  {call.isBlocked ? (
+                  {call.isBlocked && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -184,16 +242,6 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                       aria-label="Blocked"
                     >
                       <Ban className="w-3.5 h-3.5" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded h-7 w-7 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                      onClick={() => toast("Call details", { description: call.phone })}
-                      aria-label="Info"
-                    >
-                      <Info className="w-3.5 h-3.5" />
                     </Button>
                   )}
                 </div>
@@ -259,11 +307,98 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                 <Button
                   className="flex-1 rounded h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
                   onClick={() => dialNumber && makeCall(dialNumber)}
-                  disabled={!dialNumber}
+                  disabled={!dialNumber || !isValidUsPhoneNumber(dialNumber)}
                 >
                   <Phone className="w-3.5 h-3.5 mr-1.5" /> Call
                 </Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active Call Demo */}
+      {activeCall && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-md p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm font-medium text-gray-800">In call</p>
+                <p className="text-xs text-gray-500">
+                  {activeCall.name ? `${activeCall.name} • ${activeCall.number}` : activeCall.number}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100"
+                onClick={hangUp}
+                aria-label="Hang up"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+
+            <div className="text-center py-5">
+              <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                <Phone className="w-6 h-6 text-gray-600" />
+              </div>
+              <p className="text-xs text-gray-500">Duration</p>
+              <p className="text-2xl font-semibold text-gray-800">
+                {formatDuration(callNowMs - activeCall.startedAt)}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="rounded h-9 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                onClick={toggleSpeaker}
+              >
+                {activeCall.isSpeakerOn ? (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5 mr-1.5" /> Speaker on
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5 mr-1.5" /> Speaker off
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded h-9 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowTransferCall(v => !v)}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Transfer
+              </Button>
+            </div>
+
+            {showTransferCall && (
+              <div className="mt-3 space-y-2">
+                <input
+                  type="text"
+                  value={transferCallTo}
+                  onChange={(e) => setTransferCallTo(e.target.value)}
+                  placeholder="Transfer to (10 digits, optional +1)"
+                  className="w-full h-9 px-3 text-sm bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-gray-300 text-gray-700 placeholder:text-gray-400"
+                />
+                <Button
+                  className="w-full rounded h-9 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
+                  onClick={submitTransferCall}
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" /> Transfer Call
+                </Button>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <Button
+                className="w-full rounded h-9 text-xs bg-gray-800 hover:bg-gray-900 text-white"
+                onClick={hangUp}
+              >
+                Hang up
+              </Button>
             </div>
           </div>
         </div>

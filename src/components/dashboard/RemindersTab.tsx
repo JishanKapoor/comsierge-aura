@@ -7,7 +7,6 @@ import {
   MessageSquare,
   CheckCircle2,
   ChevronDown,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -61,12 +60,6 @@ const RemindersTab = () => {
         <Button size="sm" className="gap-1.5 h-7 text-xs rounded bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => setShowNewReminder(true)}>
           <Plus className="w-3.5 h-3.5" /> Add
         </Button>
-      </div>
-
-      {/* AI Detection Note */}
-      <div className="flex items-center gap-2 p-2.5 bg-gray-50 border border-gray-200 rounded">
-        <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-        <p className="text-xs text-gray-600">AI auto-detects dates in messages. Click "Create Reminder" in any chat.</p>
       </div>
 
       {/* Quick Add Buttons */}

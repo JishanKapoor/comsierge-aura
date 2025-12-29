@@ -34,6 +34,25 @@ export const forgotPasswordSchema = z.object({
     .email("Please enter a valid email address"),
 });
 
+export const normalizeUsPhoneDigits = (value: string) => value.replace(/\D/g, "");
+
+// Accepts:
+// - 10 digits (e.g. 5551234567)
+// - 11 digits starting with 1 (e.g. 15551234567)
+// - Any formatting characters, including +1, parentheses, spaces, dashes
+export const isValidUsPhoneNumber = (value: string) => {
+  const digits = normalizeUsPhoneDigits(value);
+  if (digits.length === 10) return true;
+  if (digits.length === 11 && digits.startsWith("1")) return true;
+  return false;
+};
+
+export const toE164UsPhoneNumber = (value: string): string | null => {
+  if (!isValidUsPhoneNumber(value)) return null;
+  const digits = normalizeUsPhoneDigits(value);
+  return digits.length === 10 ? `+1${digits}` : `+${digits}`;
+};
+
 export type LoginFormData = z.infer<typeof loginSchema>;
 export type SignupFormData = z.infer<typeof signupSchema>;
 export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;

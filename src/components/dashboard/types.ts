@@ -3,6 +3,7 @@ export interface Contact {
   name: string;
   phone: string;
   email?: string;
+  avatar?: string;
   isFavorite: boolean;
   tags: string[];
   notes?: string;
@@ -18,7 +19,7 @@ export interface Message {
   content: string;
   timestamp: string;
   isIncoming: boolean;
-  status: "protected" | "allowed" | "blocked" | "priority";
+  status: "protected" | "allowed" | "blocked" | "priority" | "held";
   rule?: string;
   isRead: boolean;
 }

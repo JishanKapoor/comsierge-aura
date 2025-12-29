@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
+import SelectNumber from "./pages/SelectNumber";
 import Dashboard from "./pages/Dashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
@@ -29,6 +30,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Index />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/select-number" element={<SelectNumber />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="*" element={<NotFound />} />

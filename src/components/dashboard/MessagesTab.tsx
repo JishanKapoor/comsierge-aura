@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { isValidUsPhoneNumber } from "@/lib/validations";
 import { mockMessages, mockChatHistory, mockContacts, languages } from "./mockData";
 import { Message, ChatMessage, AIMessage } from "./types";
 
@@ -151,6 +152,11 @@ const MessagesTab = () => {
   const handleTransferChat = () => {
     if (transferTo.length === 0 && !customNumber.trim()) {
       toast.error("Please select a contact or enter a number");
+      return;
+    }
+
+    if (customNumber.trim() && !isValidUsPhoneNumber(customNumber.trim())) {
+      toast.error("Enter a valid phone number (10 digits, optional +1)");
       return;
     }
     const destination = customNumber.trim() || `${transferTo.length} contact(s)`;

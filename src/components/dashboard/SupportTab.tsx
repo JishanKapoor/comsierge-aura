@@ -6,7 +6,6 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -38,9 +37,9 @@ const issueCategories = [
 const SupportTab = () => {
   const [view, setView] = useState<SupportView>("main");
   const [category, setCategory] = useState("");
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [replyMessage, setReplyMessage] = useState("");
   
   const [tickets, setTickets] = useState<Ticket[]>([
     {
@@ -92,49 +91,120 @@ const SupportTab = () => {
     setView("main");
   };
 
+  const submitReply = () => {
+    if (!replyMessage.trim() || !selectedTicket) return;
+    
+    const newReply = {
+      message: replyMessage.trim(),
+      isSupport: false,
+      timestamp: new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+    };
+    
+    const updatedTicket = {
+      ...selectedTicket,
+      replies: [...(selectedTicket.replies || []), newReply],
+    };
+    
+    setTickets(tickets.map(t => t.id === selectedTicket.id ? updatedTicket : t));
+    setSelectedTicket(updatedTicket);
+    setReplyMessage("");
+    toast.success("Reply sent!");
+  };
+
   const getStatusIcon = (status: Ticket["status"]) => {
     switch (status) {
       case "open": return <AlertCircle className="w-3 h-3 text-indigo-500" />;
-      case "in-progress": return <Clock className="w-3 h-3 text-indigo-500" />;
-      case "resolved": return <CheckCircle2 className="w-3 h-3 text-gray-400" />;
+      case "in-progress": return <Clock className="w-3 h-3 text-amber-500" />;
+      case "resolved": return <CheckCircle2 className="w-3 h-3 text-green-600" />;
+    }
+  };
+
+  const getStatusPillClass = (status: Ticket["status"]) => {
+    switch (status) {
+      case "open":
+        return "bg-indigo-50 text-indigo-600";
+      case "in-progress":
+        return "bg-amber-50 text-amber-600";
+      case "resolved":
+        return "bg-green-50 text-green-600";
     }
   };
 
   if (selectedTicket) {
     return (
-      <div className="space-y-3">
+      <div className="h-full flex flex-col">
         <button
-          onClick={() => setSelectedTicket(null)}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+          onClick={() => { setSelectedTicket(null); setReplyMessage(""); }}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mb-3 shrink-0"
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back
         </button>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-3">
-          <div className="flex items-start justify-between mb-3">
+        <div className="flex-1 flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {/* Header */}
+          <div className="flex items-start justify-between p-3 border-b border-gray-100 shrink-0">
             <div>
               <h3 className="text-xs font-medium text-gray-800">{selectedTicket.subject}</h3>
               <p className="text-xs text-gray-500">{selectedTicket.createdAt}</p>
             </div>
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-xs">
+            <div className={cn(
+              "flex items-center gap-1 px-2 py-0.5 rounded text-xs",
+              getStatusPillClass(selectedTicket.status)
+            )}>
               {getStatusIcon(selectedTicket.status)}
-              <span className="text-gray-600 capitalize">{selectedTicket.status.replace("-", " ")}</span>
+              <span className="capitalize">{selectedTicket.status.replace("-", " ")}</span>
             </div>
           </div>
 
-          <div className="space-y-2 max-h-72 overflow-y-auto">
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {selectedTicket.replies?.map((reply, idx) => (
               <div key={idx} className={cn("flex", reply.isSupport ? "justify-start" : "justify-end")}>
                 <div className={cn(
                   "max-w-[85%] px-2.5 py-1.5 rounded text-xs",
-                  reply.isSupport ? "bg-gray-100 text-gray-700" : "bg-indigo-50 text-gray-700"
+                  reply.isSupport ? "bg-gray-100 text-gray-700" : "bg-indigo-500 text-white"
                 )}>
                   <p>{reply.message}</p>
-                  <p className="text-[10px] mt-0.5 text-gray-400">{reply.timestamp}</p>
+                  <p className={cn("text-[10px] mt-0.5", reply.isSupport ? "text-gray-400" : "text-indigo-200")}>{reply.timestamp}</p>
                 </div>
               </div>
             ))}
           </div>
+
+          {/* Reply input - only show for non-resolved tickets */}
+          {selectedTicket.status !== "resolved" && (
+            <div className="p-3 border-t border-gray-100 shrink-0">
+              <div className="flex items-end gap-2">
+                <textarea
+                  value={replyMessage}
+                  onChange={(e) => setReplyMessage(e.target.value)}
+                  placeholder="Type your reply..."
+                  rows={2}
+                  className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-gray-300 resize-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submitReply();
+                    }
+                  }}
+                />
+                <Button 
+                  className="h-9 px-3 text-xs bg-indigo-500 hover:bg-indigo-600 text-white shrink-0" 
+                  onClick={submitReply}
+                  disabled={!replyMessage.trim()}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Resolved notice */}
+          {selectedTicket.status === "resolved" && (
+            <div className="p-3 border-t border-gray-100 shrink-0">
+              <p className="text-xs text-gray-500 text-center">This ticket has been resolved. Need more help? <button onClick={() => { setSelectedTicket(null); setView("new-ticket"); }} className="text-indigo-600 hover:underline">Open a new ticket</button></p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -142,7 +212,7 @@ const SupportTab = () => {
 
   if (view === "new-ticket") {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <button
           onClick={() => setView("main")}
           className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
@@ -152,48 +222,37 @@ const SupportTab = () => {
 
         <h2 className="text-sm font-medium text-gray-800">Contact Support</h2>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-          <div className="relative">
-            <label className="text-xs text-gray-500">What's your issue about?</label>
-            <button
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-              className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-xs text-left flex items-center justify-between"
+        <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-5">
+          <div>
+            <label className="text-xs text-gray-500 block mb-2">What's your issue about?</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full h-9 px-3 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-gray-300"
             >
-              <span className={category ? "text-gray-700" : "text-gray-400"}>
-                {category || "Select an issue type"}
-              </span>
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-            </button>
-            {showCategoryDropdown && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowCategoryDropdown(false)} />
-                <div className="absolute left-0 right-0 top-full mt-1 bg-[#F9F9F9] border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-y-auto">
-                  {issueCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => { setCategory(cat); setShowCategoryDropdown(false); }}
-                      className="w-full px-3 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+              <option value="" disabled>
+                Select a category
+              </option>
+              {issueCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
-            <label className="text-xs text-gray-500">Describe your issue</label>
+            <label className="text-xs text-gray-500 block mb-2">Describe your issue</label>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Tell us more about the problem..."
-              rows={4}
-              className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-gray-300 resize-none"
+              rows={5}
+              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-gray-300 resize-none"
             />
           </div>
 
-          <Button className="w-full h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={submitTicket}>
+          <Button className="w-full h-9 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={submitTicket}>
             <Send className="w-3.5 h-3.5 mr-1.5" /> Submit Ticket
           </Button>
         </div>
@@ -235,8 +294,12 @@ const SupportTab = () => {
                   <p className="text-xs text-gray-800 truncate">{ticket.subject}</p>
                   <p className="text-xs text-gray-500">{ticket.createdAt}</p>
                 </div>
-                <div className="ml-2 shrink-0">
+                <div className={cn(
+                  "ml-2 shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px]",
+                  getStatusPillClass(ticket.status)
+                )}>
                   {getStatusIcon(ticket.status)}
+                  <span className="capitalize">{ticket.status.replace("-", " ")}</span>
                 </div>
               </button>
             ))}

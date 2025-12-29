@@ -1,26 +1,29 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Search,
   Plus,
-  Phone,
-  MessageSquare,
-  Star,
-  MoreVertical,
-  Trash2,
-  Calendar,
-  X,
-  Camera,
+  Search,
   Tag,
+  ChevronRight,
+  MessageSquare,
+  Phone,
+  MoreVertical,
   Pencil,
+  Trash2,
+  X,
+  Star,
+  Camera,
+  AlertTriangle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { isValidUsPhoneNumber } from "@/lib/validations";
 import { mockContacts } from "./mockData";
 import { Contact } from "./types";
+import { loadContacts, saveContacts } from "./contactsStore";
 
-type Sort = "az" | "favorites";
+type View = "all" | "favorites";
 
 const availableTags = ["Family", "Work", "Friend", "VIP", "Business", "School", "Gym", "Medical"];
 
@@ -29,13 +32,13 @@ interface ContactsTabProps {
 }
 
 const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
-  const [contacts, setContacts] = useState<Contact[]>(mockContacts);
-  const [sort, setSort] = useState<Sort>("az");
+  const [contacts, setContacts] = useState<Contact[]>(() => loadContacts(mockContacts));
+  const [view, setView] = useState<View>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showTagFilter, setShowTagFilter] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -47,13 +50,17 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     notes: "",
     isFavorite: false,
     tags: [] as string[],
+    avatar: "" as string,
   });
 
   const [customTagInput, setCustomTagInput] = useState("");
   const [customTags, setCustomTags] = useState<string[]>([]);
+  const [tagToDelete, setTagToDelete] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const allAvailableTags = [...new Set([...availableTags, ...customTags])];
   const allTags = [...new Set(contacts.flatMap(c => c.tags))];
+  const filterTags = [...new Set([...availableTags, ...allTags])];
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -68,6 +75,11 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     };
   }, [showModal]);
 
+  // Persist contacts across refresh/tabs
+  useEffect(() => {
+    saveContacts(contacts);
+  }, [contacts]);
+
   // Close menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -79,25 +91,27 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const sortedContacts = [...contacts]
+  const visibleContacts = [...contacts]
     .filter((c) => {
-      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.phone.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTag = !filterTag || c.tags.includes(filterTag);
-      return matchesSearch && matchesTag;
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch = !q ||
+        c.name.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q);
+      const matchesView = view === "favorites" ? c.isFavorite : true;
+      const matchesTags = selectedTags.length === 0 || selectedTags.some((t) => c.tags.includes(t));
+      return matchesSearch && matchesView && matchesTags;
     })
-    .sort((a, b) => {
-      if (sort === "az") return a.name.localeCompare(b.name);
-      if (sort === "favorites") {
-        if (a.isFavorite && !b.isFavorite) return -1;
-        if (!a.isFavorite && b.isFavorite) return 1;
-        return a.name.localeCompare(b.name);
-      }
-      return 0;
-    });
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const favorites = sortedContacts.filter((c) => c.isFavorite);
-  const others = sortedContacts.filter((c) => !c.isFavorite);
+  const filterLabel = selectedTags.length === 0
+    ? "Filter"
+    : selectedTags.length === 1
+      ? selectedTags[0]
+      : `${selectedTags[0]} +${selectedTags.length - 1}`;
+
+  const toggleSelectedTag = (tag: string) => {
+    setSelectedTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
+  };
 
   const groupByLetter = (contactList: Contact[]) => {
     const groups: Record<string, Contact[]> = {};
@@ -125,6 +139,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: "",
         isFavorite: false,
         tags: [],
+        avatar: "",
       });
     }
     setCustomTagInput("");
@@ -141,6 +156,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: selectedContact.notes || "",
         isFavorite: selectedContact.isFavorite,
         tags: selectedContact.tags,
+        avatar: selectedContact.avatar || "",
       });
     }
     setIsEditing(true);
@@ -162,6 +178,11 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       return;
     }
 
+    if (!isValidUsPhoneNumber(editForm.phone)) {
+      toast.error("Enter a valid phone number (10 digits, optional +1)");
+      return;
+    }
+
     if (selectedContact) {
       // Update existing contact
       const updatedContact = {
@@ -171,6 +192,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: editForm.notes || undefined,
         isFavorite: editForm.isFavorite,
         tags: editForm.tags,
+        avatar: editForm.avatar || undefined,
       };
       setContacts(contacts.map((c) =>
         c.id === selectedContact.id ? updatedContact : c
@@ -187,6 +209,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: editForm.notes || undefined,
         isFavorite: editForm.isFavorite,
         tags: editForm.tags,
+        avatar: editForm.avatar || undefined,
       };
       setContacts([...contacts, newContact]);
       setSelectedContact(newContact);
@@ -226,6 +249,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       notes: contact.notes || "",
       isFavorite: contact.isFavorite,
       tags: contact.tags,
+      avatar: contact.avatar || "",
     });
     setOpenMenuId(null);
   };
@@ -235,6 +259,25 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       ...prev,
       tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag]
     }));
+  };
+
+  const deleteTagGlobally = (tag: string) => {
+    // Remove the tag from custom tags if it's a custom one
+    setCustomTags(prev => prev.filter(t => t !== tag));
+    // Remove the tag from all contacts
+    setContacts(prev => prev.map(c => ({
+      ...c,
+      tags: c.tags.filter(t => t !== tag)
+    })));
+    // Remove from selected tags filter
+    setSelectedTags(prev => prev.filter(t => t !== tag));
+    // Remove from current edit form if open
+    setEditForm(prev => ({
+      ...prev,
+      tags: prev.tags.filter(t => t !== tag)
+    }));
+    toast.success(`Tag "${tag}" deleted from all contacts`);
+    setTagToDelete(null);
   };
 
   return (
@@ -259,123 +302,84 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       </div>
 
       {/* Sort & Filter */}
-      <div className="flex gap-1.5">
-        {(["az", "favorites"] as Sort[]).map((s) => (
-          <button
-            key={s}
-            onClick={() => setSort(s)}
-            className={cn(
-              "px-2.5 py-1 rounded text-xs font-medium transition-colors",
-              sort === s ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            )}
-          >
-            {s === "az" ? "A-Z" : "Favorites"}
-          </button>
-        ))}
-        <div className="relative">
-          <button
-            onClick={() => setShowTagFilter(!showTagFilter)}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-              filterTag ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600"
-            )}
-          >
-            <Tag className="w-3 h-3" />
-            {filterTag || "Filter"}
-          </button>
-          {showTagFilter && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowTagFilter(false)} />
-              <div className="absolute left-0 top-full mt-1 w-28 bg-[#F9F9F9] border border-gray-200 rounded shadow-lg z-50 py-1">
-                <button
-                  onClick={() => { setFilterTag(null); setShowTagFilter(false); }}
-                  className={cn("w-full text-left px-2.5 py-1.5 text-xs hover:bg-gray-50", !filterTag && "text-gray-800 font-medium")}
-                >
-                  All
-                </button>
-                {allTags.map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => { setFilterTag(tag); setShowTagFilter(false); }}
-                    className={cn("w-full text-left px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-50", filterTag === tag && "text-gray-800 font-medium")}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* All / Favorites tabs */}
+        <button
+          onClick={() => {
+            setView("all");
+            setSelectedTags([]);
+          }}
+          className={cn(
+            "px-2.5 py-1 rounded text-xs font-medium transition-colors",
+            view === "all" && selectedTags.length === 0
+              ? "bg-gray-800 text-white"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           )}
-        </div>
+        >
+          All
+        </button>
+        <button
+          onClick={() => {
+            if (view === "favorites") {
+              setView("all");
+            } else {
+              setView("favorites");
+            }
+          }}
+          className={cn(
+            "px-2.5 py-1 rounded text-xs font-medium transition-colors",
+            view === "favorites" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          )}
+        >
+          Favorites
+        </button>
+
+        {/* Filter dropdown toggle */}
+        <button
+          onClick={() => setShowTagFilter(!showTagFilter)}
+          className={cn(
+            "flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+            selectedTags.length > 0 ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          )}
+        >
+          <Tag className="w-3 h-3" />
+          {filterLabel}
+          <ChevronRight className={cn("w-3 h-3 transition-transform", showTagFilter ? "rotate-90" : "rotate-0")} />
+        </button>
+
+        {/* Tag chips */}
+        {showTagFilter && (
+          <div className="flex items-center gap-1.5">
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
+              {filterTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleSelectedTag(tag)}
+                  className={cn(
+                    "px-2.5 py-1 rounded text-xs transition-colors whitespace-nowrap",
+                    selectedTags.includes(tag) ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+              {selectedTags.length > 0 && (
+                <button
+                  onClick={() => setSelectedTags([])}
+                  className="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors whitespace-nowrap"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Contacts List */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        {favorites.length > 0 && (
-          <div className="border-b border-gray-100">
-            <div className="px-3 py-1.5 flex items-center gap-1.5 text-indigo-500">
-              <Star className="w-3 h-3 fill-current" />
-              <span className="text-xs font-medium uppercase tracking-wider">Favorites</span>
-            </div>
-            {favorites.map((contact) => (
-              <div
-                key={contact.id}
-                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer"
-                onClick={() => openModal(contact)}
-              >
-                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                  <span className="text-gray-700 text-xs font-medium">{contact.name.charAt(0)}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 text-xs truncate">{contact.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{contact.phone}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate?.("inbox", contact.phone); }}
-                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                    title="Send message"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate?.("calls", contact.phone); }}
-                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                    title="Call"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                  <div className="relative" ref={openMenuId === contact.id ? menuRef : null}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === contact.id ? null : contact.id); }}
-                      className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                      title="More options"
-                    >
-                      <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-                    {openMenuId === contact.id && (
-                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px] z-20">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); editContactFromList(contact); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          <Pencil className="w-3.5 h-3.5" /> Edit
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteContact(contact); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {Object.entries(groupByLetter(others)).map(([letter, contactList]) => (
+        {Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
           <div key={letter}>
             <div className="px-3 py-1 bg-gray-50">
               <span className="text-xs font-medium text-gray-500">{letter}</span>
@@ -386,9 +390,17 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                 onClick={() => openModal(contact)}
                 className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer"
               >
-                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                  <span className="text-gray-700 text-xs font-medium">{contact.name.charAt(0)}</span>
-                </div>
+                {contact.avatar ? (
+                  <img 
+                    src={contact.avatar} 
+                    alt={contact.name} 
+                    className="w-7 h-7 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                    <span className="text-gray-700 text-xs font-medium">{contact.name.charAt(0)}</span>
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-800 text-xs truncate">{contact.name}</p>
                   <div className="flex items-center gap-1 mt-0.5">
@@ -446,7 +458,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
           </div>
         ))}
 
-        {sortedContacts.length === 0 && (
+        {visibleContacts.length === 0 && (
           <div className="p-6 text-center text-gray-400 text-xs">No contacts found</div>
         )}
       </div>
@@ -470,15 +482,23 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               {/* VIEW MODE */}
               {selectedContact && !isEditing ? (
                 <div className="p-4 space-y-4">
                   {/* Contact Avatar & Name */}
                   <div className="flex flex-col items-center text-center">
-                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-2">
-                      <span className="text-2xl text-gray-700">{selectedContact.name.charAt(0)}</span>
-                    </div>
+                    {selectedContact.avatar ? (
+                      <img 
+                        src={selectedContact.avatar} 
+                        alt={selectedContact.name} 
+                        className="w-16 h-16 rounded-full object-cover mb-2"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-2">
+                        <span className="text-2xl text-gray-700">{selectedContact.name.charAt(0)}</span>
+                      </div>
+                    )}
                     <h3 className="text-base font-medium text-gray-800">{selectedContact.name}</h3>
                     <p className="text-sm text-gray-500">{selectedContact.phone}</p>
                     {selectedContact.isFavorite && (
@@ -546,10 +566,37 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                   {/* Photo */}
                   <div className="flex flex-col items-center">
                     <div className="relative">
-                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
-                        <span className="text-lg text-gray-700">{editForm.firstName.charAt(0) || "?"}</span>
-                      </div>
-                      <button className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center">
+                      {editForm.avatar ? (
+                        <img 
+                          src={editForm.avatar} 
+                          alt="Contact" 
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                          <span className="text-lg text-gray-700">{editForm.firstName.charAt(0) || "?"}</span>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        ref={photoInputRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setEditForm({ ...editForm, avatar: reader.result as string });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      <button 
+                        onClick={() => photoInputRef.current?.click()}
+                        className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center hover:bg-gray-700 transition-colors"
+                      >
                         <Camera className="w-3 h-3" />
                       </button>
                     </div>
@@ -589,19 +636,35 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-500 mb-1.5 block">Tags (select multiple)</label>
-                    <div className="flex flex-wrap gap-1 mb-2">
+                    <label className="text-xs text-gray-500 mb-1.5 block">Tags (click X to delete)</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
                       {allAvailableTags.map((tag) => (
-                        <button
-                          key={tag}
-                          onClick={() => toggleTag(tag)}
-                          className={cn(
-                            "px-2 py-0.5 rounded text-xs transition-colors",
-                            editForm.tags.includes(tag) ? "bg-indigo-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                          )}
-                        >
-                          {tag}
-                        </button>
+                        <div key={tag} className="flex items-center gap-0.5">
+                          <button
+                            onClick={() => toggleTag(tag)}
+                            className={cn(
+                              "px-2 py-1 rounded-l text-xs transition-colors",
+                              editForm.tags.includes(tag) ? "bg-indigo-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            )}
+                          >
+                            {tag}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTagToDelete(tag);
+                            }}
+                            className={cn(
+                              "px-1 py-1 rounded-r text-xs transition-colors flex items-center justify-center",
+                              editForm.tags.includes(tag) 
+                                ? "bg-indigo-600 text-white/70 hover:text-white hover:bg-indigo-700" 
+                                : "bg-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-300"
+                            )}
+                            title="Delete tag permanently"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                       ))}
                     </div>
                     {/* Custom tag input */}
@@ -698,6 +761,46 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                   <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit Contact
                 </Button>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Tag Confirmation Modal */}
+      {tagToDelete && createPortal(
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] p-4"
+          onClick={() => setTagToDelete(null)}
+        >
+          <div 
+            className="bg-[#F5F5F5] rounded-lg shadow-lg w-full max-w-xs overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="w-5 h-5" />
+                <h3 className="text-sm font-medium">Delete Tag</h3>
+              </div>
+              <p className="text-xs text-gray-600">
+                Are you sure you want to delete the tag "<span className="font-medium">{tagToDelete}</span>"? 
+                This will remove it from all contacts.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-8 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  onClick={() => setTagToDelete(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1 h-8 text-xs bg-red-500 hover:bg-red-600 text-white"
+                  onClick={() => deleteTagGlobally(tagToDelete)}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
           </div>
         </div>,

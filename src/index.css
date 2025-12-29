@@ -64,9 +64,17 @@
     scroll-behavior: smooth;
   }
 
+  html, body {
+    @apply h-full overflow-hidden;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+
+  #root {
+    @apply h-full overflow-hidden;
   }
 
   /* Dashboard-specific styling - Linear App exact colors */
@@ -320,4 +328,14 @@
 .animate-glow-breathe-delayed {
   animation: glow-breathe 6s ease-in-out infinite;
   animation-delay: 3s;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
