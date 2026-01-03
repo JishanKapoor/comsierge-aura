@@ -11,6 +11,8 @@ export interface User {
   avatar?: string;
   plan?: string;
   phoneNumber?: string | null;
+  personalPhoneNumber?: string | null;
+  forwardingNumber?: string | null;
   createdAt?: string;
 }
 
@@ -72,20 +74,30 @@ const clearSessionCache = () => {
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  // Restore user synchronously from storage
   const [user, setUser] = useState<User | null>(() => {
-    // Try to restore user immediately from cache for faster initial render
     const cached = getCachedSession();
     if (cached) return cached.user;
     
-    // Fallback to localStorage
     try {
       const stored = localStorage.getItem("comsierge_user");
-      return stored ? JSON.parse(stored) : null;
+      const token = localStorage.getItem("comsierge_token");
+      if (stored && token) {
+        return JSON.parse(stored);
+      }
+      return null;
     } catch {
       return null;
     }
   });
-  const [isLoading, setIsLoading] = useState(true);
+  
+  // If we already have a user from storage, we're not "loading"
+  const [isLoading, setIsLoading] = useState(() => {
+    const token = localStorage.getItem("comsierge_token");
+    const stored = localStorage.getItem("comsierge_user");
+    // Only loading if we have token but no cached user yet
+    return !!(token && !stored);
+  });
 
   // Function to fetch current user from server
   const fetchCurrentUser = useCallback(async (token: string, forceRefresh = false): Promise<User | null> => {
@@ -112,24 +124,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         };
         setCachedSession(userData);
         return userData;
-      } else {
-        // Token invalid, clear storage
+      } else if (response.status === 401) {
+        // Token explicitly invalid/expired - clear storage
+        console.log("Token invalid (401), clearing auth");
         localStorage.removeItem("comsierge_token");
         localStorage.removeItem("comsierge_user");
         clearSessionCache();
+        return null;
+      } else {
+        // Other server error (500, etc) - try to use cached user
+        console.log("Server error, using cached user");
+        const cachedUser = localStorage.getItem("comsierge_user");
+        if (cachedUser) {
+          try {
+            return JSON.parse(cachedUser);
+          } catch {
+            // ignore
+          }
+        }
         return null;
       }
     } catch (error) {
       console.error("Auth check failed:", error);
       // Server might be down, try to use cached user from localStorage
+      // Keep the user logged in with cached data - don't force logout on network errors
       const cachedUser = localStorage.getItem("comsierge_user");
       if (cachedUser) {
         try {
-          return JSON.parse(cachedUser);
+          const parsed = JSON.parse(cachedUser);
+          console.log("Using cached user due to server unavailable");
+          return parsed;
         } catch {
+          // Only clear if parse fails, not on network error
           localStorage.removeItem("comsierge_user");
         }
       }
+      // No cached user and server is down - return null to show login
       return null;
     }
   }, []);
@@ -138,26 +168,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem("comsierge_token");
+      const storedUser = localStorage.getItem("comsierge_user");
+      
+      // No token = not logged in
       if (!token) {
         setUser(null);
         setIsLoading(false);
         return;
       }
 
-      // If we already have a cached user from initial state, just validate in background
-      if (user) {
-        setIsLoading(false);
-        // Validate token in background (don't block UI)
-        fetchCurrentUser(token).then((userData) => {
-          if (!userData) {
-            setUser(null);
-          } else if (JSON.stringify(userData) !== JSON.stringify(user)) {
-            setUser(userData);
-          }
-        });
-        return;
+      // If we have both token and stored user, USE IT immediately
+      // Don't wait for server validation - the user is logged in
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          setIsLoading(false);
+          
+          // Validate in background - but DON'T logout on any error
+          fetchCurrentUser(token).then((userData) => {
+            if (userData) {
+              // Update with fresh data if available
+              setUser(userData);
+            }
+            // If validation fails, keep the cached user - don't logout
+          }).catch(() => {
+            // Network error - keep cached user
+          });
+          return;
+        } catch {
+          // Parse error - try server
+        }
       }
-
+      
+      // No stored user - try to fetch from server
       const userData = await fetchCurrentUser(token);
       setUser(userData);
       setIsLoading(false);

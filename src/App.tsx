@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import SelectNumber from "./pages/SelectNumber";
+import SetupForwarding from "./pages/SetupForwarding";
 import Dashboard from "./pages/Dashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
@@ -16,6 +17,8 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { useImagePreloader } from "./hooks/useImagePreloader";
 
 const queryClient = new QueryClient();
+
+// No more localStorage initialization - everything uses MongoDB now
 
 const AppRoutes = () => {
   const location = useLocation();
@@ -31,6 +34,7 @@ const AppRoutes = () => {
       <Route path="/auth" element={<Auth />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/select-number" element={<SelectNumber />} />
+      <Route path="/setup-forwarding" element={<SetupForwarding />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="*" element={<NotFound />} />

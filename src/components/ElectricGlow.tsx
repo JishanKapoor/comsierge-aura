@@ -1,9 +1,14 @@
 import { useEffect, useState, useRef } from "react";
+import { useLocation } from "react-router-dom";
 
 const ElectricGlow = () => {
+  const location = useLocation();
   const [scrollY, setScrollY] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const rafRef = useRef<number>();
+
+  // Hide on dashboard pages
+  const isDashboard = location.pathname.startsWith("/dashboard") || location.pathname.startsWith("/admin") || location.pathname.startsWith("/select-number");
 
   useEffect(() => {
     setViewportHeight(window.innerHeight);
@@ -41,6 +46,11 @@ const ElectricGlow = () => {
   
   // Reduced intensity - more subtle
   const glowIntensity = 0.12 + Math.sin(scrollProgress * Math.PI * 2) * 0.05;
+
+  // Don't render glow effects on dashboard pages
+  if (isDashboard) {
+    return null;
+  }
 
   return (
     <>

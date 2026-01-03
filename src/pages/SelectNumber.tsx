@@ -137,7 +137,7 @@ const SelectNumber = () => {
   };
 
   const handleContinueToDashboard = () => {
-    navigate("/dashboard");
+    navigate("/setup-forwarding");
   };
 
   return (

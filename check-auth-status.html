@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auth Status Check</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+    .section { margin: 20px 0; padding: 15px; background: #2a2a2a; border-radius: 8px; }
+    .label { color: #888; font-size: 12px; }
+    .value { color: #0f0; margin: 5px 0; word-break: break-all; }
+    .error { color: #f00; }
+    .success { color: #0f0; }
+    button { padding: 10px 20px; background: #444; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+    button:hover { background: #555; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Auth & Connection Diagnostic</h1>
+  
+  <div class="section">
+    <h2>localStorage Check</h2>
+    <div class="label">Token:</div>
+    <div class="value" id="token"></div>
+    <div class="label">User:</div>
+    <div class="value" id="user"></div>
+  </div>
+
+  <div class="section">
+    <h2>Backend Connection</h2>
+    <button onclick="checkBackend()">Test Backend Health</button>
+    <div id="backendResult"></div>
+  </div>
+
+  <div class="section">
+    <h2>Auth Check</h2>
+    <button onclick="checkAuth()">Verify Token</button>
+    <div id="authResult"></div>
+  </div>
+
+  <div class="section">
+    <h2>Quick Actions</h2>
+    <button onclick="loginAsAdmin()">Login as Admin</button>
+    <button onclick="clearAuth()">Clear Auth & Reload</button>
+  </div>
+
+  <script>
+    // Display localStorage
+    document.getElementById('token').textContent = localStorage.getItem('comsierge_token') || '❌ No token found';
+    document.getElementById('user').textContent = localStorage.getItem('comsierge_user') || '❌ No user found';
+
+    async function checkBackend() {
+      const result = document.getElementById('backendResult');
+      result.innerHTML = '<div class="label">Checking...</div>';
+      try {
+        const res = await fetch('http://localhost:8080/api/health');
+        const data = await res.json();
+        result.innerHTML = `<div class="success">✓ Backend is running</div><pre>${JSON.stringify(data, null, 2)}</pre>`;
+      } catch (err) {
+        result.innerHTML = `<div class="error">✗ Backend connection failed: ${err.message}</div>`;
+      }
+    }
+
+    async function checkAuth() {
+      const result = document.getElementById('authResult');
+      const token = localStorage.getItem('comsierge_token');
+      
+      if (!token) {
+        result.innerHTML = '<div class="error">✗ No token in localStorage</div>';
+        return;
+      }
+
+      result.innerHTML = '<div class="label">Verifying token...</div>';
+      try {
+        const res = await fetch('http://localhost:8080/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          const user = data.data.user;
+          result.innerHTML = `
+            <div class="success">✓ Token is valid</div>
+            <div class="label">User:</div>
+            <pre>${JSON.stringify(user, null, 2)}</pre>
+            ${user.phoneNumber ? `<div class="success">✓ Phone: ${user.phoneNumber}</div>` : '<div class="error">✗ No phone number assigned</div>'}
+          `;
+        } else {
+          result.innerHTML = `<div class="error">✗ ${data.message}</div>`;
+        }
+      } catch (err) {
+        result.innerHTML = `<div class="error">✗ Request failed: ${err.message}</div>`;
+      }
+    }
+
+    async function loginAsAdmin() {
+      try {
+        const res = await fetch('http://localhost:8080/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: 'admin', password: 'admin' })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+          localStorage.setItem('comsierge_token', data.data.token);
+          localStorage.setItem('comsierge_user', JSON.stringify(data.data.user));
+          alert('✓ Logged in as admin! Reloading...');
+          location.reload();
+        } else {
+          alert('✗ Login failed: ' + data.message);
+        }
+      } catch (err) {
+        alert('✗ Request failed: ' + err.message);
+      }
+    }
+
+    function clearAuth() {
+      localStorage.removeItem('comsierge_token');
+      localStorage.removeItem('comsierge_user');
+      sessionStorage.clear();
+      alert('Auth cleared!');
+      location.reload();
+    }
+  </script>
+</body>
+</html>

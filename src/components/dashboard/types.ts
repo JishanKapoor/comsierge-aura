@@ -4,7 +4,9 @@ export interface Contact {
   phone: string;
   email?: string;
   avatar?: string;
+  company?: string;
   isFavorite: boolean;
+  isBlocked?: boolean;
   tags: string[];
   notes?: string;
   lastMessage?: string;
@@ -19,9 +21,16 @@ export interface Message {
   content: string;
   timestamp: string;
   isIncoming: boolean;
-  status: "protected" | "allowed" | "blocked" | "priority" | "held";
+  status: "protected" | "allowed" | "blocked" | "priority" | "held" | "normal";
   rule?: string;
   isRead: boolean;
+  unreadCount?: number;
+  // Conversation controls - synced with API
+  isPinned?: boolean;
+  isMuted?: boolean;
+  isPriority?: boolean;
+  isBlocked?: boolean;
+  isHeld?: boolean;
 }
 
 export type MailboxId =

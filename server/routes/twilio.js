@@ -1,5 +1,12 @@
 import express from "express";
 import twilio from "twilio";
+import TwilioAccount from "../models/TwilioAccount.js";
+import User from "../models/User.js";
+import Message from "../models/Message.js";
+import Conversation from "../models/Conversation.js";
+import Contact from "../models/Contact.js";
+import CallRecord from "../models/CallRecord.js";
+import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
 
@@ -7,6 +14,168 @@ const router = express.Router();
 // In production, use a database
 const incomingMessages = [];
 const MAX_MESSAGES = 100;
+
+// Helper to save message to MongoDB
+async function saveMessageToDB(msgData) {
+  console.log("📝 saveMessageToDB called with:", JSON.stringify(msgData, null, 2));
+  
+  try {
+    // Ensure contactId is populated if possible
+    if (!msgData.contactId && msgData.userId && msgData.contactPhone) {
+      try {
+        const contact = await Contact.findOne({ 
+          userId: msgData.userId, 
+          phone: msgData.contactPhone 
+        });
+        if (contact) {
+          msgData.contactId = contact._id;
+          // Also update contact name if it's "Unknown"
+          if (msgData.contactName === "Unknown" || !msgData.contactName) {
+            msgData.contactName = contact.name;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to lookup contact for message:", e.message);
+      }
+    }
+
+    // Create the message
+    console.log("📝 Creating message in MongoDB...");
+    const message = await Message.create(msgData);
+    console.log("✅ Message created with ID:", message._id);
+    
+    // Use phone number as display name if contactName is Unknown or empty
+    const displayName = (msgData.contactName && msgData.contactName !== "Unknown") 
+      ? msgData.contactName 
+      : msgData.contactPhone || "Unknown";
+    
+    // Update or create conversation
+    const conversationFilter = { 
+      userId: msgData.userId, 
+      contactPhone: msgData.contactPhone 
+    };
+
+    const conversationUpdate = {
+      $set: {
+        lastMessage: msgData.body?.substring(0, 100) || "",
+        lastMessageAt: new Date(),
+        contactName: displayName,
+        // Ensure these fields are set if a new document is created
+        userId: msgData.userId,
+        contactPhone: msgData.contactPhone,
+      }
+    };
+    
+    // Add contactId to conversation update if we found it
+    if (msgData.contactId) {
+      conversationUpdate.$set.contactId = msgData.contactId;
+    }
+    
+    console.log("📝 Updating conversation with filter:", JSON.stringify(conversationFilter));
+    
+    if (msgData.direction === "incoming") {
+      // For incoming, increment unread count
+      conversationUpdate.$inc = { unreadCount: 1 };
+    } else {
+      // For outgoing, ensure unread count exists (default 0) but don't increment
+      conversationUpdate.$setOnInsert = { unreadCount: 0 };
+    }
+
+    const conv = await Conversation.findOneAndUpdate(
+      conversationFilter,
+      conversationUpdate,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    console.log("✅ Conversation updated/created:", conv._id);
+    
+    return message;
+  } catch (error) {
+    console.error("❌ saveMessageToDB FAILED:", error);
+    console.error("❌ Error name:", error.name);
+    console.error("❌ Error message:", error.message);
+    if (error.errors) {
+      console.error("❌ Validation errors:", JSON.stringify(error.errors, null, 2));
+    }
+    throw error; // Rethrow to let caller handle it
+  }
+}
+
+// @route   GET /api/twilio/config
+// @desc    Get Twilio configuration for the current user
+// @access  Private
+router.get("/config", authMiddleware, async (req, res) => {
+  try {
+    let assignedNumber = null;
+    
+    // 1. Try to find explicit assignment in DB
+    const account = await TwilioAccount.findOne({
+      "phoneAssignments.userId": req.user.id
+    });
+
+    if (account) {
+      const assignment = account.phoneAssignments.find(
+        p => p.userId.toString() === req.user.id
+      );
+      if (assignment) {
+        assignedNumber = assignment.phoneNumber;
+      }
+    }
+    
+    // 2. If no assignment, fallback to first available number from DB (for dev/single-user)
+    if (!assignedNumber) {
+         const anyAccount = await TwilioAccount.findOne();
+         if (anyAccount && anyAccount.phoneNumbers.length > 0) {
+             assignedNumber = anyAccount.phoneNumbers[0];
+         }
+    }
+    
+    // 3. Final fallback: use environment variable TWILIO_PHONE_NUMBER
+    if (!assignedNumber) {
+      assignedNumber = process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_NUMBER || null;
+    }
+
+    // Get fresh user data for personal number
+    const user = await User.findById(req.user.id);
+
+    res.json({
+      success: true,
+      assignedNumber,
+      personalNumber: user ? user.phoneNumber : null
+    });
+  } catch (error) {
+    console.error("Get Twilio config error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// Resolve Twilio credentials - checks DB first, then env vars
+async function resolveTwilioConfig(body = {}, userPhone = null) {
+  // First try env vars (simplest case)
+  let accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
+  let authToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
+  let fromNumber = userPhone || process.env.TWILIO_PHONE_NUMBER || process.env.TWILIO_FROM_NUMBER;
+
+  // If we have a user phone, try to find the Twilio account that owns it
+  if (userPhone) {
+    try {
+      const account = await TwilioAccount.findOne({ phoneNumbers: userPhone });
+      if (account) {
+        accountSid = account.accountSid;
+        authToken = account.authToken;
+        fromNumber = userPhone;
+      }
+    } catch (e) {
+      console.error("Error fetching Twilio account from DB:", e.message);
+    }
+  }
+
+  // Override with body params if provided (backward compat)
+  if (body.accountSid) accountSid = body.accountSid;
+  if (body.authToken) authToken = body.authToken;
+  if (body.fromNumber) fromNumber = body.fromNumber;
+
+  return { accountSid, authToken, fromNumber };
+}
 
 // Store an incoming message
 function storeIncomingMessage(message) {
@@ -40,13 +209,14 @@ router.delete("/incoming-messages", (req, res) => {
 // @access  Private (admin only)
 router.post("/verify-credentials", async (req, res) => {
   try {
-    const { accountSid, authToken, phoneNumber } = req.body;
+    const { accountSid, authToken, phoneNumber } = await resolveTwilioConfig(req.body);
 
     // Validation
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Account SID and Auth Token are required",
+        message:
+          "Account SID and Auth Token are required (provide in request body or set TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN env vars)",
       });
     }
 
@@ -168,12 +338,13 @@ router.post("/verify-credentials", async (req, res) => {
 // @access  Private (admin only)
 router.post("/list-numbers", async (req, res) => {
   try {
-    const { accountSid, authToken } = req.body;
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
 
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Account SID and Auth Token are required",
+        message:
+          "Account SID and Auth Token are required (provide in request body or set TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN env vars)",
       });
     }
 
@@ -213,38 +384,139 @@ router.post("/list-numbers", async (req, res) => {
 });
 
 // @route   POST /api/twilio/send-sms
-// @desc    Send an SMS message
+// @desc    Send an SMS message using user's assigned phone number
 // @access  Private (user)
-router.post("/send-sms", async (req, res) => {
+router.post("/send-sms", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken, fromNumber, toNumber, body } = req.body;
-
-    if (!accountSid || !authToken || !fromNumber || !toNumber || !body) {
+    const { toNumber, body, fromNumber, contactName } = req.body;
+    
+    if (!fromNumber) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, fromNumber, toNumber, body",
+        message: "No phone number assigned to user. Admin must assign a Twilio number first.",
+      });
+    }
+    
+    if (!toNumber || !body) {
+      return res.status(400).json({
+        success: false,
+        message: "toNumber and body are required",
+      });
+    }
+
+    const cleanFrom = (fromNumber || "").replace(/[^\d+]/g, "");
+      const normalizeToE164ish = (value) => {
+        if (!value) return "";
+        const cleaned = String(value).replace(/[^\d+]/g, "");
+        if (cleaned.startsWith("+")) return cleaned;
+        const digits = String(value).replace(/\D/g, "");
+        if (digits.length === 10) return `+1${digits}`;
+        if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+        return cleaned;
+      };
+      const cleanTo = normalizeToE164ish(toNumber);
+
+    // Prevent spoofing: users can only send from their assigned number
+    if (req.user?.phoneNumber) {
+      const userFrom = String(req.user.phoneNumber).replace(/[^\d+]/g, "");
+      if (userFrom && userFrom !== cleanFrom) {
+        return res.status(403).json({
+          success: false,
+          message: "fromNumber does not match your assigned phone number",
+        });
+      }
+    }
+
+    // Resolve credentials from DB based on the fromNumber
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body, fromNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Twilio credentials not found. Add a Twilio account in admin panel or set env vars.",
       });
     }
 
     const client = twilio(accountSid, authToken);
+    
+    // Validate that fromNumber belongs to this Twilio account
+    try {
+      const numbers = await client.incomingPhoneNumbers.list();
+      const validNumber = numbers.find(n => n.phoneNumber === cleanFrom);
+      
+      if (!validNumber) {
+        console.error(`Phone ${cleanFrom} not found in Twilio account. Available: ${numbers.map(n => n.phoneNumber).join(", ")}`);
+        return res.status(400).json({
+          success: false,
+          message: `Phone number ${cleanFrom} is not registered in the Twilio account. Contact admin.`,
+        });
+      }
+      
+      if (!validNumber.capabilities?.sms) {
+        return res.status(400).json({
+          success: false,
+          message: `Phone number ${cleanFrom} does not have SMS capability enabled.`,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to validate Twilio number:", e.message);
+      // Continue anyway - Twilio will reject if invalid
+    }
 
     try {
-      const message = await client.messages.create({
+      const twilioMessage = await client.messages.create({
         body: body,
-        from: fromNumber,
-        to: toNumber,
+        from: cleanFrom,
+        to: cleanTo,
       });
+
+      console.log("✅ Twilio message sent:", twilioMessage.sid);
+
+      // Save message to MongoDB for the authenticated user
+      let savedMessage = null;
+      try {
+        const msgData = {
+          userId: req.user._id,
+          contactPhone: cleanTo,
+          contactName: contactName || "Unknown",
+          direction: "outgoing",
+          body,
+          status: "sent", // Use a simple status value that's in the enum
+          twilioSid: twilioMessage.sid,
+          fromNumber: cleanFrom,
+          toNumber: cleanTo,
+          isRead: true, // Outgoing messages are always read
+        };
+        console.log("📝 Attempting to save message:", JSON.stringify(msgData, null, 2));
+        savedMessage = await saveMessageToDB(msgData);
+        console.log("✅ Message saved to DB with ID:", savedMessage?._id);
+      } catch (dbError) {
+        console.error("❌ Failed to save sent message to DB:", dbError);
+        console.error("❌ Error details:", dbError.message, dbError.errors);
+        // Return error to client so they know persistence failed
+        return res.status(500).json({
+          success: false,
+          message: "Message sent via Twilio but failed to save to database history.",
+          error: dbError.message,
+          details: dbError.errors,
+          data: {
+            messageSid: twilioMessage.sid,
+            status: twilioMessage.status,
+          }
+        });
+      }
 
       res.json({
         success: true,
         message: "SMS sent successfully",
         data: {
-          messageSid: message.sid,
-          status: message.status,
-          from: message.from,
-          to: message.to,
-          body: message.body,
-          dateCreated: message.dateCreated,
+          messageSid: twilioMessage.sid,
+          status: twilioMessage.status,
+          from: twilioMessage.from,
+          to: twilioMessage.to,
+          body: twilioMessage.body,
+          dateCreated: twilioMessage.dateCreated,
         },
       });
     } catch (error) {
@@ -270,12 +542,14 @@ router.post("/send-sms", async (req, res) => {
 // @access  Private (admin only)
 router.post("/send-test-sms", async (req, res) => {
   try {
-    const { accountSid, authToken, fromNumber, toNumber } = req.body;
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body);
+    const { toNumber } = req.body;
 
     if (!accountSid || !authToken || !fromNumber || !toNumber) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, fromNumber, toNumber",
+        message:
+          "All fields are required: accountSid, authToken, fromNumber, toNumber (accountSid/authToken/fromNumber can come from TWILIO_* env vars)",
       });
     }
 
@@ -396,7 +670,7 @@ router.post("/webhook/sms", async (req, res) => {
     console.log(`   Body: ${Body}`);
     console.log(`   MessageSid: ${MessageSid}`);
 
-    // Store the message in memory
+    // Store the message in memory (for backwards compat)
     storeIncomingMessage({
       id: MessageSid,
       from: From,
@@ -408,6 +682,111 @@ router.post("/webhook/sms", async (req, res) => {
       status: "received",
     });
 
+    // Find the user who owns this phone number (To) and save to MongoDB
+    try {
+      const normalizeToE164ish = (value) => {
+        if (!value) return "";
+        const cleaned = String(value).replace(/[^\d+]/g, "");
+        if (cleaned.startsWith("+")) return cleaned;
+        const digits = String(value).replace(/\D/g, "");
+        if (digits.length === 10) return `+1${digits}`;
+        if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+        return cleaned;
+      };
+
+      const buildPhoneVariations = (raw) => {
+        const normalized = normalizeToE164ish(raw);
+        const digitsOnly = String(raw || "").replace(/\D/g, "");
+        const last10 = digitsOnly.slice(-10);
+
+        const variations = Array.from(
+          new Set(
+            [
+              raw,
+              normalized,
+              normalized.replace(/^\+1/, ""),
+              normalized.replace(/^\+/, ""),
+              digitsOnly,
+              digitsOnly.length === 11 && digitsOnly.startsWith("1") ? digitsOnly.slice(1) : digitsOnly,
+            ].filter(Boolean)
+          )
+        );
+        return { variations, last10 };
+      };
+
+      const { variations: toCandidates, last10 } = buildPhoneVariations(To);
+      
+      // Try exact matches first
+      let user = await User.findOne({ phoneNumber: { $in: toCandidates } });
+      
+      // If not found, try regex on last 10 digits (allowing for formatting)
+      if (!user && last10.length === 10) {
+         // Create regex: 5.*5.*5.*... to match (555) 123-4567
+         const regexPattern = last10.split('').join('[^0-9]*');
+         console.log(`   ⚠️ Exact match failed, trying regex: ${regexPattern}`);
+         user = await User.findOne({ phoneNumber: { $regex: regexPattern, $options: 'i' } });
+      }
+
+      // If still not found, check TwilioAccount phone assignments
+      if (!user) {
+        console.log(`   ⚠️ User not found by phone number, checking TwilioAccount assignments...`);
+        // Find account that has this number assigned
+        const account = await TwilioAccount.findOne({
+          "phoneAssignments.phoneNumber": { $in: toCandidates }
+        });
+        
+        if (account) {
+          const assignment = account.phoneAssignments.find(p => toCandidates.includes(p.phoneNumber));
+          if (assignment && assignment.userId) {
+            user = await User.findById(assignment.userId);
+            if (user) {
+               console.log(`   ✅ Found user ${user.email} via TwilioAccount assignment`);
+            }
+          }
+        }
+      }
+
+      // FALLBACK: If still no user, assign to the first Admin user found
+      // This ensures messages are not lost if phone number mapping is missing
+      if (!user) {
+        console.log(`   ⚠️ User still not found. Falling back to Admin user.`);
+        user = await User.findOne({ role: 'admin' });
+        if (user) {
+           console.log(`   ✅ Fallback: Assigned message to Admin ${user.email}`);
+        } else {
+           // If no admin, try ANY user (last resort)
+           user = await User.findOne({});
+           if (user) console.log(`   ✅ Fallback: Assigned message to first user ${user.email}`);
+        }
+      }
+
+      if (user) {
+        // Look up contact name - use phone number if not in contacts
+        const { variations: fromCandidates } = buildPhoneVariations(From);
+        const contact = await Contact.findOne({ userId: user._id, phone: { $in: fromCandidates } });
+        
+        await saveMessageToDB({
+          userId: user._id,
+          contactPhone: normalizeToE164ish(From),
+          contactName: contact?.name || normalizeToE164ish(From), // Use phone number as name if no contact
+          direction: "incoming",
+          body: Body,
+          status: "received",
+          twilioSid: MessageSid,
+          fromNumber: normalizeToE164ish(From),
+          toNumber: normalizeToE164ish(To),
+          isRead: false,
+        });
+        console.log(`   ✅ Saved to MongoDB for user ${user.email}`);
+      } else {
+        console.log(`   ⚠️ No user found for phone ${To}. Candidates checked: ${toCandidates.join(', ')}`);
+        // Try to save to a "system" user or log it as an orphan?
+        // For now, just log it.
+      }
+    } catch (dbError) {
+      console.error("   ❌ DB save error:", dbError.message);
+    }
+
     // Respond with TwiML (empty response = no auto-reply)
     res.type("text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
@@ -418,30 +797,170 @@ router.post("/webhook/sms", async (req, res) => {
 });
 
 // @route   POST /api/twilio/webhook/voice
-// @desc    Handle incoming voice calls
+// @desc    Handle incoming voice calls AND outgoing browser calls
 // @access  Public (Twilio webhook)
 router.post("/webhook/voice", async (req, res) => {
   try {
     const { From, To, CallSid, CallStatus } = req.body;
     
-    console.log("📞 Incoming Call:");
+    console.log("📞 Voice Webhook:");
     console.log(`   From: ${From}`);
     console.log(`   To: ${To}`);
     console.log(`   CallSid: ${CallSid}`);
-    console.log(`   Status: ${CallStatus}`);
 
-    // Respond with TwiML
+    const response = new twilio.twiml.VoiceResponse();
+
+    // Case 1: Outgoing Call from Browser (From is client:identity)
+    if (From && From.startsWith("client:")) {
+      console.log("   ➡️ Outgoing Browser Call");
+      
+      // Determine Caller ID (Twilio Number)
+      let callerId = req.body.customCallerId;
+      if (!callerId) {
+         callerId = process.env.TWILIO_PHONE_NUMBER;
+      }
+
+      const dial = response.dial({
+        callerId: callerId,
+        answerOnBridge: true
+      });
+
+      // Check if destination is a phone number or client
+      if (/^[\d\+\-\(\) ]+$/.test(To)) {
+        dial.number(To);
+      } else {
+        dial.client(To);
+      }
+    } 
+    // Case 2: Incoming Call to Twilio Number
+    else {
+      console.log("   ⬅️ Incoming Call to Number");
+      
+      // Find which user owns this number (To)
+      // We need to find the user and then dial their client identity
+      // Identity format: user.email or "user_" + user._id
+      
+      const normalize = (p) => p ? p.replace(/[^\d+]/g, "") : "";
+      const targetPhone = normalize(To);
+
+      // Find user by phone number (exact match first)
+      // Note: We might need to handle +1 prefix differences
+      let user = await User.findOne({ phoneNumber: To });
+      
+      if (!user) {
+          // Try without + if present, or with + if missing
+          const altPhone = To.startsWith("+") ? To.substring(1) : "+" + To;
+          user = await User.findOne({ phoneNumber: altPhone });
+      }
+
+      if (user) {
+        const identity = user.email || "user_" + user._id;
+        console.log(`   ✅ Found user: ${user.email}. Dialing client: ${identity}`);
+        
+        const dial = response.dial({
+            timeout: 20
+        });
+        dial.client(identity);
+      } else {
+        console.log("   ⚠️ No user found for this number. Playing voicemail.");
+        response.say("Hello, thank you for calling. Please leave a message after the beep.");
+        response.record({ maxLength: 120, transcribe: true });
+        response.say("Thank you. Goodbye.");
+      }
+    }
+
+    res.type("text/xml");
+    res.send(response.toString());
+
+  } catch (error) {
+    console.error("Voice webhook error:", error);
+    const response = new twilio.twiml.VoiceResponse();
+    response.say("Sorry, an error occurred.");
+    res.type("text/xml");
+    res.send(response.toString());
+  }
+});
+
+// @route   POST /api/twilio/webhook/connect
+// @desc    Handle outbound call connection - creates two-way voice
+// @access  Public (Twilio webhook)
+router.post("/webhook/connect", async (req, res) => {
+  try {
+    const { to } = req.query;
+    const { CallSid, CallStatus, Digits, From, To, Called } = req.body;
+    
+    // From = Twilio number (caller ID shown to agent)
+    // To = Agent's personal phone
+    // We want to use From (Twilio number) as caller ID when calling the customer
+    const twilioNumber = From || Called;
+    
+    console.log("📞 Connect webhook:");
+    console.log(`   To (customer): ${to}`);
+    console.log(`   From (Twilio): ${twilioNumber}`);
+    console.log(`   CallSid: ${CallSid}`);
+    console.log(`   Status: ${CallStatus}`);
+    console.log(`   Digits: ${Digits}`);
+
+    res.type("text/xml");
+
+    // If user pressed 1, connect the call
+    if (Digits === "1") {
+      console.log("✅ User pressed 1 - connecting to customer: " + to);
+      console.log("   Using caller ID: " + twilioNumber);
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Connecting you now.</Say>
+  <Dial callerId="${twilioNumber}" timeout="30" action="/api/twilio/webhook/dial-status">
+    <Number>${to}</Number>
+  </Dial>
+  <Say voice="alice">The call could not be completed.</Say>
+</Response>`);
+      return;
+    }
+    
+    // If user pressed anything else or didn't respond, hang up
+    if (Digits && Digits !== "1") {
+      console.log("❌ User declined - hanging up");
+      res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Call cancelled. Goodbye.</Say>
+  <Hangup/>
+</Response>`);
+      return;
+    }
+
+    // First time - prompt the user
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather numDigits="1" action="/api/twilio/webhook/connect?to=${encodeURIComponent(to)}" method="POST" timeout="10">
+    <Say voice="alice">Press 1 to connect, or hang up to cancel.</Say>
+  </Gather>
+  <Say voice="alice">No response received. Goodbye.</Say>
+  <Hangup/>
+</Response>`);
+  } catch (error) {
+    console.error("Connect webhook error:", error);
     res.type("text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Hello, thank you for calling. Please leave a message after the beep.</Say>
-  <Record maxLength="120" transcribe="true" />
-  <Say voice="alice">Thank you for your message. Goodbye.</Say>
+  <Say voice="alice">Sorry, we could not connect your call.</Say>
+  <Hangup/>
 </Response>`);
-  } catch (error) {
-    console.error("Voice webhook error:", error);
-    res.status(500).send("Error processing call");
   }
+});
+
+// @route   POST /api/twilio/webhook/dial-status
+// @desc    Handle dial completion status
+// @access  Public (Twilio webhook)
+router.post("/webhook/dial-status", async (req, res) => {
+  const { DialCallStatus, DialCallDuration } = req.body;
+  console.log(`📞 Dial completed: ${DialCallStatus}, Duration: ${DialCallDuration}s`);
+  
+  res.type("text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup/>
+</Response>`);
 });
 
 // @route   POST /api/twilio/webhook/status
@@ -449,13 +968,13 @@ router.post("/webhook/voice", async (req, res) => {
 // @access  Public (Twilio webhook)
 router.post("/webhook/status", async (req, res) => {
   try {
-    const { MessageSid, CallSid, MessageStatus, CallStatus, From, To } = req.body;
+    const { MessageSid, CallSid, MessageStatus, CallStatus, CallDuration, From, To } = req.body;
     
     if (MessageSid) {
       console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
     }
     if (CallSid) {
-      console.log(`📊 Call Status Update: ${CallSid} - ${CallStatus}`);
+      console.log(`📊 Call Status Update: ${CallSid} - ${CallStatus} - Duration: ${CallDuration || 0}s`);
     }
 
     res.status(200).send("OK");
@@ -465,37 +984,199 @@ router.post("/webhook/status", async (req, res) => {
   }
 });
 
-// @route   POST /api/twilio/make-call
-// @desc    Initiate an outbound call
+// @route   POST /api/twilio/token
+// @desc    Generate Twilio Access Token for Browser Calling (VoIP)
 // @access  Private (user)
-router.post("/make-call", async (req, res) => {
+router.post("/token", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken, fromNumber, toNumber, message } = req.body;
-
-    if (!accountSid || !authToken || !fromNumber || !toNumber) {
+    const { accountSid, authToken, phoneNumber } = await resolveTwilioConfig(req.body);
+    
+    if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, fromNumber, toNumber",
+        message: "Twilio credentials not found",
       });
     }
 
     const client = twilio(accountSid, authToken);
+    const AccessToken = twilio.jwt.AccessToken;
+    const VoiceGrant = AccessToken.VoiceGrant;
+
+    // 1. Find or Create TwiML App for Browser Calling
+    // We need a TwiML App to handle the outgoing call from the browser
+    const appName = "Comsierge Browser Calling";
+    let appSid = "";
+    
+    try {
+      const apps = await client.applications.list({ friendlyName: appName });
+      if (apps.length > 0) {
+        appSid = apps[0].sid;
+      } else {
+        // Create new app
+        const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
+        const newApp = await client.applications.create({
+          friendlyName: appName,
+          voiceUrl: `${webhookBase}/api/twilio/webhook/voice`,
+          voiceMethod: "POST",
+        });
+        appSid = newApp.sid;
+        console.log(`✅ Created new TwiML App: ${appSid}`);
+      }
+    } catch (e) {
+      console.error("Failed to manage TwiML App:", e);
+      return res.status(500).json({ success: false, message: "Failed to setup calling app" });
+    }
+
+    // 2. Generate Access Token
+    const identity = req.user.email || "user_" + req.user.id;
+    
+    let apiKey = process.env.TWILIO_API_KEY;
+    let apiSecret = process.env.TWILIO_API_SECRET;
+
+    // If API Key/Secret are missing, create a temporary one (or use Account SID fallback if supported, but API Key is better)
+    if (!apiKey || !apiSecret) {
+      try {
+        console.log("⚠️ No TWILIO_API_KEY/SECRET found. Creating temporary API Key...");
+        const newKey = await client.newKeys.create({ friendlyName: 'Comsierge Temp Key ' + Date.now() });
+        apiKey = newKey.sid;
+        apiSecret = newKey.secret;
+        console.log("✅ Created temporary API Key:", apiKey);
+      } catch (e) {
+        console.error("Failed to create API Key:", e);
+        // Fallback to Account SID/Auth Token (works for some older SDKs/regions but deprecated)
+        apiKey = accountSid;
+        apiSecret = authToken;
+      }
+    }
+
+    const token = new AccessToken(
+      accountSid,
+      apiKey,
+      apiSecret,
+      { identity: identity }
+    );
+
+    // Grant access to Voice
+    const voiceGrant = new VoiceGrant({
+      outgoingApplicationSid: appSid,
+      incomingAllow: true, // Allow incoming calls to this browser client
+    });
+    token.addGrant(voiceGrant);
+
+    res.json({
+      success: true,
+      token: token.toJwt(),
+      identity: identity,
+      twimlAppSid: appSid
+    });
+
+  } catch (error) {
+    console.error("Token generation error:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+});
+
+
+
+// @route   POST /api/twilio/make-call
+// @desc    Initiate an outbound call using user's assigned phone number
+// @access  Private (user)
+router.post("/make-call", authMiddleware, async (req, res) => {
+  try {
+    const { toNumber, message, fromNumber, bridgeTo } = req.body;
+    
+    // Get user to find their personal phone number (for bridging)
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Use provided bridgeTo, or fallback to user's profile phone number
+    const agentNumber = bridgeTo || user.phoneNumber;
+
+    if (!agentNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "You must set your personal phone number in your profile or provide a bridge number to use Click-to-Call.",
+      });
+    }
+
+    if (!fromNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "No phone number assigned to user. Admin must assign a Twilio number first.",
+      });
+    }
+    
+    if (!toNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "toNumber is required",
+      });
+    }
+
+    // Resolve credentials from DB based on the fromNumber
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body, fromNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Twilio credentials not found. Add a Twilio account in admin panel or set env vars.",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+    
+    // Validate that fromNumber belongs to this Twilio account
+    const cleanFrom = fromNumber.replace(/[^\d+]/g, "");
+    try {
+      const numbers = await client.incomingPhoneNumbers.list();
+      const validNumber = numbers.find(n => n.phoneNumber === cleanFrom);
+      
+      if (!validNumber) {
+        console.error(`Phone ${cleanFrom} not found in Twilio account. Available: ${numbers.map(n => n.phoneNumber).join(", ")}`);
+        return res.status(400).json({
+          success: false,
+          message: `Phone number ${cleanFrom} is not registered in the Twilio account. Contact admin.`,
+        });
+      }
+      
+      if (!validNumber.capabilities?.voice) {
+        return res.status(400).json({
+          success: false,
+          message: `Phone number ${cleanFrom} does not have voice capability enabled.`,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to validate Twilio number:", e.message);
+      // Continue anyway - Twilio will reject if invalid
+    }
 
     try {
-      // Create TwiML for the call
-      const twiml = message 
-        ? `<Response><Say voice="alice">${message}</Say></Response>`
-        : `<Response><Say voice="alice">Hello, this is a call from Comsierge.</Say></Response>`;
+      // Use the public webhook URL for Twilio callbacks
+      const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
+      
+      console.log(`📞 Initiating Click-to-Call:`);
+      console.log(`   Agent (User): ${agentNumber}`);
+      console.log(`   Customer: ${toNumber}`);
+      console.log(`   Twilio Number: ${cleanFrom}`);
 
+      // Create a real two-way voice call using <Dial>
+      // 1. Call the Agent (User) first
+      // 2. When Agent answers, execute TwiML to dial Customer
       const call = await client.calls.create({
-        twiml: twiml,
-        from: fromNumber,
-        to: toNumber,
+        url: `${webhookBase}/api/twilio/webhook/connect?to=${encodeURIComponent(toNumber)}`,
+        from: cleanFrom,      // Show Twilio number to Agent
+        to: agentNumber,      // Call Agent's real phone
+        statusCallback: `${webhookBase}/api/twilio/webhook/status`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        statusCallbackMethod: 'POST',
       });
 
       res.json({
         success: true,
-        message: "Call initiated successfully",
+        message: "Calling your phone now. Please answer to connect to the customer.",
         data: {
           callSid: call.sid,
           status: call.status,
@@ -526,7 +1207,8 @@ router.post("/make-call", async (req, res) => {
 // @access  Private (user)
 router.post("/messages", async (req, res) => {
   try {
-    const { accountSid, authToken, phoneNumber, limit } = req.body;
+    const { accountSid, authToken, phoneNumber } = await resolveTwilioConfig(req.body);
+    const { limit } = req.body;
 
     if (!accountSid || !authToken) {
       return res.status(400).json({
@@ -605,7 +1287,8 @@ router.post("/messages", async (req, res) => {
 // @access  Private (user)
 router.post("/calls", async (req, res) => {
   try {
-    const { accountSid, authToken, phoneNumber, limit } = req.body;
+    const { accountSid, authToken, phoneNumber } = await resolveTwilioConfig(req.body);
+    const { limit } = req.body;
 
     if (!accountSid || !authToken) {
       return res.status(400).json({
@@ -671,6 +1354,452 @@ router.post("/calls", async (req, res) => {
     }
   } catch (error) {
     console.error("Get calls error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/end-call
+// @desc    End an active call
+// @access  Private (user)
+router.post("/end-call", async (req, res) => {
+  try {
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
+    const { callSid } = req.body;
+
+    if (!accountSid || !authToken || !callSid) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, callSid",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      const call = await client.calls(callSid).update({ status: "completed" });
+
+      res.json({
+        success: true,
+        message: "Call ended successfully",
+        data: {
+          callSid: call.sid,
+          status: call.status,
+        },
+      });
+    } catch (error) {
+      console.error("End call error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to end call",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("End call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/hold-call
+// @desc    Put a call on hold or resume
+// @access  Private (user)
+router.post("/hold-call", async (req, res) => {
+  try {
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
+    const { callSid, hold } = req.body;
+
+    if (!accountSid || !authToken || !callSid) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, callSid",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      // Update call with hold music TwiML or resume
+      const twiml = hold
+        ? `<Response><Play loop="0">http://com.twilio.music.classical.s3.amazonaws.com/ClsssclC/3.mp3</Play></Response>`
+        : `<Response><Say voice="alice">You are now reconnected.</Say></Response>`;
+
+      const call = await client.calls(callSid).update({ twiml });
+
+      res.json({
+        success: true,
+        message: hold ? "Call placed on hold" : "Call resumed",
+        data: {
+          callSid: call.sid,
+          status: call.status,
+          hold: hold,
+        },
+      });
+    } catch (error) {
+      console.error("Hold call error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to update call hold status",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Hold call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/transfer-call
+// @desc    Transfer a call to another number
+// @access  Private (user)
+router.post("/transfer-call", async (req, res) => {
+  try {
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body);
+    const { callSid, transferTo } = req.body;
+
+    if (!accountSid || !authToken || !callSid || !transferTo) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, callSid, transferTo",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      // End current call and initiate new call to transfer number
+      // This is a "cold transfer" - for warm transfer you'd use conference
+      await client.calls(callSid).update({ status: "completed" });
+      
+      // Make new call to transfer target
+      const newCall = await client.calls.create({
+        twiml: `<Response><Say voice="alice">Transferring call from Comsierge.</Say><Dial>${transferTo}</Dial></Response>`,
+        from: fromNumber,
+        to: transferTo,
+      });
+
+      res.json({
+        success: true,
+        message: "Call transferred successfully",
+        data: {
+          originalCallSid: callSid,
+          newCallSid: newCall.sid,
+          transferTo: transferTo,
+        },
+      });
+    } catch (error) {
+      console.error("Transfer call error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to transfer call",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Transfer call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/send-dtmf
+// @desc    Send DTMF tones to an active call (for IVR navigation)
+// @access  Private (user)
+router.post("/send-dtmf", async (req, res) => {
+  try {
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
+    const { callSid, digits } = req.body;
+
+    if (!accountSid || !authToken || !callSid || !digits) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, callSid, digits",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      // Send DTMF tones using TwiML Play
+      const twiml = `<Response><Play digits="${digits}"/></Response>`;
+      const call = await client.calls(callSid).update({ twiml });
+
+      res.json({
+        success: true,
+        message: "DTMF tones sent",
+        data: {
+          callSid: call.sid,
+          digits: digits,
+        },
+      });
+    } catch (error) {
+      console.error("Send DTMF error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to send DTMF tones",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Send DTMF error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/create-conference
+// @desc    Create a conference call (group call)
+// @access  Private (user)
+router.post("/create-conference", async (req, res) => {
+  try {
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body);
+    const { participants, conferenceName } = req.body;
+
+    if (!accountSid || !authToken || !fromNumber || !participants || participants.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, fromNumber, participants (array of phone numbers)",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+    const confName = conferenceName || `comsierge-conf-${Date.now()}`;
+
+    try {
+      // Call each participant and connect them to the conference
+      const callPromises = participants.map(number =>
+        client.calls.create({
+          twiml: `<Response><Dial><Conference beep="true" startConferenceOnEnter="true" endConferenceOnExit="false">${confName}</Conference></Dial></Response>`,
+          from: fromNumber,
+          to: number,
+        })
+      );
+
+      const calls = await Promise.all(callPromises);
+
+      res.json({
+        success: true,
+        message: "Conference call created",
+        data: {
+          conferenceName: confName,
+          participants: calls.map(c => ({
+            callSid: c.sid,
+            to: c.to,
+            status: c.status,
+          })),
+        },
+      });
+    } catch (error) {
+      console.error("Create conference error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to create conference",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Create conference error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/add-participant
+// @desc    Add a participant to an existing conference
+// @access  Private (user)
+router.post("/add-participant", async (req, res) => {
+  try {
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body);
+    const { participantNumber, conferenceName } = req.body;
+
+    if (!accountSid || !authToken || !fromNumber || !participantNumber || !conferenceName) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, fromNumber, participantNumber, conferenceName",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      const call = await client.calls.create({
+        twiml: `<Response><Dial><Conference beep="true" startConferenceOnEnter="true" endConferenceOnExit="false">${conferenceName}</Conference></Dial></Response>`,
+        from: fromNumber,
+        to: participantNumber,
+      });
+
+      res.json({
+        success: true,
+        message: "Participant added to conference",
+        data: {
+          conferenceName: conferenceName,
+          callSid: call.sid,
+          participantNumber: participantNumber,
+          status: call.status,
+        },
+      });
+    } catch (error) {
+      console.error("Add participant error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to add participant",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Add participant error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/twilio/record-call
+// @desc    Start/stop recording an active call
+// @access  Private (user)
+router.post("/record-call", async (req, res) => {
+  try {
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
+    const { callSid, action } = req.body;
+
+    if (!accountSid || !authToken || !callSid || !action) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required: accountSid, authToken, callSid, action (start/stop)",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      if (action === "start") {
+        const recording = await client.calls(callSid).recordings.create({
+          recordingStatusCallback: "http://example.com/recording-status",
+        });
+        
+        res.json({
+          success: true,
+          message: "Recording started",
+          data: {
+            recordingSid: recording.sid,
+            callSid: callSid,
+            status: recording.status,
+          },
+        });
+      } else if (action === "stop") {
+        // Get active recordings for this call and stop them
+        const recordings = await client.calls(callSid).recordings.list({ status: "in-progress" });
+        
+        for (const rec of recordings) {
+          await client.calls(callSid).recordings(rec.sid).update({ status: "stopped" });
+        }
+        
+        res.json({
+          success: true,
+          message: "Recording stopped",
+          data: {
+            callSid: callSid,
+            stoppedRecordings: recordings.length,
+          },
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid action. Use 'start' or 'stop'",
+        });
+      }
+    } catch (error) {
+      console.error("Record call error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to record call",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Record call error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   GET /api/twilio/call-status/:callSid
+// @desc    Get the status of a specific call
+// @access  Private (user)
+router.post("/call-status", async (req, res) => {
+  try {
+    const { callSid, fromNumber } = req.body;
+    
+    // Resolve credentials from DB using the fromNumber
+    const { accountSid, authToken } = await resolveTwilioConfig(req.body, fromNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Could not resolve Twilio credentials",
+      });
+    }
+    
+    if (!callSid) {
+      return res.status(400).json({
+        success: false,
+        message: "callSid is required",
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+
+    try {
+      const call = await client.calls(callSid).fetch();
+
+      res.json({
+        success: true,
+        data: {
+          callSid: call.sid,
+          status: call.status,
+          from: call.from,
+          to: call.to,
+          direction: call.direction,
+          duration: call.duration,
+          startTime: call.startTime,
+          endTime: call.endTime,
+        },
+      });
+    } catch (error) {
+      console.error("Get call status error:", error.message);
+      return res.status(400).json({
+        success: false,
+        message: "Failed to get call status",
+        error: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Get call status error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",

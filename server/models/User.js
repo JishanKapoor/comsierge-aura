@@ -37,6 +37,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    forwardingNumber: {
+      type: String,
+      default: null,
+    },
     plan: {
       type: String,
       enum: ["free", "pro", "enterprise"],

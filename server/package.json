@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node index.js"
   },
   "dependencies": {
     "@langchain/core": "^1.1.8",

@@ -1,0 +1,220 @@
+import express from "express";
+import Contact from "../models/Contact.js";
+import { authMiddleware } from "./auth.js";
+
+const router = express.Router();
+
+// All routes require authentication
+router.use(authMiddleware);
+
+// @route   GET /api/contacts
+// @desc    Get all contacts for current user
+// @access  Private
+router.get("/", async (req, res) => {
+  try {
+    const contacts = await Contact.find({ userId: req.user._id }).sort({ name: 1 });
+    res.json({
+      success: true,
+      count: contacts.length,
+      data: contacts,
+    });
+  } catch (error) {
+    console.error("Get contacts error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/contacts
+// @desc    Create a new contact
+// @access  Private
+router.post("/", async (req, res) => {
+  try {
+    const { name, phone, email, company, notes, tags, avatar } = req.body;
+
+    if (!name || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and phone are required",
+      });
+    }
+
+    // Check for existing contact with same phone
+    const existing = await Contact.findOne({ userId: req.user._id, phone });
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        message: "Contact with this phone number already exists",
+      });
+    }
+
+    const contact = await Contact.create({
+      userId: req.user._id,
+      name,
+      phone,
+      email,
+      company,
+      notes,
+      tags: tags || [],
+      avatar,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Contact created",
+      data: contact,
+    });
+  } catch (error) {
+    console.error("Create contact error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   PUT /api/contacts/:id
+// @desc    Update a contact
+// @access  Private
+router.put("/:id", async (req, res) => {
+  try {
+    const contact = await Contact.findOne({ _id: req.params.id, userId: req.user._id });
+    
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        message: "Contact not found",
+      });
+    }
+
+    const { name, phone, email, company, notes, tags, avatar, isFavorite, isBlocked } = req.body;
+    
+    if (name) contact.name = name;
+    if (phone) contact.phone = phone;
+    if (email !== undefined) contact.email = email;
+    if (company !== undefined) contact.company = company;
+    if (notes !== undefined) contact.notes = notes;
+    if (tags !== undefined) contact.tags = tags;
+    if (avatar !== undefined) contact.avatar = avatar;
+    if (isFavorite !== undefined) contact.isFavorite = isFavorite;
+    if (isBlocked !== undefined) contact.isBlocked = isBlocked;
+
+    await contact.save();
+
+    res.json({
+      success: true,
+      message: "Contact updated",
+      data: contact,
+    });
+  } catch (error) {
+    console.error("Update contact error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   DELETE /api/contacts/:id
+// @desc    Delete a contact
+// @access  Private
+router.delete("/:id", async (req, res) => {
+  try {
+    const contact = await Contact.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    
+    if (!contact) {
+      return res.status(404).json({
+        success: false,
+        message: "Contact not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Contact deleted",
+    });
+  } catch (error) {
+    console.error("Delete contact error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/contacts/bulk
+// @desc    Bulk import contacts
+// @access  Private
+router.post("/bulk", async (req, res) => {
+  try {
+    const { contacts } = req.body;
+
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Contacts array is required",
+      });
+    }
+
+    const results = {
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const c of contacts) {
+      try {
+        if (!c.name || !c.phone) {
+          results.failed++;
+          results.errors.push(`Missing name or phone for contact`);
+          continue;
+        }
+
+        const existing = await Contact.findOne({ userId: req.user._id, phone: c.phone });
+        if (existing) {
+          // Update existing
+          existing.name = c.name;
+          if (c.email) existing.email = c.email;
+          if (c.company) existing.company = c.company;
+          await existing.save();
+          results.updated++;
+        } else {
+          // Create new
+          await Contact.create({
+            userId: req.user._id,
+            name: c.name,
+            phone: c.phone,
+            email: c.email,
+            company: c.company,
+          });
+          results.created++;
+        }
+      } catch (e) {
+        results.failed++;
+        results.errors.push(e.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Import complete: ${results.created} created, ${results.updated} updated, ${results.failed} failed`,
+      data: results,
+    });
+  } catch (error) {
+    console.error("Bulk import error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+export default router;

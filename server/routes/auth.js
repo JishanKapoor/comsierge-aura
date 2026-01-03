@@ -208,6 +208,7 @@ router.get("/me", async (req, res) => {
           role: user.role,
           avatar: user.avatar,
           phoneNumber: user.phoneNumber,
+          forwardingNumber: user.forwardingNumber,
           plan: user.plan,
           createdAt: user.createdAt,
         },
@@ -401,6 +402,61 @@ router.put("/users/:id/phone", async (req, res) => {
   }
 });
 
+// @route   PUT /api/auth/users/:id/forwarding
+// @desc    Update user's call forwarding number
+// @access  Private
+router.put("/users/:id/forwarding", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { forwardingNumber } = req.body;
+    
+    // Validate phone number format (US numbers: 10 digits or 11 starting with 1)
+    if (forwardingNumber) {
+      const digits = forwardingNumber.replace(/\D/g, "");
+      const isValid = (digits.length === 10 && digits[0] >= '2' && digits[0] <= '9') ||
+                      (digits.length === 11 && digits[0] === '1' && digits[1] >= '2' && digits[1] <= '9');
+      
+      if (!isValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid US phone number",
+        });
+      }
+    }
+    
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.forwardingNumber = forwardingNumber || null;
+    await user.save();
+    
+    res.json({
+      success: true,
+      message: forwardingNumber ? "Forwarding number saved" : "Forwarding number cleared",
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          forwardingNumber: user.forwardingNumber,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update user forwarding error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
+
 // @route   POST /api/auth/create-admin
 // @desc    Create an admin user (for setup)
 // @access  Public (should be protected in production)
@@ -448,5 +504,48 @@ router.post("/create-admin", async (req, res) => {
     });
   }
 });
+
+// Auth middleware - verifies JWT and attaches user to req
+export const authMiddleware = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
+  }
+};
+
+// Admin middleware - requires user to be admin
+export const adminMiddleware = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Admin access required",
+    });
+  }
+  next();
+};
 
 export default router;

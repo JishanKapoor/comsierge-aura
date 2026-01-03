@@ -59,6 +59,23 @@ Comsierge is a modern communication management platform that provides AI-powered
 
 ## Getting Started
 
+### One-command local + LAN dev (Windows)
+
+Runs backend + frontend in new PowerShell windows, verifies MongoDB via `/api/health`, and (optionally) starts ngrok.
+
+- Run: `py -3.12 tools/dev_up.py`
+- If you want the script to be the only startup method (recommended), use:
+  - `py -3.12 tools/dev_up.py --restart`
+- LAN URL prints at the end (example): `http://192.168.x.x:8080/`
+
+Optional:
+- To auto-verify Twilio creds, set environment variables before running:
+  - `TWILIO_ACCOUNT_SID`
+  - `TWILIO_AUTH_TOKEN`
+  - `TWILIO_PHONE_NUMBER` (optional)
+
+If a phone/laptop on the same Wi‑Fi can’t open the LAN URL, allow `node.exe` through Windows Firewall (Private networks).
+
 ### Prerequisites
 - Node.js 18+ 
 - npm or bun

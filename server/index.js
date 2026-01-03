@@ -7,6 +7,14 @@ import { dirname, join } from "path";
 import authRoutes from "./routes/auth.js";
 import twilioRoutes from "./routes/twilio.js";
 import aiRoutes from "./routes/ai.js";
+import contactsRoutes from "./routes/contacts.js";
+import messagesRoutes from "./routes/messages.js";
+import callsRoutes from "./routes/calls.js";
+import rulesRoutes from "./routes/rules.js";
+import adminRoutes from "./routes/admin.js";
+import supportRoutes from "./routes/support.js";
+import remindersRoutes from "./routes/reminders.js";
+import translateRoutes from "./routes/translate.js";
 
 // Load environment variables with explicit path
 const __filename = fileURLToPath(import.meta.url);
@@ -16,10 +24,29 @@ dotenv.config({ path: join(__dirname, ".env") });
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:5173"],
-  credentials: true,
-}));
+const isDev = (process.env.NODE_ENV || "development") !== "production";
+const isAllowedDevOrigin = (origin) => {
+  if (!origin) return true; // allow curl/postman/no-origin
+
+  const allowed = [
+    /^http:\/\/localhost(?::\d+)?$/i,
+    /^http:\/\/127\.0\.0\.1(?::\d+)?$/i,
+    /^http:\/\/(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d+\.\d+\.\d+(?::\d+)?$/i,
+  ];
+
+  return allowed.some((re) => re.test(origin));
+};
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (isDev) return cb(null, isAllowedDevOrigin(origin));
+      // Production: default to no CORS unless explicitly configured
+      return cb(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 // For Twilio webhooks (they send form-urlencoded data)
 app.use(express.urlencoded({ extended: true }));
@@ -28,6 +55,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/twilio", twilioRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/contacts", contactsRoutes);
+app.use("/api/messages", messagesRoutes);
+app.use("/api/calls", callsRoutes);
+app.use("/api/rules", rulesRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/support", supportRoutes);
+app.use("/api/reminders", remindersRoutes);
+app.use("/api/translate", translateRoutes);
 
 // Root route - shows API info
 app.get("/", (req, res) => {
@@ -39,6 +74,13 @@ app.get("/", (req, res) => {
       auth: "/api/auth",
       twilio: "/api/twilio",
       ai: "/api/ai",
+      contacts: "/api/contacts",
+      messages: "/api/messages",
+      calls: "/api/calls",
+      rules: "/api/rules",
+      admin: "/api/admin",
+      reminders: "/api/reminders",
+      translate: "/api/translate",
       health: "/api/health",
     },
   });
@@ -80,8 +122,8 @@ const startServer = async () => {
     const collections = await mongoose.connection.db.listCollections().toArray();
     console.log(`📋 Collections: ${collections.map(c => c.name).join(", ") || "none yet"}`);
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
       console.log(`📡 API endpoints:`);
       console.log(`   POST /api/auth/signup - Register new user`);
       console.log(`   POST /api/auth/login - Login user`);

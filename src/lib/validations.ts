@@ -36,14 +36,25 @@ export const forgotPasswordSchema = z.object({
 
 export const normalizeUsPhoneDigits = (value: string) => value.replace(/\D/g, "");
 
-// Accepts:
-// - 10 digits (e.g. 5551234567)
-// - 11 digits starting with 1 (e.g. 15551234567)
-// - Any formatting characters, including +1, parentheses, spaces, dashes
+// Accepts valid US phone numbers:
+// - 10 digits NOT starting with 0 or 1 (area codes don't start with 0 or 1)
+// - 11 digits starting with 1 (country code) followed by valid area code
+// US area codes are 3 digits, first digit is 2-9
 export const isValidUsPhoneNumber = (value: string) => {
   const digits = normalizeUsPhoneDigits(value);
-  if (digits.length === 10) return true;
-  if (digits.length === 11 && digits.startsWith("1")) return true;
+  
+  // 10 digit number - area code must start with 2-9
+  if (digits.length === 10) {
+    const areaCode = digits[0];
+    return areaCode >= '2' && areaCode <= '9';
+  }
+  
+  // 11 digit number with country code 1 - area code must start with 2-9
+  if (digits.length === 11 && digits.startsWith("1")) {
+    const areaCode = digits[1];
+    return areaCode >= '2' && areaCode <= '9';
+  }
+  
   return false;
 };
 

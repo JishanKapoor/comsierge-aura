@@ -39,6 +39,12 @@ const Auth = () => {
     if (loggedInUser) {
       if (loggedInUser.role === "admin") {
         navigate("/admin");
+      } else if (!loggedInUser.phoneNumber) {
+        // No phone number assigned yet
+        navigate("/select-number");
+      } else if (!loggedInUser.forwardingNumber) {
+        // Phone assigned but no forwarding set up
+        navigate("/setup-forwarding");
       } else {
         navigate("/dashboard");
       }
@@ -63,7 +69,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-background">
+    <div className="min-h-screen relative overflow-y-auto bg-background">
       {/* Background with fade-in */}
       <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}>
         <img

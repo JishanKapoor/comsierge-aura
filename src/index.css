@@ -65,16 +65,16 @@
   }
 
   html, body {
-    @apply h-full overflow-hidden;
+    @apply h-full;
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased overflow-y-auto;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   }
 
   #root {
-    @apply h-full overflow-hidden;
+    @apply min-h-full;
   }
 
   /* Dashboard-specific styling - Linear App exact colors */
@@ -82,10 +82,11 @@
     font-family: 'Inter UI', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     font-size: 12px;
     letter-spacing: 0;
-    
     /* Linear's exact light theme colors */
     --background: 0 0% 100%;
     --foreground: 220 9% 20%;
+    background-color: hsl(0, 0%, 100%) !important;
+    color: hsl(220, 9%, 20%) !important;
 
     --card: 0 0% 100%;
     --card-foreground: 220 9% 20%;
@@ -338,4 +339,18 @@
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* iOS/iPad safe area and viewport fixes */
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Ensure proper safe area support on iOS */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

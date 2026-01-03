@@ -19,9 +19,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isValidUsPhoneNumber } from "@/lib/validations";
-import { mockContacts } from "./mockData";
 import { Contact } from "./types";
-import { loadContacts, saveContacts } from "./contactsStore";
+import { fetchContacts, createContact as createContactApi, updateContact as updateContactApi, deleteContact as deleteContactApi } from "./contactsApi";
 
 type View = "all" | "favorites";
 
@@ -32,7 +31,8 @@ interface ContactsTabProps {
 }
 
 const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
-  const [contacts, setContacts] = useState<Contact[]>(() => loadContacts(mockContacts));
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -75,10 +75,16 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     };
   }, [showModal]);
 
-  // Persist contacts across refresh/tabs
+  // Fetch contacts from API on mount
   useEffect(() => {
-    saveContacts(contacts);
-  }, [contacts]);
+    const loadData = async () => {
+      setLoading(true);
+      const data = await fetchContacts();
+      setContacts(data);
+      setLoading(false);
+    };
+    loadData();
+  }, []);
 
   // Close menu on outside click
   useEffect(() => {
@@ -172,21 +178,25 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     }
   };
 
-  const saveContact = () => {
-    if (!editForm.firstName || !editForm.phone) {
-      toast.error("Name and phone are required");
+  const saveContact = async () => {
+    if (!editForm.firstName.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    
+    if (!editForm.phone.trim()) {
+      toast.error("Phone number is required");
       return;
     }
 
     if (!isValidUsPhoneNumber(editForm.phone)) {
-      toast.error("Enter a valid phone number (10 digits, optional +1)");
+      toast.error("Invalid phone number. Enter 10 digits (with optional +1).");
       return;
     }
 
     if (selectedContact) {
-      // Update existing contact
-      const updatedContact = {
-        ...selectedContact,
+      // Update existing contact via API
+      const updates = {
         name: `${editForm.firstName} ${editForm.lastName}`.trim(),
         phone: editForm.phone,
         notes: editForm.notes || undefined,
@@ -194,16 +204,21 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         tags: editForm.tags,
         avatar: editForm.avatar || undefined,
       };
-      setContacts(contacts.map((c) =>
-        c.id === selectedContact.id ? updatedContact : c
-      ));
-      setSelectedContact(updatedContact);
-      toast.success("Contact updated");
-      setIsEditing(false);
+      const { success, error } = await updateContactApi(selectedContact.id, updates);
+      if (success) {
+        const updatedContact = { ...selectedContact, ...updates };
+        setContacts(contacts.map((c) =>
+          c.id === selectedContact.id ? updatedContact : c
+        ));
+        setSelectedContact(updatedContact);
+        toast.success("Contact updated");
+        setIsEditing(false);
+      } else {
+        toast.error(error || "Failed to update contact");
+      }
     } else {
-      // Create new contact
-      const newContact: Contact = {
-        id: `new-${Date.now()}`,
+      // Create new contact via API
+      const contactData = {
         name: `${editForm.firstName} ${editForm.lastName}`.trim(),
         phone: editForm.phone,
         notes: editForm.notes || undefined,
@@ -211,30 +226,45 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         tags: editForm.tags,
         avatar: editForm.avatar || undefined,
       };
-      setContacts([...contacts, newContact]);
-      setSelectedContact(newContact);
-      toast.success("Contact added");
-      setIsEditing(false);
+      const { contact: newContact, error } = await createContactApi(contactData);
+      if (newContact) {
+        setContacts([...contacts, newContact]);
+        setSelectedContact(newContact);
+        toast.success("Contact added");
+        setIsEditing(false);
+      } else {
+        toast.error(error || "Failed to create contact");
+      }
     }
   };
 
-  const deleteContact = (contactToDelete?: Contact) => {
+  const deleteContact = async (contactToDelete?: Contact) => {
     const target = contactToDelete || selectedContact;
     if (!target) return;
-    setContacts(contacts.filter((c) => c.id !== target.id));
-    toast.success("Contact deleted");
-    if (showModal) {
-      setShowModal(false);
-      setSelectedContact(null);
+    const success = await deleteContactApi(target.id);
+    if (success) {
+      setContacts(contacts.filter((c) => c.id !== target.id));
+      toast.success("Contact deleted");
+      if (showModal) {
+        setShowModal(false);
+        setSelectedContact(null);
+      }
+    } else {
+      toast.error("Failed to delete contact");
     }
     setOpenMenuId(null);
   };
 
-  const toggleFavorite = (contact: Contact) => {
-    setContacts(contacts.map(c => 
-      c.id === contact.id ? { ...c, isFavorite: !c.isFavorite } : c
-    ));
-    toast.success(contact.isFavorite ? "Removed from favorites" : "Added to favorites");
+  const toggleFavorite = async (contact: Contact) => {
+    const { success, error } = await updateContactApi(contact.id, { isFavorite: !contact.isFavorite });
+    if (success) {
+      setContacts(contacts.map(c => 
+        c.id === contact.id ? { ...c, isFavorite: !c.isFavorite } : c
+      ));
+      toast.success(contact.isFavorite ? "Removed from favorites" : "Added to favorites");
+    } else {
+      toast.error(error || "Failed to update favorite status");
+    }
     setOpenMenuId(null);
   };
 
@@ -261,10 +291,17 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     }));
   };
 
-  const deleteTagGlobally = (tag: string) => {
+  const deleteTagGlobally = async (tag: string) => {
     // Remove the tag from custom tags if it's a custom one
     setCustomTags(prev => prev.filter(t => t !== tag));
-    // Remove the tag from all contacts
+    
+    // Update all contacts that have this tag via API
+    const contactsWithTag = contacts.filter(c => c.tags.includes(tag));
+    for (const contact of contactsWithTag) {
+      await updateContactApi(contact.id, { tags: contact.tags.filter(t => t !== tag) });
+    }
+    
+    // Update local state
     setContacts(prev => prev.map(c => ({
       ...c,
       tags: c.tags.filter(t => t !== tag)
@@ -378,8 +415,15 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       </div>
 
       {/* Contacts List */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        {Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
+      <div className="bg-white border border-gray-200 rounded-lg overflow-visible">
+        {loading ? (
+          <div className="px-4 py-8 text-center text-gray-500 text-sm">Loading contacts...</div>
+        ) : Object.entries(groupByLetter(visibleContacts)).length === 0 ? (
+          <div className="px-4 py-8 text-center text-gray-500 text-sm">
+            {contacts.length === 0 ? "No contacts yet. Add your first contact!" : "No contacts match your search."}
+          </div>
+        ) : (
+          Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
           <div key={letter}>
             <div className="px-3 py-1 bg-gray-50">
               <span className="text-xs font-medium text-gray-500">{letter}</span>
@@ -388,7 +432,10 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
               <div
                 key={contact.id}
                 onClick={() => openModal(contact)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer"
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer relative border-b border-gray-100 last:border-b-0",
+                  openMenuId === contact.id && "z-30"
+                )}
               >
                 {contact.avatar ? (
                   <img 
@@ -436,7 +483,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                       <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
                     </button>
                     {openMenuId === contact.id && (
-                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px] z-20">
+                      <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px] z-[60]">
                         <button
                           onClick={(e) => { e.stopPropagation(); editContactFromList(contact); }}
                           className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
@@ -456,9 +503,10 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
               </div>
             ))}
           </div>
-        ))}
+        ))
+        )}
 
-        {visibleContacts.length === 0 && (
+        {!loading && visibleContacts.length === 0 && contacts.length > 0 && (
           <div className="p-6 text-center text-gray-400 text-xs">No contacts found</div>
         )}
       </div>

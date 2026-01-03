@@ -28,8 +28,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { isValidUsPhoneNumber } from "@/lib/validations";
-import { mockMessages, mockChatHistory, mockContacts, languages } from "./mockData";
-import { Message, ChatMessage, AIMessage } from "./types";
+import { mockMessages, mockChatHistory, languages } from "./mockData";
+import { Message, ChatMessage, AIMessage, Contact } from "./types";
+import { fetchContacts } from "./contactsApi";
 
 type Filter = "all" | "unread" | "priority" | "blocked";
 type PriorityLabel = "all" | "urgent" | "high" | "meeting" | "deadline" | "follow-up";
@@ -37,6 +38,7 @@ type TransferCriteria = "all" | "priority" | "sentiment" | "label";
 
 const MessagesTab = () => {
   const [messages] = useState<Message[]>(mockMessages);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [priorityLabel, setPriorityLabel] = useState<PriorityLabel>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -81,6 +83,15 @@ const MessagesTab = () => {
     "What action items are pending?",
     "Translate last message",
   ];
+
+  // Fetch contacts from API on mount
+  useEffect(() => {
+    const loadContactsData = async () => {
+      const data = await fetchContacts();
+      setContacts(data);
+    };
+    loadContactsData();
+  }, []);
 
   useEffect(() => {
     aiMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -214,7 +225,7 @@ const MessagesTab = () => {
     }, 600);
   };
 
-  const selectedContact = mockContacts.find((c) => c.id === selectedChat);
+  const selectedContact = contacts.find((c) => c.id === selectedChat);
 
   // Chat View
   if (selectedChat && selectedContact) {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Send,
   ChevronLeft,
@@ -10,18 +10,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  SupportTicket,
+  createTicketAsync,
+  addReplyAsync,
+  loadTicketsAsync,
+} from "./supportStore";
 
 type SupportView = "main" | "new-ticket";
-
-interface Ticket {
-  id: string;
-  subject: string;
-  category: string;
-  message: string;
-  status: "open" | "in-progress" | "resolved";
-  createdAt: string;
-  replies?: { message: string; isSupport: boolean; timestamp: string }[];
-}
 
 const issueCategories = [
   "Call Quality Issues",
@@ -35,91 +32,102 @@ const issueCategories = [
 ];
 
 const SupportTab = () => {
+  const { user } = useAuth();
   const [view, setView] = useState<SupportView>("main");
   const [category, setCategory] = useState("");
   const [message, setMessage] = useState("");
-  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [replyMessage, setReplyMessage] = useState("");
-  
-  const [tickets, setTickets] = useState<Ticket[]>([
-    {
-      id: "1",
-      subject: "Call forwarding issue",
-      category: "Call Quality Issues",
-      message: "I'm having trouble setting up call forwarding.",
-      status: "resolved",
-      createdAt: "Dec 20, 2024",
-      replies: [
-        { message: "I'm having trouble setting up call forwarding.", isSupport: false, timestamp: "Dec 20, 10:30 AM" },
-        { message: "Hi! I'd be happy to help. What number are you forwarding to?", isSupport: true, timestamp: "Dec 20, 11:15 AM" },
-        { message: "+1 (555) 123-4567", isSupport: false, timestamp: "Dec 20, 11:20 AM" },
-        { message: "Done! Forwarding is now enabled.", isSupport: true, timestamp: "Dec 20, 11:45 AM" },
-      ],
-    },
-    {
-      id: "2",
-      subject: "Billing question",
-      category: "Billing & Subscription",
-      message: "I was charged twice this month.",
-      status: "in-progress",
-      createdAt: "Dec 24, 2024",
-      replies: [
-        { message: "I was charged twice this month.", isSupport: false, timestamp: "Dec 24, 2:00 PM" },
-        { message: "We're looking into this and will update you within 24 hours.", isSupport: true, timestamp: "Dec 24, 2:30 PM" },
-      ],
-    },
-  ]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const submitTicket = () => {
+  // Auto-scroll to bottom when selected ticket changes or new replies come in
+  useEffect(() => {
+    if (messagesEndRef.current && selectedTicket) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [selectedTicket, selectedTicket?.replies.length]);
+
+  // Load user's tickets on mount and poll for updates
+  useEffect(() => {
+    const loadUserTickets = async () => {
+      if (user) {
+        const userTickets = await loadTicketsAsync();
+        setTickets(userTickets);
+        
+        // Update selected ticket if it exists
+        if (selectedTicket) {
+          const updated = userTickets.find(t => t.id === selectedTicket.id);
+          if (updated) {
+            setSelectedTicket(updated);
+          }
+        }
+      }
+    };
+
+    loadUserTickets();
+    
+    // Poll for updates every 5 seconds (to catch admin replies)
+    const interval = setInterval(loadUserTickets, 5000);
+    return () => clearInterval(interval);
+  }, [user, selectedTicket?.id]);
+
+  const submitTicket = async () => {
     if (!category || !message.trim()) {
       toast.error("Please select a category and describe your issue");
       return;
     }
-    const newTicket: Ticket = {
-      id: `${Date.now()}`,
-      subject: category,
+    
+    if (!user) {
+      toast.error("You must be logged in to submit a ticket");
+      return;
+    }
+
+    const newTicket = await createTicketAsync(
       category,
-      message,
-      status: "open",
-      createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-      replies: [{ message, isSupport: false, timestamp: new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) }],
-    };
-    setTickets([newTicket, ...tickets]);
-    setCategory("");
-    setMessage("");
-    toast.success("Ticket submitted! We'll respond soon.");
-    setView("main");
-  };
+      message.trim(),
+      category // subject same as category
+    );
 
-  const submitReply = () => {
-    if (!replyMessage.trim() || !selectedTicket) return;
-    
-    const newReply = {
-      message: replyMessage.trim(),
-      isSupport: false,
-      timestamp: new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
-    };
-    
-    const updatedTicket = {
-      ...selectedTicket,
-      replies: [...(selectedTicket.replies || []), newReply],
-    };
-    
-    setTickets(tickets.map(t => t.id === selectedTicket.id ? updatedTicket : t));
-    setSelectedTicket(updatedTicket);
-    setReplyMessage("");
-    toast.success("Reply sent!");
-  };
-
-  const getStatusIcon = (status: Ticket["status"]) => {
-    switch (status) {
-      case "open": return <AlertCircle className="w-3 h-3 text-indigo-500" />;
-      case "in-progress": return <Clock className="w-3 h-3 text-amber-500" />;
-      case "resolved": return <CheckCircle2 className="w-3 h-3 text-green-600" />;
+    if (newTicket) {
+      setTickets([newTicket, ...tickets]);
+      setCategory("");
+      setMessage("");
+      toast.success("Ticket submitted! We'll respond soon.");
+      setView("main");
+    } else {
+      toast.error("Failed to create ticket");
     }
   };
 
-  const getStatusPillClass = (status: Ticket["status"]) => {
+  const submitReply = async () => {
+    if (!replyMessage.trim() || !selectedTicket || !user) return;
+
+    const updatedTicket = await addReplyAsync(
+      selectedTicket.id,
+      replyMessage.trim()
+    );
+
+    if (updatedTicket) {
+      setSelectedTicket(updatedTicket);
+      setTickets(tickets.map(t => t.id === updatedTicket.id ? updatedTicket : t));
+      setReplyMessage("");
+      toast.success("Reply sent!");
+    }
+  };
+
+  const getStatusIcon = (status: SupportTicket["status"]) => {
+    switch (status) {
+      case "open":
+        return <AlertCircle className="w-3 h-3 text-indigo-500" />;
+      case "in-progress":
+        return <Clock className="w-3 h-3 text-amber-500" />;
+      case "resolved":
+        return <CheckCircle2 className="w-3 h-3 text-green-600" />;
+    }
+  };
+
+  const getStatusPillClass = (status: SupportTicket["status"]) => {
     switch (status) {
       case "open":
         return "bg-indigo-50 text-indigo-600";
@@ -130,11 +138,19 @@ const SupportTab = () => {
     }
   };
 
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
   if (selectedTicket) {
     return (
       <div className="h-full flex flex-col">
         <button
-          onClick={() => { setSelectedTicket(null); setReplyMessage(""); }}
+          onClick={() => {
+            setSelectedTicket(null);
+            setReplyMessage("");
+          }}
           className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 mb-3 shrink-0"
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back
@@ -145,12 +161,14 @@ const SupportTab = () => {
           <div className="flex items-start justify-between p-3 border-b border-gray-100 shrink-0">
             <div>
               <h3 className="text-xs font-medium text-gray-800">{selectedTicket.subject}</h3>
-              <p className="text-xs text-gray-500">{selectedTicket.createdAt}</p>
+              <p className="text-xs text-gray-500">{formatDate(selectedTicket.createdAt)}</p>
             </div>
-            <div className={cn(
-              "flex items-center gap-1 px-2 py-0.5 rounded text-xs",
-              getStatusPillClass(selectedTicket.status)
-            )}>
+            <div
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded text-xs",
+                getStatusPillClass(selectedTicket.status)
+              )}
+            >
               {getStatusIcon(selectedTicket.status)}
               <span className="capitalize">{selectedTicket.status.replace("-", " ")}</span>
             </div>
@@ -160,15 +178,23 @@ const SupportTab = () => {
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {selectedTicket.replies?.map((reply, idx) => (
               <div key={idx} className={cn("flex", reply.isSupport ? "justify-start" : "justify-end")}>
-                <div className={cn(
-                  "max-w-[85%] px-2.5 py-1.5 rounded text-xs",
-                  reply.isSupport ? "bg-gray-100 text-gray-700" : "bg-indigo-500 text-white"
-                )}>
+                <div
+                  className={cn(
+                    "max-w-[85%] px-2.5 py-1.5 rounded text-xs",
+                    reply.isSupport ? "bg-gray-100 text-gray-700" : "bg-indigo-500 text-white"
+                  )}
+                >
+                  {reply.isSupport && reply.authorName && (
+                    <p className="text-[10px] font-medium text-indigo-600 mb-0.5">{reply.authorName}</p>
+                  )}
                   <p>{reply.message}</p>
-                  <p className={cn("text-[10px] mt-0.5", reply.isSupport ? "text-gray-400" : "text-indigo-200")}>{reply.timestamp}</p>
+                  <p className={cn("text-[10px] mt-0.5", reply.isSupport ? "text-gray-400" : "text-indigo-200")}>
+                    {reply.timestamp}
+                  </p>
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* Reply input - only show for non-resolved tickets */}
@@ -188,8 +214,8 @@ const SupportTab = () => {
                     }
                   }}
                 />
-                <Button 
-                  className="h-9 px-3 text-xs bg-indigo-500 hover:bg-indigo-600 text-white shrink-0" 
+                <Button
+                  className="h-9 px-3 text-xs bg-indigo-500 hover:bg-indigo-600 text-white shrink-0"
                   onClick={submitReply}
                   disabled={!replyMessage.trim()}
                 >
@@ -202,7 +228,18 @@ const SupportTab = () => {
           {/* Resolved notice */}
           {selectedTicket.status === "resolved" && (
             <div className="p-3 border-t border-gray-100 shrink-0">
-              <p className="text-xs text-gray-500 text-center">This ticket has been resolved. Need more help? <button onClick={() => { setSelectedTicket(null); setView("new-ticket"); }} className="text-indigo-600 hover:underline">Open a new ticket</button></p>
+              <p className="text-xs text-gray-500 text-center">
+                This ticket has been resolved. Need more help?{" "}
+                <button
+                  onClick={() => {
+                    setSelectedTicket(null);
+                    setView("new-ticket");
+                  }}
+                  className="text-indigo-600 hover:underline"
+                >
+                  Open a new ticket
+                </button>
+              </p>
             </div>
           )}
         </div>
@@ -252,7 +289,10 @@ const SupportTab = () => {
             />
           </div>
 
-          <Button className="w-full h-9 text-xs bg-indigo-500 hover:bg-indigo-600 text-white" onClick={submitTicket}>
+          <Button
+            className="w-full h-9 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
+            onClick={submitTicket}
+          >
             <Send className="w-3.5 h-3.5 mr-1.5" /> Submit Ticket
           </Button>
         </div>
@@ -279,7 +319,7 @@ const SupportTab = () => {
         <h3 className="text-xs font-medium text-gray-800 mb-2 flex items-center gap-1.5">
           <MessageCircle className="w-3.5 h-3.5" /> My Tickets
         </h3>
-        
+
         {tickets.length === 0 ? (
           <p className="text-xs text-gray-400 py-3 text-center">No tickets yet</p>
         ) : (
@@ -292,12 +332,14 @@ const SupportTab = () => {
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-gray-800 truncate">{ticket.subject}</p>
-                  <p className="text-xs text-gray-500">{ticket.createdAt}</p>
+                  <p className="text-xs text-gray-500">{formatDate(ticket.createdAt)}</p>
                 </div>
-                <div className={cn(
-                  "ml-2 shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px]",
-                  getStatusPillClass(ticket.status)
-                )}>
+                <div
+                  className={cn(
+                    "ml-2 shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px]",
+                    getStatusPillClass(ticket.status)
+                  )}
+                >
                   {getStatusIcon(ticket.status)}
                   <span className="capitalize">{ticket.status.replace("-", " ")}</span>
                 </div>

@@ -43,6 +43,9 @@ const Dashboard = () => {
   useEffect(() => {
     if (user && !user.phoneNumber) {
       navigate("/select-number", { replace: true });
+    } else if (user && user.phoneNumber && !user.forwardingNumber) {
+      // Has phone but no forwarding - redirect to setup
+      navigate("/setup-forwarding", { replace: true });
     }
   }, [user, navigate]);
 
@@ -84,15 +87,35 @@ const Dashboard = () => {
     );
   }
   
-  if (!user || !user.phoneNumber) {
+  // Redirect to auth if not logged in
+  if (!user) {
+    navigate("/auth", { replace: true });
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-gray-300 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Redirect to select-number if no phone assigned
+  if (!user.phoneNumber) {
+    navigate("/select-number", { replace: true });
     return null;
   }
 
   // Handle navigation from contacts
   const handleNavigateFromContacts = (tab: string, contactPhone?: string) => {
+    // Clear first to ensure the useEffect triggers even for the same phone
+    setSelectedContactPhone(null);
     setActiveTab(tab as Tab);
     if (contactPhone) {
-      setSelectedContactPhone(contactPhone);
+      // Use setTimeout to ensure state update happens after clear
+      setTimeout(() => {
+        setSelectedContactPhone(contactPhone);
+      }, 0);
     }
   };
 
@@ -157,13 +180,13 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="dashboard-layout flex w-full h-screen overflow-hidden bg-white font-sans text-sm text-gray-700">
+    <div className="dashboard-layout flex w-full h-screen h-[100dvh] overflow-hidden bg-white font-sans text-sm text-gray-700" style={{ backgroundColor: '#ffffff', color: '#374151' }}>
       {/* Left Sidebar */}
       <div
         className={cn(
-          "absolute lg:static inset-0 transform duration-300 lg:relative lg:translate-x-0",
-          "bg-white flex flex-col flex-shrink-0 w-56 h-full border-r border-gray-100 lg:shadow-none z-50 overflow-hidden",
-          showMenu ? "translate-x-0 ease-in shadow-xl" : "-translate-x-full ease-out shadow-none"
+          "fixed lg:static top-0 left-0 bottom-0 transform duration-300 lg:relative lg:translate-x-0",
+          "bg-white flex flex-col flex-shrink-0 w-56 h-full border-r border-gray-100 lg:shadow-none overflow-hidden",
+          showMenu ? "translate-x-0 ease-in shadow-xl z-50" : "-translate-x-full ease-out shadow-none z-0 pointer-events-none lg:pointer-events-auto lg:z-auto"
         )}
       >
         {/* Mobile close button */}
@@ -275,7 +298,7 @@ const Dashboard = () => {
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-col flex-grow min-w-0 h-full bg-white overflow-hidden">
+      <div className="flex flex-col flex-grow min-w-0 min-h-0 h-full bg-white overflow-hidden">
         {/* Top bar */}
         <div className="flex justify-between flex-shrink-0 pl-2 pr-6 border-b border-gray-200 h-14 lg:pl-6 bg-white">
           {/* Left section */}

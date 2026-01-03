@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Search,
@@ -33,13 +33,29 @@ import {
   Clock,
   Calendar,
   Loader2,
+  Filter,
+  SlidersHorizontal,
+  MailCheck,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockMessages, languages, mockContacts } from "./mockData";
+import { languages } from "./mockData";
 import type { Contact, Message } from "./types";
-import { loadContacts, saveContacts } from "./contactsStore";
+import { fetchContacts } from "./contactsApi";
 import { loadRules, saveRules, ActiveRule } from "./rulesStore";
 import { loadTwilioAccounts } from "./adminStore";
+import { 
+  fetchConversations, 
+  fetchThread, 
+  updateConversation,
+  deleteConversation,
+  searchMessages,
+  type FilterType as ApiFilterType,
+  type SentimentType,
+  type UrgencyType,
+  type CategoryType,
+  type SearchParams,
+} from "./messagesApi";
 import { isValidUsPhoneNumber } from "@/lib/validations";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -51,6 +67,7 @@ type ChatBubble = {
   role: "incoming" | "outgoing" | "ai";
   content: string;
   timestamp: string;
+  translatedContent?: string; // For storing translated text
 };
 
 type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
@@ -62,9 +79,6 @@ type TransferPrefs = {
 };
 
 const STORAGE_KEYS = {
-  messages: "comsierge.inbox.messages",
-  pinned: "comsierge.inbox.pinned",
-  muted: "comsierge.inbox.muted",
   transferPrefs: "comsierge.inbox.transferPrefs",
   languages: "comsierge.inbox.languages",
 } as const;
@@ -88,25 +102,158 @@ type TransferType = "all" | "high-priority";
 type PriorityFilter = "all" | "emergency" | "meetings" | "deadlines" | "important";
 type ScheduleMode = "always" | "duration" | "custom";
 
+// Translation via API (with fallback)
+const translateText = async (text: string, targetLang: string, sourceLang: string = 'auto'): Promise<string> => {
+  if (!text.trim() || targetLang === "en" && sourceLang === "en") return text;
+  
+  try {
+    // Try backend API first
+    const res = await fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, sourceLang, targetLang })
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.translatedText) {
+        return data.translatedText;
+      }
+    }
+    
+    // Fallback to direct MyMemory call
+    const langPair = sourceLang === 'auto' ? `auto|${targetLang}` : `${sourceLang}|${targetLang}`;
+    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`);
+    const data = await response.json();
+    if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      return data.responseData.translatedText;
+    }
+    return text;
+  } catch (error) {
+    console.error("Translation failed:", error);
+    return text;
+  }
+};
+
 const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) => {
   const { user } = useAuth();
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = safeParseJson<Message[]>(localStorage.getItem(STORAGE_KEYS.messages));
-    return Array.isArray(saved) && saved.length > 0 ? saved : mockMessages;
-  });
-  const [contacts, setContacts] = useState<Contact[]>(() => loadContacts(mockContacts));
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "chat">("list");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [isSending, setIsSending] = useState(false);
+
+  // Warn if user has no phone number assigned
+  useEffect(() => {
+    if (user && !user.phoneNumber) {
+      toast.error("You have no phone number assigned! You cannot receive messages.", {
+        duration: 10000,
+        action: {
+          label: "Contact Admin",
+          onClick: () => console.log("Contact admin clicked"),
+        },
+      });
+    }
+  }, [user]);
+
+  // Helper to normalize phone numbers for comparison
+  const normalizePhone = (value: string) => value.replace(/[^\d+]/g, "").toLowerCase();
+
+  // Reusable function to load conversations from API
+  const loadConversations = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsLoadingMessages(true);
+    try {
+      const conversations = await fetchConversations(activeFilter as ApiFilterType);
+      // Convert API conversations to Message format for UI compatibility
+      // Look up contact names from saved contacts
+      const msgs: Message[] = conversations.map((conv) => {
+        // Try to find a saved contact matching this phone
+        const savedContact = contacts.find(c => normalizePhone(c.phone) === normalizePhone(conv.contactPhone));
+        const displayName = savedContact?.name || 
+          ((conv.contactName && conv.contactName !== "Unknown") ? conv.contactName : conv.contactPhone);
+        
+        return {
+          id: conv.id,
+          contactId: conv.id,
+          contactName: displayName,
+          contactPhone: conv.contactPhone,
+          content: conv.lastMessage || "",
+          timestamp: conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+          isRead: conv.unreadCount === 0,
+          isIncoming: true, // Conversations list shows incoming-style entries
+          status: conv.isBlocked ? "blocked" : conv.isHeld ? "held" : conv.isPriority ? "priority" : "normal",
+          unreadCount: conv.unreadCount,
+          // Include conversation control states from API
+          isPinned: conv.isPinned || false,
+          isMuted: conv.isMuted || false,
+          isPriority: conv.isPriority || false,
+          isBlocked: conv.isBlocked || false,
+          isHeld: conv.isHeld || false,
+        };
+      });
+      setMessages(prev => {
+        // Preserve any local "new" conversations that haven't been saved to DB yet
+        const localNewConversations = prev.filter(m => m.id.startsWith("new-"));
+        
+        // If we have local conversations, we need to make sure we don't duplicate if they somehow appeared in the list (unlikely with new- prefix)
+        // Also ensure we don't have duplicates in msgs
+        return [...localNewConversations, ...msgs];
+      });
+    } catch (error) {
+      // Don't wipe the inbox list on transient errors; keep last known state.
+      console.error("Failed to load conversations:", error);
+    }
+    if (showLoading) setIsLoadingMessages(false);
+  }, [activeFilter, contacts]);
+
+  // Fetch conversations from MongoDB API on filter change
+  useEffect(() => {
+    loadConversations(true);
+  }, [loadConversations]); // Refetch when filter changes
+
+  // Poll for new messages every 5 seconds
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadConversations(false); // Silently refresh
+    }, 5000);
+    return () => clearInterval(pollInterval);
+  }, [loadConversations]);
   
   // Menu states
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAiChat, setShowAiChat] = useState(false);
+  
+  // Advanced Search states
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<Array<{
+    id: string;
+    contactPhone: string;
+    contactName: string;
+    body: string;
+    direction: "incoming" | "outgoing";
+    createdAt: string;
+    sentiment?: { score: SentimentType | null };
+    urgency?: { level: UrgencyType | null };
+    category?: CategoryType | null;
+  }>>([]);
+  const [advancedSearchParams, setAdvancedSearchParams] = useState<SearchParams>({
+    q: "",
+    contact: "",
+    sentiment: undefined,
+    urgency: undefined,
+    category: undefined,
+    labels: "",
+    startDate: "",
+    endDate: "",
+  });
+  
   const [receiveLanguage, setReceiveLanguage] = useState(() => {
     const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string }>(
       localStorage.getItem(STORAGE_KEYS.languages)
@@ -120,6 +267,66 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     return saved?.sendLanguage || "en";
   });
   const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Track which message bubbles are currently being translated
+  const [translatingBubbles, setTranslatingBubbles] = useState<Set<string>>(new Set());
+  
+  // Translate a specific message bubble
+  const translateBubble = async (bubbleId: string, content: string) => {
+    if (translatingBubbles.has(bubbleId)) return;
+    
+    setTranslatingBubbles(prev => new Set(prev).add(bubbleId));
+    
+    try {
+      // Translate to user's receive language
+      const translated = await translateText(content, receiveLanguage, "auto");
+      
+      // Update the bubble with translation
+      setThreadsByContactId(prev => {
+        const contactId = selectedMessage?.contactId;
+        if (!contactId || !prev[contactId]) return prev;
+        
+        return {
+          ...prev,
+          [contactId]: prev[contactId].map(b => 
+            b.id === bubbleId 
+              ? { ...b, translatedContent: translated }
+              : b
+          ),
+        };
+      });
+      
+      toast.success("Message translated");
+    } catch (error) {
+      console.error("Translation failed:", error);
+      toast.error("Translation failed");
+    } finally {
+      setTranslatingBubbles(prev => {
+        const next = new Set(prev);
+        next.delete(bubbleId);
+        return next;
+      });
+    }
+  };
+  
+  // Translate all incoming messages in the current thread
+  const translateAllIncoming = async () => {
+    if (!selectedMessage) return;
+    const thread = threadsByContactId[selectedMessage.contactId];
+    if (!thread) return;
+    
+    const incomingBubbles = thread.filter(b => b.role === "incoming" && !b.translatedContent);
+    if (incomingBubbles.length === 0) {
+      toast.info("All messages already translated");
+      return;
+    }
+    
+    toast.info(`Translating ${incomingBubbles.length} messages...`);
+    
+    for (const bubble of incomingBubbles) {
+      await translateBubble(bubble.id, bubble.content);
+    }
+  };
 
   type AiChatMessage = {
     id: string;
@@ -222,16 +429,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     ],
     [contactCustomTags]
   );
-  
-  // Pin/Mute state per conversation
-  const [pinnedConversations, setPinnedConversations] = useState<Set<string>>(() => {
-    const saved = safeParseJson<string[]>(localStorage.getItem(STORAGE_KEYS.pinned));
-    return new Set(Array.isArray(saved) ? saved : []);
-  });
-  const [mutedConversations, setMutedConversations] = useState<Set<string>>(() => {
-    const saved = safeParseJson<string[]>(localStorage.getItem(STORAGE_KEYS.muted));
-    return new Set(Array.isArray(saved) ? saved : []);
-  });
 
   const [transferPrefsByConversation, setTransferPrefsByConversation] = useState<Record<string, TransferPrefs>>(() => {
     const saved = safeParseJson<Record<string, TransferPrefs>>(localStorage.getItem(STORAGE_KEYS.transferPrefs));
@@ -251,22 +448,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [scheduleStartTime, setScheduleStartTime] = useState<string>("");
   const [scheduleEndTime, setScheduleEndTime] = useState<string>("");
 
-  // Persist across refresh
+  // Fetch contacts from API on mount
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages));
-  }, [messages]);
-
-  useEffect(() => {
-    saveContacts(contacts);
-  }, [contacts]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.pinned, JSON.stringify(Array.from(pinnedConversations)));
-  }, [pinnedConversations]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.muted, JSON.stringify(Array.from(mutedConversations)));
-  }, [mutedConversations]);
+    const loadContactsData = async () => {
+      const data = await fetchContacts();
+      setContacts(data);
+    };
+    loadContactsData();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.transferPrefs, JSON.stringify(transferPrefsByConversation));
@@ -290,44 +479,37 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   
+  // API already filters by activeFilter, we just do local search filtering here
   const filteredMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
+      if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      const matchesSearch =
+      return (
         msg.contactName.toLowerCase().includes(q) ||
         msg.contactPhone.toLowerCase().includes(q) ||
-        msg.content.toLowerCase().includes(q);
-      
-      // Filter by tab
-      if (activeFilter === "all" && (msg.status === "blocked" || msg.status === "held")) return false; // All excludes blocked and held
-      if (activeFilter === "unread" && (msg.isRead || msg.status === "blocked" || msg.status === "held")) return false;
-      if (activeFilter === "priority" && msg.status !== "priority") return false;
-      if (activeFilter === "held" && msg.status !== "held") return false;
-      if (activeFilter === "blocked" && msg.status !== "blocked") return false;
-      
-      return matchesSearch;
+        msg.content.toLowerCase().includes(q)
+      );
     });
 
-    // Pinned conversations float to top
+    // Pinned conversations float to top (using API state)
     return [...filtered].sort((a, b) => {
-      const aPinned = pinnedConversations.has(a.id) ? 1 : 0;
-      const bPinned = pinnedConversations.has(b.id) ? 1 : 0;
+      const aPinned = a.isPinned ? 1 : 0;
+      const bPinned = b.isPinned ? 1 : 0;
       return bPinned - aPinned;
     });
-  }, [messages, searchQuery, activeFilter, pinnedConversations]);
+  }, [messages, searchQuery]);
 
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     filteredMessages[0]?.id ?? null
   );
 
-  const normalizePhone = (value: string) => value.replace(/[^\d+]/g, "").toLowerCase();
   const looksLikePhoneNumber = (value: string) => {
     return isValidUsPhoneNumber(value);
   };
 
   const phonesInFilteredConversations = useMemo(() => {
     return new Set(filteredMessages.map((m) => normalizePhone(m.contactPhone)));
-  }, [filteredMessages]);
+  }, [filteredMessages, normalizePhone]);
 
   const matchingContacts = useMemo(() => {
     const q = searchQuery.trim();
@@ -418,20 +600,56 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Auto-select conversation when navigating from contacts
   useEffect(() => {
-    if (selectedContactPhone) {
-      // Try to find an existing conversation with this phone number
-      const matchingMessage = messages.find(msg => msg.contactPhone === selectedContactPhone);
-      if (matchingMessage) {
-        setSelectedMessageId(matchingMessage.id);
-        if (isMobile) setMobilePane("chat");
-        toast.success(`Opened chat with ${matchingMessage.contactName}`);
-      } else {
-        // No existing conversation, show toast
-        toast.info(`Starting new conversation with ${selectedContactPhone}`);
-      }
-      onClearSelection?.();
+    if (!selectedContactPhone) return;
+    
+    // Wait for initial load to complete so we don't create duplicates or get overwritten
+    if (isLoadingMessages) {
+      console.log("[InboxView] Waiting for messages to load before handling selection...");
+      return;
     }
-  }, [selectedContactPhone]);
+    
+    console.log("[InboxView] selectedContactPhone changed:", selectedContactPhone);
+    
+    // Try to find an existing conversation with this phone number (use normalized comparison)
+    const matchingMessage = messages.find(msg => 
+      normalizePhone(msg.contactPhone) === normalizePhone(selectedContactPhone)
+    );
+    
+    if (matchingMessage) {
+      console.log("[InboxView] Found existing conversation:", matchingMessage.id);
+      setSelectedMessageId(matchingMessage.id);
+      if (isMobile) setMobilePane("chat");
+      toast.success(`Opened chat with ${matchingMessage.contactName}`);
+    } else {
+      // No existing conversation - create a new one
+      console.log("[InboxView] Creating new conversation for:", selectedContactPhone);
+      // Check if there's a contact for this phone
+      const contact = contacts.find(c => 
+        normalizePhone(c.phone) === normalizePhone(selectedContactPhone)
+      );
+      
+      const newConversation: Message = {
+        id: `new-${Date.now()}`,
+        contactId: contact?.id || `phone:${normalizePhone(selectedContactPhone)}`,
+        contactName: contact?.name || selectedContactPhone,
+        contactPhone: selectedContactPhone,
+        content: "New conversation",
+        timestamp: "Now",
+        isIncoming: false,
+        status: "allowed",
+        rule: contact?.tags?.[0] || "New Number",
+        isRead: true,
+      };
+
+      setMessages((prev) => [newConversation, ...prev]);
+      setSelectedMessageId(newConversation.id);
+      if (isMobile) setMobilePane("chat");
+      toast.success(`Started new conversation with ${contact?.name || selectedContactPhone}`);
+    }
+    
+    // Clear after handling
+    onClearSelection?.();
+  }, [selectedContactPhone, isLoadingMessages]);
 
   const selectedMessage = useMemo(() => {
     const byId = selectedMessageId ? filteredMessages.find((m) => m.id === selectedMessageId) : undefined;
@@ -446,117 +664,130 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const [threadsByContactId, setThreadsByContactId] = useState<Record<string, ChatBubble[]>>({});
 
-  // Poll for incoming messages from Twilio webhook
+  // Fetch real thread from API when conversation is selected, with polling
   useEffect(() => {
-    const fetchIncomingMessages = async () => {
+    if (!selectedMessage) return;
+    
+    const loadThread = async (forceRefresh = false) => {
+      // Check if we already have real messages (not seed) - skip initial load if we have them
+      const existing = threadsByContactId[selectedMessage.contactId];
+      const hasRealMessages = existing && existing.length > 0 && !existing[0]?.id?.includes('-seed-');
+      if (hasRealMessages && !forceRefresh) return;
+      
       try {
-        const res = await fetch("http://localhost:5000/api/twilio/incoming-messages");
-        const data = await res.json();
+        const messages = await fetchThread(selectedMessage.contactPhone);
         
-        if (data.success && data.data && data.data.length > 0) {
-          let hasNewMessages = false;
+        if (messages.length > 0) {
+          // Convert API messages to ChatBubble format
+          const bubbles: ChatBubble[] = messages.map((m) => ({
+            id: m.id,
+            role: m.direction === 'incoming' ? 'incoming' as const : 'outgoing' as const,
+            content: m.body,
+            timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase(),
+          }));
           
-          // Process new incoming messages
-          data.data.forEach((incomingMsg: { id: string; from: string; to: string; body: string; timestamp: string }) => {
-            // Skip if already processed
-            if (processedMessageIds.current.has(incomingMsg.id)) return;
+          // Only update if messages have changed
+          const currentBubbles = threadsByContactId[selectedMessage.contactId];
+          // Always update to ensure we have the latest, but preserve optimistic messages
+          setThreadsByContactId((prev) => {
+            const current = prev[selectedMessage.contactId] ?? [];
+            let optimistic = current.filter((b) => String(b.id).includes("-local-"));
             
-            // Mark as processed immediately
-            processedMessageIds.current.add(incomingMsg.id);
-            hasNewMessages = true;
-            
-            // Find or create conversation for this sender
-            const senderPhone = incomingMsg.from;
-            const existingConvo = messages.find(m => 
-              m.contactPhone?.replace(/[^\d+]/g, "") === senderPhone.replace(/[^\d+]/g, "")
-            );
-            
-            if (existingConvo) {
-              // Add to existing thread
-              setThreadsByContactId(prev => ({
-                ...prev,
-                [existingConvo.contactId]: [
-                  ...(prev[existingConvo.contactId] || []),
-                  {
-                    id: incomingMsg.id,
-                    role: "incoming" as const,
-                    content: incomingMsg.body,
-                    timestamp: new Date(incomingMsg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
-                  }
-                ]
-              }));
-              // Update the conversation's last message
-              setMessages(prev => prev.map(m => 
-                m.id === existingConvo.id 
-                  ? { ...m, content: incomingMsg.body, timestamp: "Just now", isRead: false }
-                  : m
-              ));
-            } else {
-              // Create new conversation
-              const newConvo: Message = {
-                id: `twilio-${Date.now()}`,
-                contactId: `phone:${senderPhone}`,
-                contactName: senderPhone,
-                contactPhone: senderPhone,
-                content: incomingMsg.body,
-                timestamp: "Just now",
-                isIncoming: true,
-                status: "allowed",
-                rule: "New Contact",
-                isRead: false,
-              };
-              setMessages(prev => [newConvo, ...prev]);
-              setThreadsByContactId(prev => ({
-                ...prev,
-                [newConvo.contactId]: [{
-                  id: incomingMsg.id,
-                  role: "incoming" as const,
-                  content: incomingMsg.body,
-                  timestamp: new Date(incomingMsg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
-                }]
-              }));
+            // Filter out optimistic messages that are now present in the real list (deduplication)
+            // We check the last few messages for a match to avoid scanning the whole history
+            const recentReal = bubbles.slice(-5); 
+            optimistic = optimistic.filter(opt => {
+              const isSynced = recentReal.some(real => 
+                real.role === opt.role && 
+                real.content === opt.content
+              );
+              return !isSynced;
+            });
+
+            // Sort all messages by timestamp to ensure correct order
+            const allMessages = [...bubbles, ...optimistic].sort((a, b) => {
+               // Convert timestamps to comparable values if possible, or rely on order
+               // Since optimistic messages are "now", they should generally be last
+               // But if we have real timestamps, use them.
+               // Note: ChatBubble timestamp is a string "hh:mm am/pm", which is hard to sort.
+               // Ideally we should store raw Date objects.
+               // For now, we assume bubbles (from DB) are sorted, and optimistic are newer.
+               
+               // If both are optimistic, sort by ID (which has timestamp)
+               if (String(a.id).includes("-local-") && String(b.id).includes("-local-")) {
+                  return a.id.localeCompare(b.id);
+               }
+               // If one is optimistic, it goes last (usually)
+               if (String(a.id).includes("-local-")) return 1;
+               if (String(b.id).includes("-local-")) return -1;
+               
+               // Both are real messages - they are already sorted by the API
+               return 0;
+            });
+
+            // Check if we really need to update to avoid unnecessary renders
+            const currentReal = current.filter(b => !String(b.id).includes("-local-"));
+            if (JSON.stringify(currentReal) === JSON.stringify(bubbles) && 
+                optimistic.length === current.filter(b => String(b.id).includes("-local-")).length) {
+               return prev;
             }
+
+            return {
+              ...prev,
+              [selectedMessage.contactId]: allMessages,
+            };
           });
-          
-          // Clear processed messages from server
-          if (hasNewMessages) {
-            fetch("http://localhost:5000/api/twilio/incoming-messages", { method: "DELETE" }).catch(() => {});
-          }
+        } else {
+          // No messages in DB - show placeholder with last message from conversation list
+          setThreadsByContactId((prev) => {
+            if (prev[selectedMessage.contactId]) return prev;
+            
+            // Don't show seed message for new conversations
+            if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation") {
+                return { ...prev, [selectedMessage.contactId]: [] };
+            }
+
+            const seed: ChatBubble[] = [
+              {
+                id: `${selectedMessage.contactId}-seed-incoming`,
+                role: 'incoming',
+                content: selectedMessage.content || 'No messages yet',
+                timestamp: selectedMessage.timestamp,
+              },
+            ];
+            return { ...prev, [selectedMessage.contactId]: seed };
+          });
         }
       } catch (error) {
-        // Silently fail - server might be down
-        console.log("Failed to fetch incoming messages");
+        console.error('Failed to load thread:', error);
+        // Keep any existing thread; otherwise seed from the conversation preview.
+        setThreadsByContactId((prev) => {
+          if (prev[selectedMessage.contactId]) return prev;
+          
+          // Don't show seed message for new conversations
+          if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation") {
+              return { ...prev, [selectedMessage.contactId]: [] };
+          }
+
+          const seed: ChatBubble[] = [
+            {
+              id: `${selectedMessage.contactId}-seed-incoming`,
+              role: 'incoming',
+              content: selectedMessage.content || 'No messages yet',
+              timestamp: selectedMessage.timestamp,
+            },
+          ];
+          return { ...prev, [selectedMessage.contactId]: seed };
+        });
       }
     };
     
-    // Poll every 3 seconds
-    const interval = setInterval(fetchIncomingMessages, 3000);
-    fetchIncomingMessages(); // Initial fetch
+    loadThread(); // Initial load
     
-    return () => clearInterval(interval);
-  }, [messages, threadsByContactId]);
-
-  useEffect(() => {
-    if (!selectedMessage) return;
-    setThreadsByContactId((prev) => {
-      if (prev[selectedMessage.contactId]) return prev;
-      const seed: ChatBubble[] = [
-        {
-          id: `${selectedMessage.contactId}-seed-incoming`,
-          role: "incoming",
-          content: selectedMessage.content,
-          timestamp: selectedMessage.timestamp,
-        },
-        {
-          id: `${selectedMessage.contactId}-seed-ai`,
-          role: "ai",
-          content: "AI summary: Message received. Suggested reply drafted.",
-          timestamp: "Now",
-        },
-      ];
-      return { ...prev, [selectedMessage.contactId]: seed };
-    });
-  }, [selectedMessage]);
+    // Poll for new messages every 3 seconds
+    const pollInterval = setInterval(() => loadThread(true), 3000);
+    return () => clearInterval(pollInterval);
+  }, [selectedMessage?.contactId, selectedMessage?.contactPhone]);
 
   useEffect(() => {
     if (!isMobile) {
@@ -568,12 +799,32 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const activeThread = selectedMessage ? threadsByContactId[selectedMessage.contactId] ?? [] : [];
 
-  // Auto-scroll to bottom when new messages arrive in the active thread
+  // Track if user has scrolled up
+  const userScrolledUp = useRef(false);
+  const lastThreadLength = useRef(0);
+
+  // Auto-scroll to bottom only when NEW messages arrive (not on initial load)
   useEffect(() => {
     if (chatScrollRef.current && activeThread.length > 0) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      const isNewMessage = activeThread.length > lastThreadLength.current;
+      const isInitialLoad = lastThreadLength.current === 0;
+      
+      // Only auto-scroll if:
+      // 1. Initial load of conversation, OR
+      // 2. New message AND user hasn't scrolled up
+      if (isInitialLoad || (isNewMessage && !userScrolledUp.current)) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+      
+      lastThreadLength.current = activeThread.length;
     }
   }, [activeThread.length]);
+
+  // Reset scroll tracking when conversation changes
+  useEffect(() => {
+    userScrolledUp.current = false;
+    lastThreadLength.current = 0;
+  }, [selectedMessage?.contactId]);
 
   useEffect(() => {
     if (!showAiChat || !selectedMessage) return;
@@ -593,6 +844,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const handleSelectConversation = (id: string) => {
     setSelectedMessageId(id);
+    // Mark message as read
+    setMessages(prev => prev.map(m => 
+      m.id === id ? { ...m, isRead: true } : m
+    ));
     if (isMobile) setMobilePane("chat");
   };
 
@@ -603,89 +858,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (!trimmed && !pendingAttachment) return;
     if (isSending) return;
 
-    const now = new Date();
-    const timestamp = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
-    
-    // Get Twilio credentials from localStorage
-    const twilioAccounts = loadTwilioAccounts();
-    const userPhone = user?.phoneNumber;
-    
-    // Find the Twilio account that has this phone number
-    const twilioAccount = twilioAccounts.find(acc => 
-      acc.phoneNumbers.some(p => {
-        const cleanP = p.replace(/[^\d+]/g, "");
-        const cleanUser = userPhone?.replace(/[^\d+]/g, "");
-        return cleanP === cleanUser;
-      })
-    );
-
-    // Get recipient phone - clean it up
-    const recipientPhone = selectedMessage.contactPhone?.replace(/[^\d+]/g, "") || "";
-    
-    // Try to send via Twilio if we have credentials
-    if (trimmed && twilioAccount && userPhone && recipientPhone) {
-      setIsSending(true);
-      try {
-        const response = await fetch("http://localhost:5000/api/twilio/send-sms", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            accountSid: twilioAccount.accountSid,
-            authToken: twilioAccount.authToken,
-            fromNumber: userPhone,
-            toNumber: recipientPhone,
-            body: trimmed,
-          }),
-        });
-        
-        const data = await response.json();
-        
-        if (!data.success) {
-          toast.error(data.message || "Failed to send SMS");
-          setIsSending(false);
-          return;
-        }
-        
-        // SMS sent successfully
-        toast.success("SMS sent!");
-      } catch (error) {
-        console.error("Send SMS error:", error);
-        toast.error("Failed to send SMS - check connection");
-        setIsSending(false);
-        return;
-      }
-      setIsSending(false);
-    } else if (trimmed && !twilioAccount) {
-      // No Twilio credentials - show warning but still add to UI
-      toast.warning("No Twilio account configured - message saved locally only");
-    }
-
-    // Add message to UI
-    const toAppend: ChatBubble[] = [];
-
-    if (trimmed) {
-      toAppend.push({
-        id: `${selectedMessage.contactId}-${now.getTime()}`,
-        role: "outgoing",
-        content: trimmed,
-        timestamp,
-      });
-    }
-
-    if (pendingAttachment) {
-      toAppend.push({
-        id: `${selectedMessage.contactId}-${now.getTime()}-file`,
-        role: "outgoing",
-        content: `📎 ${pendingAttachment.name}`,
-        timestamp,
-      });
-    }
-
-    setThreadsByContactId((prev) => ({
-      ...prev,
-      [selectedMessage.contactId]: [...(prev[selectedMessage.contactId] ?? []), ...toAppend],
-    }));
-
+    // Clear input immediately for instant feel
     setNewMessage("");
     setPendingAttachment(null);
     setShowEmojiPicker(false);
@@ -693,6 +866,215 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setAiAssistMode(null);
     setAiAssistRewrite("");
     setAiAssistSuggestions([]);
+
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+    
+    // User's assigned phone number (from database via auth)
+    const userPhone = user?.phoneNumber;
+    
+    // Get recipient phone - clean it up
+    const recipientPhone = selectedMessage.contactPhone?.replace(/[^\d+]/g, "") || "";
+    
+    // Optimistically add message to UI immediately (so it never "disappears" between polls)
+    const optimisticId = `${selectedMessage.contactId}-local-${now.getTime()}`;
+    // Note: We use 'trimmed' here. If translation happens later, the real message will replace this.
+    const optimisticContent = trimmed;
+    
+    const optimisticBubbles: ChatBubble[] = [];
+    if (optimisticContent) {
+      optimisticBubbles.push({
+        id: optimisticId,
+        role: "outgoing",
+        content: optimisticContent,
+        timestamp,
+      });
+    }
+    if (pendingAttachment) {
+      optimisticBubbles.push({
+        id: `${optimisticId}-file`,
+        role: "outgoing",
+        content: `📎 ${pendingAttachment.name}`,
+        timestamp,
+      });
+    }
+
+    if (optimisticBubbles.length) {
+      setThreadsByContactId((prev) => ({
+        ...prev,
+        [selectedMessage.contactId]: [...(prev[selectedMessage.contactId] ?? []), ...optimisticBubbles],
+      }));
+    }
+
+    // Translate message if sendLanguage is not English
+    let messageToSend = trimmed;
+    if (trimmed && sendLanguage !== "en") {
+      setIsSending(true);
+      try {
+        messageToSend = await translateText(trimmed, sendLanguage);
+      } catch (e) {
+        console.error("Translation failed, sending original:", e);
+      }
+    }
+    
+    // Send via Twilio using user's assigned phone number
+    if (messageToSend && recipientPhone) {
+      // Must have an assigned phone number to send
+      if (!userPhone) {
+        toast.error("No phone number assigned to your account. Contact admin to assign a Twilio number.");
+        // Remove optimistic bubbles if we can't send
+        setThreadsByContactId((prev) => {
+          const current = prev[selectedMessage.contactId] ?? [];
+          return {
+            ...prev,
+            [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+          };
+        });
+        return;
+      }
+      
+      setIsSending(true);
+      try {
+        // Send with user's assigned phone - backend will use env creds + validate the number
+        const requestBody = {
+          toNumber: recipientPhone,
+          body: messageToSend,
+          fromNumber: userPhone,
+          contactName: selectedMessage.contactName,
+        };
+        
+        const token = localStorage.getItem("comsierge_token");
+        if (!token) {
+          toast.error("Not authenticated - please log in again");
+          setIsSending(false);
+          setThreadsByContactId((prev) => {
+            const current = prev[selectedMessage.contactId] ?? [];
+            return {
+              ...prev,
+              [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+            };
+          });
+          return;
+        }
+        
+        const response = await fetch("/api/twilio/send-sms", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(requestBody),
+        });
+        
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error("Failed to parse response:", parseError);
+          toast.error("Server returned invalid response");
+          setIsSending(false);
+          setThreadsByContactId((prev) => {
+            const current = prev[selectedMessage.contactId] ?? [];
+            return {
+              ...prev,
+              [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+            };
+          });
+          return;
+        }
+        
+        if (!response.ok || !data.success) {
+          const errorMsg = data?.message || `Server error (${response.status})`;
+          console.error("Send SMS failed:", errorMsg, data);
+          toast.error(errorMsg);
+          setIsSending(false);
+          // Remove optimistic bubbles on failure
+          setThreadsByContactId((prev) => {
+            const current = prev[selectedMessage.contactId] ?? [];
+            return {
+              ...prev,
+              [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+            };
+          });
+          return;
+        }
+        
+        // SMS sent successfully
+
+        // Refresh thread immediately from API (replaces optimistic local id with real Mongo _id)
+        try {
+          const latest = await fetchThread(selectedMessage.contactPhone);
+          const bubbles: ChatBubble[] = latest.map((m) => ({
+            id: m.id,
+            role: m.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const),
+            content: m.body,
+            timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+          }));
+          setThreadsByContactId((prev) => {
+            const current = prev[selectedMessage.contactId] ?? [];
+            
+            // Keep optimistic messages unless we find them in the new list
+            let optimistic = current.filter((b) => String(b.id).includes("-local-"));
+            
+            // Check if the message we just sent is in the new list
+            const recentReal = bubbles.slice(-5);
+            const isSynced = recentReal.some(real => 
+               real.role === "outgoing" && 
+               real.content === messageToSend // Use the actual content we sent
+            );
+
+            if (isSynced) {
+               // If synced, remove the specific optimistic ID we created
+               optimistic = optimistic.filter(b => !String(b.id).startsWith(optimisticId));
+            }
+            
+            return {
+              ...prev,
+              [selectedMessage.contactId]: [...bubbles, ...optimistic],
+            };
+          });
+        } catch (e) {
+          // If refresh fails, keep optimistic bubble; polling will reconcile later.
+          console.error("Failed to refresh thread after send:", e);
+        }
+
+        // Update conversation preview locally for snappy UI
+        if (trimmed) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === selectedMessage.id
+                ? {
+                    ...m,
+                    content: trimmed,
+                    timestamp,
+                    isRead: true,
+                    isIncoming: false,
+                    unreadCount: 0,
+                  }
+                : m
+            )
+          );
+        }
+      } catch (error) {
+        console.error("Send SMS network error:", error);
+        toast.error(`Failed to send: ${error instanceof Error ? error.message : "Network error"}`);
+        setIsSending(false);
+        // Remove optimistic bubbles on failure
+        setThreadsByContactId((prev) => {
+          const current = prev[selectedMessage.contactId] ?? [];
+          return {
+            ...prev,
+            [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+          };
+        });
+        return;
+      }
+      setIsSending(false);
+    } else if (trimmed && !recipientPhone) {
+      // No recipient phone number
+      toast.warning("No recipient phone number - message saved locally only");
+    }
+
   };
 
   // Status colors and labels
@@ -841,7 +1223,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }));
   };
 
-  const saveContactFromInbox = () => {
+  const saveContactFromInbox = async () => {
     const first = contactEditForm.firstName.trim();
     const last = contactEditForm.lastName.trim();
     const fullName = `${first} ${last}`.trim();
@@ -861,53 +1243,97 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const oldPhoneNorm = normalizePhone(oldPhone);
     const newPhoneNorm = normalizePhone(phone);
 
-    setContacts((prev) => {
-      const collision = prev.find((c) => c.id !== selectedSavedContact?.id && normalizePhone(c.phone) === newPhoneNorm);
-      if (collision) {
-        toast.error("That phone number is already saved for another contact");
-        return prev;
-      }
+    // Check for collision locally first
+    const collision = contacts.find((c) => c.id !== selectedSavedContact?.id && normalizePhone(c.phone) === newPhoneNorm);
+    if (collision) {
+      toast.error("That phone number is already saved for another contact");
+      return;
+    }
 
+    // Save to API
+    try {
       if (selectedSavedContact) {
-        return prev.map((c) =>
-          c.id === selectedSavedContact.id
-            ? {
-                ...c,
-                name: fullName,
-                phone,
-                notes: contactEditForm.notes || undefined,
-                isFavorite: contactEditForm.isFavorite,
-                tags: contactEditForm.tags,
-              }
-            : c
+        // Update existing contact via API
+        const { updateContact } = await import("./contactsApi");
+        const { success, error } = await updateContact(selectedSavedContact.id, {
+          name: fullName,
+          phone,
+          notes: contactEditForm.notes || undefined,
+          isFavorite: contactEditForm.isFavorite,
+          tags: contactEditForm.tags,
+        });
+        if (!success) {
+          toast.error(error || "Failed to update contact");
+          return;
+        }
+        // Update local state
+        setContacts((prev) =>
+          prev.map((c) =>
+            c.id === selectedSavedContact.id
+              ? {
+                  ...c,
+                  name: fullName,
+                  phone,
+                  notes: contactEditForm.notes || undefined,
+                  isFavorite: contactEditForm.isFavorite,
+                  tags: contactEditForm.tags,
+                }
+              : c
+          )
         );
+      } else {
+        // Create new contact via API
+        const { createContact } = await import("./contactsApi");
+        const { contact: newContact, error } = await createContact({
+          name: fullName,
+          phone,
+          notes: contactEditForm.notes || undefined,
+          isFavorite: contactEditForm.isFavorite,
+          tags: contactEditForm.tags,
+        });
+        if (!newContact) {
+          toast.error(error || "Failed to create contact");
+          return;
+        }
+        // Update local state
+        setContacts((prev) => [...prev, newContact]);
       }
 
-      const newContact: Contact = {
-        id: `inbox-${Date.now()}`,
-        name: fullName,
-        phone,
-        notes: contactEditForm.notes || undefined,
-        isFavorite: contactEditForm.isFavorite,
-        tags: contactEditForm.tags,
-      };
-      return [...prev, newContact];
-    });
+      // Also update the conversation's contactName in the database
+      if (selectedMessage?.contactPhone) {
+        try {
+          const token = localStorage.getItem("comsierge_token");
+          await fetch(`/api/messages/conversation/${encodeURIComponent(selectedMessage.contactPhone)}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token ? `Bearer ${token}` : "",
+            },
+            body: JSON.stringify({ contactName: fullName }),
+          });
+        } catch (e) {
+          console.error("Failed to update conversation name:", e);
+        }
+      }
 
-    // Keep conversation display info in sync (name + optionally phone)
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (normalizePhone(m.contactPhone) !== oldPhoneNorm) return m;
-        return {
-          ...m,
-          contactName: fullName,
-          contactPhone: selectedSavedContact ? phone : m.contactPhone,
-        };
-      })
-    );
+      // Keep conversation display info in sync (name + optionally phone)
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (normalizePhone(m.contactPhone) !== oldPhoneNorm) return m;
+          return {
+            ...m,
+            contactName: fullName,
+            contactPhone: selectedSavedContact ? phone : m.contactPhone,
+          };
+        })
+      );
 
-    toast.success(selectedSavedContact ? "Contact updated" : "Contact saved");
-    setShowContactModal(false);
+      toast.success(selectedSavedContact ? "Contact updated" : "Contact saved");
+      setShowContactModal(false);
+    } catch (error) {
+      console.error("Save contact error:", error);
+      toast.error("Failed to save contact");
+    }
   };
 
   const handleTransfer = () => {
@@ -926,35 +1352,57 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
-  const handlePin = () => {
+  const handlePin = async () => {
     if (!selectedMessage) return;
-    const isPinned = pinnedConversations.has(selectedMessage.id);
-    setPinnedConversations(prev => {
-      const next = new Set(prev);
-      if (isPinned) {
-        next.delete(selectedMessage.id);
-      } else {
-        next.add(selectedMessage.id);
-      }
-      return next;
-    });
-    toast.success(isPinned ? "Conversation unpinned" : "Conversation pinned");
+    const isPinned = selectedMessage.isPinned || false;
+    const phone = selectedMessage.contactPhone;
+    
+    // Update in API
+    const success = await updateConversation(phone, { isPinned: !isPinned });
+    
+    if (success) {
+      // Update local state immediately for responsive UI
+      setMessages(prev => prev.map(m => 
+        m.id === selectedMessage.id ? { ...m, isPinned: !isPinned } : m
+      ));
+      toast.success(isPinned ? "Conversation unpinned" : "Conversation pinned");
+    } else {
+      toast.error("Failed to update pin status");
+    }
     setShowMoreMenu(false);
   };
 
-  const handleMute = () => {
+  const handleMute = async () => {
     if (!selectedMessage) return;
-    const isMuted = mutedConversations.has(selectedMessage.id);
-    setMutedConversations(prev => {
-      const next = new Set(prev);
-      if (isMuted) {
-        next.delete(selectedMessage.id);
-      } else {
-        next.add(selectedMessage.id);
-      }
-      return next;
+    const isMuted = selectedMessage.isMuted || false;
+    const phone = selectedMessage.contactPhone;
+    
+    // Update in API - when muting, also set isHeld to true so it goes to held filter
+    // when unmuting, also set isHeld to false
+    const success = await updateConversation(phone, { 
+      isMuted: !isMuted,
+      isHeld: !isMuted // If muting (isMuted is false), set isHeld to true
     });
-    toast.success(isMuted ? "Conversation unmuted" : "Conversation muted");
+    
+    if (success) {
+      // Update local state immediately for responsive UI
+      setMessages(prev => prev.map(m => 
+        m.id === selectedMessage.id ? { 
+          ...m, 
+          isMuted: !isMuted,
+          isHeld: !isMuted,
+          status: !isMuted ? "held" : "normal"
+        } : m
+      ));
+      toast.success(isMuted ? "Conversation unmuted" : "Conversation muted and moved to Held");
+      
+      // If we just muted and we're not in the held filter, refresh to remove from current list
+      if (!isMuted && activeFilter !== "held") {
+        await loadConversations();
+      }
+    } else {
+      toast.error("Failed to update mute status");
+    }
     setShowMoreMenu(false);
   };
 
@@ -1061,43 +1509,106 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     c.phone.toLowerCase().includes(transferContactSearch.toLowerCase())
   );
 
-  const handleBlock = () => {
+  const handleBlock = async () => {
     if (!selectedMessage) return;
-    setMessages(prev => prev.map(m => 
-      m.id === selectedMessage.id ? { ...m, status: "blocked" as const } : m
-    ));
-    toast.success("Contact blocked");
+    const phone = selectedMessage.contactPhone;
+    const success = await updateConversation(phone, { isBlocked: true, isHeld: false });
+    if (success) {
+      toast.success("Contact blocked");
+      // Refresh conversations to reflect the change based on current filter
+      await loadConversations();
+      // If current filter is not "blocked", clear selection (blocked contact won't be in list)
+      if (activeFilter !== "blocked") {
+        setSelectedMessageId(null);
+      }
+    } else {
+      toast.error("Failed to block contact");
+    }
     setShowMoreMenu(false);
   };
 
-  const handleUnblock = () => {
+  const handleUnblock = async () => {
     if (!selectedMessage) return;
-    setMessages(prev => prev.map(m => 
-      m.id === selectedMessage.id ? { ...m, status: "allowed" as const } : m
-    ));
-    toast.success("Contact unblocked");
+    const phone = selectedMessage.contactPhone;
+    const success = await updateConversation(phone, { isBlocked: false });
+    if (success) {
+      toast.success("Contact unblocked");
+      // Refresh conversations to reflect the change
+      await loadConversations();
+      // If current filter is "blocked", clear selection (unblocked contact won't be in list)
+      if (activeFilter === "blocked") {
+        setSelectedMessageId(null);
+      }
+    } else {
+      toast.error("Failed to unblock contact");
+    }
     setShowMoreMenu(false);
   };
 
-  const handleDelete = () => {
+  const handleHold = async () => {
+    if (!selectedMessage) return;
+    const phone = selectedMessage.contactPhone;
+    const isCurrentlyHeld = selectedMessage.status === "held";
+    const success = await updateConversation(phone, { isHeld: !isCurrentlyHeld });
+    if (success) {
+      toast.success(isCurrentlyHeld ? "Message released from hold" : "Message put on hold");
+      // Refresh conversations to reflect the change
+      await loadConversations();
+      // If filter is "held" and we just unheld, or filter is "all" and we just held, clear selection
+      if ((activeFilter === "held" && isCurrentlyHeld) || (activeFilter === "all" && !isCurrentlyHeld)) {
+        setSelectedMessageId(null);
+      }
+    } else {
+      toast.error("Failed to update hold status");
+    }
+    setShowMoreMenu(false);
+  };
+
+  const handleMarkPriority = async () => {
+    if (!selectedMessage) return;
+    const phone = selectedMessage.contactPhone;
+    const isCurrentlyPriority = selectedMessage.isPriority || false;
+    const success = await updateConversation(phone, { isPriority: !isCurrentlyPriority });
+    if (success) {
+      // Update local state immediately for responsive UI
+      setMessages(prev => prev.map(m => 
+        m.id === selectedMessage.id ? { 
+          ...m, 
+          isPriority: !isCurrentlyPriority,
+          status: !isCurrentlyPriority ? "priority" : "normal"
+        } : m
+      ));
+      toast.success(isCurrentlyPriority ? "Removed from priority" : "Marked as priority");
+    } else {
+      toast.error("Failed to update priority");
+    }
+    setShowMoreMenu(false);
+  };
+
+  const handleDelete = async () => {
     if (!selectedMessage) return;
     const conversationId = selectedMessage.id;
     const contactId = selectedMessage.contactId;
+    const phone = selectedMessage.contactPhone;
+
+    // Delete via API
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      await fetch(`/api/messages/conversation/${encodeURIComponent(phone)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+    } catch (e) {
+      console.error("Delete API error:", e);
+    }
 
     setMessages(prev => prev.filter(m => m.id !== conversationId));
     setThreadsByContactId(prev => {
       const next = { ...prev };
       delete next[contactId];
-      return next;
-    });
-    setPinnedConversations(prev => {
-      const next = new Set(prev);
-      next.delete(conversationId);
-      return next;
-    });
-    setMutedConversations(prev => {
-      const next = new Set(prev);
-      next.delete(conversationId);
       return next;
     });
     setTransferPrefsByConversation(prev => {
@@ -1108,6 +1619,63 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setSelectedMessageId(null);
     toast.success("Conversation deleted");
     setShowMoreMenu(false);
+  };
+
+  // Advanced Search handler
+  const handleAdvancedSearch = async () => {
+    // Check if any search param is set
+    const hasParams = advancedSearchParams.q || advancedSearchParams.contact || 
+      advancedSearchParams.sentiment || advancedSearchParams.urgency || 
+      advancedSearchParams.category || advancedSearchParams.labels ||
+      advancedSearchParams.startDate || advancedSearchParams.endDate;
+    
+    if (!hasParams) {
+      toast.error("Please enter at least one search criteria");
+      return;
+    }
+    
+    setIsSearching(true);
+    try {
+      const result = await searchMessages(advancedSearchParams);
+      setSearchResults(result.messages);
+      if (result.messages.length === 0) {
+        toast.info("No messages found matching your criteria");
+      } else {
+        toast.success(`Found ${result.total} message${result.total !== 1 ? 's' : ''}`);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error("Search failed");
+    }
+    setIsSearching(false);
+  };
+
+  const clearAdvancedSearch = () => {
+    setAdvancedSearchParams({
+      q: "",
+      contact: "",
+      sentiment: undefined,
+      urgency: undefined,
+      category: undefined,
+      labels: "",
+      startDate: "",
+      endDate: "",
+    });
+    setSearchResults([]);
+  };
+
+  const openConversationFromSearch = (contactPhone: string) => {
+    // Find the conversation in the list or navigate to it
+    const existing = messages.find(m => m.contactPhone === contactPhone);
+    if (existing) {
+      setSelectedMessageId(existing.id);
+      setShowAdvancedSearch(false);
+      if (isMobile) setMobilePane("chat");
+    } else {
+      // Start new conversation with this number
+      startConversationForNumber(contactPhone);
+      setShowAdvancedSearch(false);
+    }
   };
 
   // AI actions
@@ -1144,7 +1712,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       {/* Conversation List */}
       <section
         className={cn(
-          "w-full md:shrink-0 flex flex-col border-r border-gray-200 bg-white overflow-hidden transition-all duration-500",
+          "w-full md:shrink-0 flex flex-col min-h-0 border-r border-gray-200 bg-white overflow-hidden transition-all duration-500",
           isMobile && mobilePane === "chat" ? "hidden" : "flex",
           !isMobile && showAiChat ? "md:w-0 md:opacity-0 md:pointer-events-none md:border-r-0" : "md:w-80 md:opacity-100"
         )}
@@ -1154,15 +1722,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
         {/* Search */}
         <div className="p-3 border-b border-gray-200">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search conversations"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
-            />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search conversations"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 rounded text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
+              />
+            </div>
+            <button
+              onClick={() => setShowAdvancedSearch(true)}
+              className="px-2.5 py-2 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
+              title="Advanced Search"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+            </button>
           </div>
         </div>
 
@@ -1190,8 +1767,75 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           ))}
         </div>
 
+        {/* Held/Spam management bar */}
+        {activeFilter === "held" && filteredMessages.length > 0 && (
+          <div className="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <span className="text-xs font-medium text-amber-800">
+                {filteredMessages.length} message{filteredMessages.length !== 1 ? "s" : ""} on hold
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={async () => {
+                  // Release all held messages
+                  const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isHeld: false }));
+                  await Promise.all(promises);
+                  toast.success("All messages released from hold");
+                  await loadConversations();
+                }}
+                className="px-2 py-1 text-xs bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors"
+              >
+                Release All
+              </button>
+              <button
+                onClick={async () => {
+                  const confirmed = window.confirm(`Delete all ${filteredMessages.length} held messages?`);
+                  if (confirmed) {
+                    const promises = filteredMessages.map(m => deleteConversation(m.contactPhone));
+                    await Promise.all(promises);
+                    toast.success("All held messages deleted");
+                    setSelectedMessageId(null);
+                    await loadConversations();
+                  }
+                }}
+                className="px-2 py-1 text-xs bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
+              >
+                Delete All
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Blocked management bar */}
+        {activeFilter === "blocked" && filteredMessages.length > 0 && (
+          <div className="px-3 py-2 bg-red-50 border-b border-red-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Ban className="w-4 h-4 text-red-600" />
+              <span className="text-xs font-medium text-red-800">
+                {filteredMessages.length} blocked contact{filteredMessages.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={async () => {
+                  // Unblock all
+                  const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isBlocked: false }));
+                  await Promise.all(promises);
+                  toast.success("All contacts unblocked");
+                  await loadConversations();
+                }}
+                className="px-2 py-1 text-xs bg-white border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
+              >
+                Unblock All
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
           {searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
             <div className="border-b border-gray-100">
               {matchingContacts.map((contact) => (
@@ -1242,18 +1886,43 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             filteredMessages.map((msg) => {
               const isSelected = selectedMessage?.id === msg.id;
               const isUnread = !msg.isRead;
-              const isPinned = pinnedConversations.has(msg.id);
+              const isPinned = msg.isPinned || false;
               const statusInfo = getStatusInfo(msg.status);
 
-              const togglePinFromRow = (e: React.MouseEvent) => {
+              const togglePinFromRow = async (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setPinnedConversations(prev => {
-                  const next = new Set(prev);
-                  if (next.has(msg.id)) next.delete(msg.id);
-                  else next.add(msg.id);
-                  return next;
-                });
+                const success = await updateConversation(msg.contactPhone, { isPinned: !isPinned });
+                if (success) {
+                  setMessages(prev => prev.map(m => 
+                    m.id === msg.id ? { ...m, isPinned: !isPinned } : m
+                  ));
+                  toast.success(isPinned ? "Unpinned" : "Pinned");
+                }
+              };
+
+              const releaseFromRow = async (e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const success = await updateConversation(msg.contactPhone, { isHeld: false });
+                if (success) {
+                  setMessages(prev => prev.map(m => 
+                    m.id === msg.id ? { ...m, status: "normal", isHeld: false } : m
+                  ));
+                  toast.success("Released from hold");
+                }
+              };
+
+              const unblockFromRow = async (e: React.MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const success = await updateConversation(msg.contactPhone, { isBlocked: false });
+                if (success) {
+                  setMessages(prev => prev.map(m => 
+                    m.id === msg.id ? { ...m, status: "normal", isBlocked: false } : m
+                  ));
+                  toast.success("Contact unblocked");
+                }
               };
 
               return (
@@ -1279,6 +1948,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         <p className={cn("truncate text-sm text-gray-800", isUnread ? "font-semibold" : "font-medium")}>
                           {msg.contactName}
                         </p>
+                        {msg.isMuted && (
+                          <span title="Muted">
+                            <BellOff className="w-3 h-3 text-orange-400 shrink-0" />
+                          </span>
+                        )}
                         {isUnread && (
                           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" />
                         )}
@@ -1311,6 +1985,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         <statusInfo.icon className="w-3 h-3" />
                         {statusInfo.label}
                       </span>
+                      
+                      {/* Quick action: Release from hold */}
+                      {activeFilter === "held" && msg.status === "held" && (
+                        <button
+                          onClick={releaseFromRow}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                          title="Release from hold"
+                        >
+                          <MailCheck className="w-3 h-3" />
+                          Release
+                        </button>
+                      )}
+                      
+                      {/* Quick action: Unblock */}
+                      {activeFilter === "blocked" && msg.status === "blocked" && (
+                        <button
+                          onClick={unblockFromRow}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                          title="Unblock contact"
+                        >
+                          <ShieldCheck className="w-3 h-3" />
+                          Unblock
+                        </button>
+                      )}
                     </div>
 
                     <p className="truncate text-xs text-gray-500 mt-1">
@@ -1328,7 +2026,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       {/* Chat View */}
       <section
         className={cn(
-          "flex-1 flex flex-col bg-white",
+          "flex-1 flex flex-col min-h-0 bg-white overflow-hidden",
           isMobile && mobilePane === "list" ? "hidden" : "flex"
         )}
       >
@@ -1350,11 +2048,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   {selectedMessage.contactName.charAt(0)}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">
-                    {selectedMessage.contactName}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {selectedMessage.contactName}
+                    </p>
+                    {selectedMessage.isPinned && (
+                      <Pin className="w-3 h-3 text-amber-500" />
+                    )}
+                    {selectedMessage.isMuted && (
+                      <BellOff className="w-3 h-3 text-orange-400" />
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500">
-                    {selectedMessage.status === "blocked" ? "Blocked" : "Online"}
+                    {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
                   </p>
                 </div>
               </div>
@@ -1431,7 +2137,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         onClick={handlePin}
                         className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
-                        {pinnedConversations.has(selectedMessage.id) ? (
+                        {selectedMessage.isPinned ? (
                           <>
                             <PinOff className="w-4 h-4 mr-2.5 text-amber-500" />
                             Unpin
@@ -1447,7 +2153,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         onClick={handleMute}
                         className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
-                        {mutedConversations.has(selectedMessage.id) ? (
+                        {selectedMessage.isMuted ? (
                           <>
                             <Bell className="w-4 h-4 mr-2.5 text-green-500" />
                             Unmute
@@ -1459,8 +2165,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           </>
                         )}
                       </button>
+                      <button
+                        onClick={handleMarkPriority}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {selectedMessage?.isPriority ? (
+                          <>
+                            <Star className="w-4 h-4 mr-2.5 text-gray-400" />
+                            Remove Priority
+                          </>
+                        ) : (
+                          <>
+                            <Star className="w-4 h-4 mr-2.5 text-pink-500 fill-pink-500" />
+                            Mark Priority
+                          </>
+                        )}
+                      </button>
                       <div className="border-t border-gray-100 my-1" />
-                      {selectedMessage?.status === "blocked" ? (
+                      {selectedMessage?.isBlocked ? (
                         <button
                           onClick={handleUnblock}
                           className="flex items-center w-full px-3 py-2 text-sm text-green-600 hover:bg-green-50"
@@ -1491,7 +2213,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             </div>
 
             {/* Messages area */}
-            <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 bg-gray-50">
+            <div
+              ref={chatScrollRef}
+              className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-50"
+              style={{ WebkitOverflowScrolling: "touch" }}
+              onScroll={(e) => {
+                const target = e.currentTarget;
+                const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+                userScrolledUp.current = !isAtBottom;
+              }}
+            >
               <div className="w-full space-y-4">
                 {/* Date separator */}
                 <div className="flex items-center justify-center">
@@ -1505,11 +2236,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const isAi = bubble.role === "ai";
                   const isIncoming = bubble.role === "incoming";
                   const isLeftAligned = isIncoming;
+                  const isTranslating = translatingBubbles.has(bubble.id);
+                  const hasTranslation = !!bubble.translatedContent;
+                  
                   return (
                     <div
                       key={bubble.id}
                       className={cn(
-                        "flex items-end gap-2",
+                        "flex items-end gap-2 group",
                         isLeftAligned ? "justify-start" : "justify-end"
                       )}
                     >
@@ -1522,7 +2256,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       <div className="max-w-[78%]">
                         <div
                           className={cn(
-                            "rounded-lg px-3 py-2",
+                            "rounded-lg px-3 py-2 relative",
                             isOutgoing
                               ? "bg-indigo-500 text-white rounded-br-sm"
                               : isAi
@@ -1537,6 +2271,40 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             </div>
                           )}
                           <p className="text-sm">{bubble.content}</p>
+                          
+                          {/* Show translated content if available */}
+                          {hasTranslation && (
+                            <div className={cn(
+                              "mt-2 pt-2 border-t",
+                              isOutgoing ? "border-indigo-400" : "border-gray-200"
+                            )}>
+                              <div className="flex items-center gap-1 mb-1">
+                                <Languages className="w-3 h-3" />
+                                <span className="text-[10px] font-medium opacity-70">Translated</span>
+                              </div>
+                              <p className="text-sm">{bubble.translatedContent}</p>
+                            </div>
+                          )}
+                          
+                          {/* Translate button - show on hover for non-AI messages */}
+                          {!isAi && !hasTranslation && (
+                            <button
+                              type="button"
+                              onClick={() => translateBubble(bubble.id, bubble.content)}
+                              disabled={isTranslating}
+                              className={cn(
+                                "absolute -top-2 opacity-0 group-hover:opacity-100 transition-opacity",
+                                "p-1 rounded-full shadow-sm",
+                                isOutgoing 
+                                  ? "-left-8 bg-white text-indigo-500 hover:bg-indigo-50" 
+                                  : "-right-8 bg-indigo-500 text-white hover:bg-indigo-600",
+                                isTranslating && "animate-pulse"
+                              )}
+                              title="Translate message"
+                            >
+                              <Languages className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                         <p className={cn("text-[11px] text-gray-500 mt-1", isLeftAligned ? "ml-1" : "text-right mr-1")}>
                           {bubble.timestamp}
@@ -1549,7 +2317,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             </div>
 
             {/* Message input */}
-            <div className="p-3 border-t border-gray-200 bg-white shrink-0">
+            <div 
+              className="p-3 border-t border-gray-200 bg-white shrink-0"
+              style={{ 
+                paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0.75rem))',
+                marginBottom: 'env(safe-area-inset-bottom, 0px)'
+              }}
+            >
 
               {pendingAttachment && (
                 <div className="mb-2 flex items-center justify-between gap-2 px-3 py-2 rounded border border-gray-200 bg-gray-50">
@@ -2202,11 +2976,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         <>
           <div
             className="fixed inset-0 bg-black/50 z-50"
-            onClick={() => setShowTranslateModal(false)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowTranslateModal(false);
+            }}
           />
           <div className="fixed inset-0 flex items-start justify-center pt-20 z-50 pointer-events-none">
             <div
               className="bg-[#F5F5F5] rounded-xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden flex flex-col"
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
@@ -2244,14 +3023,36 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </select>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-100 flex gap-3 shrink-0">
+              <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
                 <Button
                   variant="outline"
-                  onClick={() => setShowTranslateModal(false)}
-                  className="flex-1 h-9 text-sm border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    translateAllIncoming();
+                    setShowTranslateModal(false);
+                  }}
+                  className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                 >
-                  Close
+                  <Languages className="w-4 h-4 mr-2" />
+                  Translate All Incoming Messages
                 </Button>
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowTranslateModal(false)}
+                    className="flex-1 h-9 text-sm border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      toast.success(`Translation settings saved! Incoming → ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing → ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
+                      setShowTranslateModal(false);
+                    }}
+                    className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
+                  >
+                    Apply
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -2429,6 +3230,253 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             document.body
           )}
         </>
+      )}
+
+      {/* Advanced Search Modal */}
+      {showAdvancedSearch && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30">
+          <div className="bg-white w-full max-w-lg mx-4 rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-indigo-500" />
+                <h2 className="text-sm font-semibold text-gray-800">Advanced Search</h2>
+              </div>
+              <button
+                onClick={() => setShowAdvancedSearch(false)}
+                className="p-1 rounded hover:bg-gray-100"
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Search Form */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Text Search */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Message Content</label>
+                <input
+                  type="text"
+                  value={advancedSearchParams.q || ""}
+                  onChange={(e) => setAdvancedSearchParams(prev => ({ ...prev, q: e.target.value }))}
+                  placeholder="Search text in messages..."
+                  className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-indigo-300"
+                />
+              </div>
+
+              {/* Contact */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Contact (Name or Phone)</label>
+                <input
+                  type="text"
+                  value={advancedSearchParams.contact || ""}
+                  onChange={(e) => setAdvancedSearchParams(prev => ({ ...prev, contact: e.target.value }))}
+                  placeholder="Filter by contact..."
+                  className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-indigo-300"
+                />
+              </div>
+
+              {/* Date Range */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600">From Date</label>
+                  <input
+                    type="date"
+                    value={advancedSearchParams.startDate || ""}
+                    onChange={(e) => setAdvancedSearchParams(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600">To Date</label>
+                  <input
+                    type="date"
+                    value={advancedSearchParams.endDate || ""}
+                    onChange={(e) => setAdvancedSearchParams(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 focus:outline-none focus:border-indigo-300"
+                  />
+                </div>
+              </div>
+
+              {/* Sentiment */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Sentiment</label>
+                <div className="flex gap-2 mt-1">
+                  {(["positive", "neutral", "negative"] as const).map((sentiment) => (
+                    <button
+                      key={sentiment}
+                      onClick={() => setAdvancedSearchParams(prev => ({ 
+                        ...prev, 
+                        sentiment: prev.sentiment === sentiment ? undefined : sentiment 
+                      }))}
+                      className={cn(
+                        "flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors border",
+                        advancedSearchParams.sentiment === sentiment
+                          ? sentiment === "positive" ? "bg-green-100 border-green-300 text-green-700"
+                            : sentiment === "negative" ? "bg-red-100 border-red-300 text-red-700"
+                            : "bg-gray-100 border-gray-300 text-gray-700"
+                          : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                      )}
+                    >
+                      {sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Urgency */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Urgency Level</label>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {(["low", "medium", "high", "emergency"] as const).map((urgency) => (
+                    <button
+                      key={urgency}
+                      onClick={() => setAdvancedSearchParams(prev => ({ 
+                        ...prev, 
+                        urgency: prev.urgency === urgency ? undefined : urgency 
+                      }))}
+                      className={cn(
+                        "px-3 py-1.5 rounded text-xs font-medium transition-colors border",
+                        advancedSearchParams.urgency === urgency
+                          ? urgency === "emergency" ? "bg-red-100 border-red-300 text-red-700"
+                            : urgency === "high" ? "bg-orange-100 border-orange-300 text-orange-700"
+                            : urgency === "medium" ? "bg-yellow-100 border-yellow-300 text-yellow-700"
+                            : "bg-blue-100 border-blue-300 text-blue-700"
+                          : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                      )}
+                    >
+                      {urgency.charAt(0).toUpperCase() + urgency.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Category */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Category</label>
+                <div className="flex gap-2 mt-1 flex-wrap">
+                  {(["personal", "business", "finance", "meeting", "promo", "scam"] as const).map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => setAdvancedSearchParams(prev => ({ 
+                        ...prev, 
+                        category: prev.category === category ? undefined : category 
+                      }))}
+                      className={cn(
+                        "px-3 py-1.5 rounded text-xs font-medium transition-colors border",
+                        advancedSearchParams.category === category
+                          ? "bg-indigo-100 border-indigo-300 text-indigo-700"
+                          : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                      )}
+                    >
+                      {category.charAt(0).toUpperCase() + category.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Labels */}
+              <div>
+                <label className="text-xs font-medium text-gray-600">Labels (comma-separated)</label>
+                <input
+                  type="text"
+                  value={advancedSearchParams.labels || ""}
+                  onChange={(e) => setAdvancedSearchParams(prev => ({ ...prev, labels: e.target.value }))}
+                  placeholder="urgent, important, followup..."
+                  className="w-full mt-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-indigo-300"
+                />
+              </div>
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-semibold text-gray-600">Results ({searchResults.length})</h3>
+                    <button
+                      onClick={() => setSearchResults([])}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {searchResults.map((result) => (
+                      <button
+                        key={result.id}
+                        onClick={() => openConversationFromSearch(result.contactPhone)}
+                        className="w-full text-left p-2 rounded bg-gray-50 hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-gray-800">{result.contactName}</span>
+                          <span className="text-[10px] text-gray-400">
+                            {new Date(result.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 truncate mt-0.5">{result.body}</p>
+                        <div className="flex gap-1 mt-1">
+                          {result.sentiment?.score && (
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded",
+                              result.sentiment.score === "positive" ? "bg-green-100 text-green-700"
+                                : result.sentiment.score === "negative" ? "bg-red-100 text-red-700"
+                                : "bg-gray-100 text-gray-600"
+                            )}>
+                              {result.sentiment.score}
+                            </span>
+                          )}
+                          {result.urgency?.level && (
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded",
+                              result.urgency.level === "emergency" ? "bg-red-100 text-red-700"
+                                : result.urgency.level === "high" ? "bg-orange-100 text-orange-700"
+                                : "bg-gray-100 text-gray-600"
+                            )}>
+                              {result.urgency.level}
+                            </span>
+                          )}
+                          {result.category && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                              {result.category}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-3 border-t border-gray-100 flex gap-2 shrink-0">
+              <Button
+                variant="outline"
+                className="flex-1 h-8 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                onClick={clearAdvancedSearch}
+              >
+                Clear All
+              </Button>
+              <Button
+                className="flex-1 h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
+                onClick={handleAdvancedSearch}
+                disabled={isSearching}
+              >
+                {isSearching ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-3 h-3 mr-1.5" />
+                    Search
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

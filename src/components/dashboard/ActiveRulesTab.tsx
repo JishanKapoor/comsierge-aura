@@ -16,7 +16,14 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ActiveRule, loadRules, saveRules, formatSchedule } from "./rulesStore";
+import { 
+  ActiveRule, 
+  fetchRules, 
+  createRule, 
+  deleteRule as deleteRuleApi, 
+  toggleRule as toggleRuleApi, 
+  formatSchedule 
+} from "./rulesApi";
 
 interface ActiveRulesTabProps {
   externalRules?: ActiveRule[];
@@ -122,12 +129,30 @@ const parseAIRequest = (input: string): ParsedRule => {
 };
 
 const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) => {
-  const [rules, setRules] = useState<ActiveRule[]>(() => loadRules());
+  const [rules, setRules] = useState<ActiveRule[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [aiDraft, setAiDraft] = useState("");
   const [aiProcessing, setAiProcessing] = useState(false);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
   const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
+
+  // Fetch rules from API on mount
+  useEffect(() => {
+    const loadRulesFromApi = async () => {
+      setIsLoading(true);
+      try {
+        const apiRules = await fetchRules();
+        setRules(apiRules);
+      } catch (error) {
+        console.error("Failed to load rules:", error);
+        toast.error("Failed to load rules");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadRulesFromApi();
+  }, []);
 
   // Sync with external rules (from Transfer modal)
   useEffect(() => {
@@ -136,39 +161,59 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
     }
   }, [externalRules]);
 
-  // Persist rules
+  // Notify parent when rules change
   useEffect(() => {
-    saveRules(rules);
     onRulesChange?.(rules);
   }, [rules, onRulesChange]);
 
-  const toggleRule = (id: string) => {
+  const toggleRule = async (id: string) => {
+    // Optimistic update
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r)));
-    toast.success("Rule updated");
+    
+    const success = await toggleRuleApi(id);
+    if (success) {
+      toast.success("Rule updated");
+    } else {
+      // Revert on failure
+      setRules((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r)));
+      toast.error("Failed to update rule");
+    }
   };
 
-  const deleteRule = (id: string) => {
+  const deleteRule = async (id: string) => {
+    // Optimistic update
+    const previousRules = [...rules];
     setRules((prev) => prev.filter((r) => r.id !== id));
-    toast.success("Rule deleted");
+    
+    const success = await deleteRuleApi(id);
+    if (success) {
+      toast.success("Rule deleted");
+    } else {
+      // Revert on failure
+      setRules(previousRules);
+      toast.error("Failed to delete rule");
+    }
   };
 
-  const addRule = (text: string, type?: RuleType) => {
+  const addRule = async (text: string, type?: RuleType) => {
     const cleaned = text.trim();
     if (!cleaned) {
       toast.error("Enter a rule first");
       return;
     }
-    setRules((prev) => [
-      {
-        id: `${Date.now()}`,
-        rule: cleaned,
-        active: true,
-        createdAt: "Today",
-        type: type || "custom",
-      },
-      ...prev,
-    ]);
-    toast.success("Rule added");
+    
+    const newRule = await createRule({
+      rule: cleaned,
+      active: true,
+      type: type || "custom",
+    });
+    
+    if (newRule) {
+      setRules((prev) => [newRule, ...prev]);
+      toast.success("Rule added");
+    } else {
+      toast.error("Failed to add rule");
+    }
   };
 
   const sendAiMessage = () => {
@@ -236,7 +281,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center">
+           <div className="w-8 h-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center">
             <Zap className="w-4 h-4 text-gray-700" />
           </div>
           <div>
@@ -406,7 +451,12 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
           <span className="text-[10px] text-gray-400">Drag to reorder</span>
         </div>
 
-        {rules.length > 0 ? (
+        {isLoading ? (
+          <div className="p-6 text-center">
+            <span className="w-5 h-5 border-2 border-gray-300 border-t-indigo-600 rounded-full animate-spin inline-block" />
+            <p className="text-xs text-gray-400 mt-2">Loading rules...</p>
+          </div>
+        ) : rules.length > 0 ? (
           <div>
             {rules.map((rule) => {
               const meta = RULE_TYPE_META[rule.type || "custom"];
