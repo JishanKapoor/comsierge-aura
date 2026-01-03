@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+﻿import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Search,
   Phone,
+  PhoneCall,
   MoreHorizontal,
   Send,
   Paperclip,
@@ -61,6 +62,8 @@ import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { ConversationSkeleton, ChatLoadingSkeleton } from "./LoadingSkeletons";
+import { Device } from "@twilio/voice-sdk";
 
 type ChatBubble = {
   id: string;
@@ -147,6 +150,28 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [isSending, setIsSending] = useState(false);
 
+  // Call mode dialog state
+  const [showCallModeDialog, setShowCallModeDialog] = useState(false);
+  const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
+  const [showBridgeDialog, setShowBridgeDialog] = useState(false);
+  const [bridgeNumber, setBridgeNumber] = useState("");
+  const [isCallingLoading, setIsCallingLoading] = useState(false);
+  const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
+  const [device, setDevice] = useState<Device | null>(null);
+
+  // Track recently deleted phone numbers to prevent them from reappearing during polling
+  const recentlyDeletedPhones = useRef<Set<string>>(new Set());
+
+  // Fetch user's Twilio number on mount
+  useEffect(() => {
+    const loadTwilioNumber = async () => {
+      if (user?.phoneNumber) {
+        setTwilioNumber(user.phoneNumber);
+      }
+    };
+    loadTwilioNumber();
+  }, [user]);
+
   // Warn if user has no phone number assigned
   useEffect(() => {
     if (user && !user.phoneNumber) {
@@ -170,11 +195,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const conversations = await fetchConversations(activeFilter as ApiFilterType);
       // Convert API conversations to Message format for UI compatibility
       // Look up contact names from saved contacts
-      const msgs: Message[] = conversations.map((conv) => {
+      const msgs: Message[] = conversations
+        // Filter out recently deleted conversations to prevent flicker
+        .filter(conv => !recentlyDeletedPhones.current.has(normalizePhone(conv.contactPhone)))
+        .map((conv): Message => {
         // Try to find a saved contact matching this phone
         const savedContact = contacts.find(c => normalizePhone(c.phone) === normalizePhone(conv.contactPhone));
         const displayName = savedContact?.name || 
           ((conv.contactName && conv.contactName !== "Unknown") ? conv.contactName : conv.contactPhone);
+        
+        const status: Message["status"] = conv.isBlocked ? "blocked" : conv.isHeld ? "held" : conv.isPriority ? "priority" : "normal";
         
         return {
           id: conv.id,
@@ -185,7 +215,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           timestamp: conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
           isRead: conv.unreadCount === 0,
           isIncoming: true, // Conversations list shows incoming-style entries
-          status: conv.isBlocked ? "blocked" : conv.isHeld ? "held" : conv.isPriority ? "priority" : "normal",
+          status,
           unreadCount: conv.unreadCount,
           // Include conversation control states from API
           isPinned: conv.isPinned || false,
@@ -195,6 +225,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           isHeld: conv.isHeld || false,
         };
       });
+      
       setMessages(prev => {
         // Preserve any local "new" conversations that haven't been saved to DB yet
         const localNewConversations = prev.filter(m => m.id.startsWith("new-"));
@@ -210,9 +241,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (showLoading) setIsLoadingMessages(false);
   }, [activeFilter, contacts]);
 
+  // Track if this is the initial load
+  const hasInitiallyLoaded = useRef(false);
+
   // Fetch conversations from MongoDB API on filter change
   useEffect(() => {
-    loadConversations(true);
+    // Only show loading skeleton on very first load, not on filter changes
+    const shouldShowLoading = !hasInitiallyLoaded.current;
+    loadConversations(shouldShowLoading);
+    hasInitiallyLoaded.current = true;
   }, [loadConversations]); // Refetch when filter changes
 
   // Poll for new messages every 5 seconds
@@ -894,7 +931,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       optimisticBubbles.push({
         id: `${optimisticId}-file`,
         role: "outgoing",
-        content: `📎 ${pendingAttachment.name}`,
+        content: `ðŸ“Ž ${pendingAttachment.name}`,
         timestamp,
       });
     }
@@ -1137,31 +1174,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     return `Conversation with ${selectedMessage.contactName} (${selectedMessage.contactPhone}):\n${transcript}`;
   };
 
-  const respondAsAi = (userText: string) => {
-    if (!selectedMessage) return "";
-    const t = userText.toLowerCase();
-    const incomingOnly = activeThread.filter((b) => b.role === "incoming").slice(-6);
-    const lastIncoming = incomingOnly[incomingOnly.length - 1]?.content;
+  const [aiLoading, setAiLoading] = useState(false);
 
-    if (t.includes("summarize") || t.includes("summary")) {
-      const points = incomingOnly.length
-        ? incomingOnly.map((b) => `- ${b.content}`).join("\n")
-        : "- No incoming messages yet.";
-      return `Here’s a quick summary of recent messages from ${selectedMessage.contactName}:\n\n${points}`;
-    }
-
-    if (t.includes("reply") || t.includes("respond") || t.includes("draft")) {
-      const base = lastIncoming
-        ? `Based on their last message (“${lastIncoming}”), here are 2 reply options:`
-        : `Here are 2 reply options:`;
-      return `${base}\n\n1) "Sounds good — I’ll take care of it today."\n2) "Thanks for the heads up. Can you share any more details?"`;
-    }
-
-    return `I can help summarize, draft replies, and spot urgency. What would you like to know about ${selectedMessage.contactName}?`;
-  };
-
-  const handleAiSend = () => {
-    if (!selectedMessage) return;
+  const handleAiSend = async () => {
+    if (!selectedMessage || aiLoading) return;
     const text = aiInput.trim();
     if (!text) return;
 
@@ -1175,22 +1191,61 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       timestamp,
     };
 
-    const context = buildConversationContext();
-    const aiText = respondAsAi(`${text}\n\n${context}`);
-
-    const aiMsg: AiChatMessage = {
-      id: `${selectedMessage.id}-ai-${now.getTime() + 1}`,
-      isUser: false,
-      content: aiText,
-      timestamp,
-    };
-
+    // Add user message immediately
     setAiChatsByConversationId((prev) => ({
       ...prev,
-      [selectedMessage.id]: [...(prev[selectedMessage.id] ?? []), userMsg, aiMsg],
+      [selectedMessage.id]: [...(prev[selectedMessage.id] ?? []), userMsg],
     }));
-
     setAiInput("");
+    setAiLoading(true);
+
+    try {
+      const context = buildConversationContext();
+      const token = localStorage.getItem("comsierge_token");
+      
+      const response = await fetch("/api/ai/conversation-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          message: text,
+          context,
+          contactName: selectedMessage.contactName,
+          contactPhone: selectedMessage.contactPhone,
+        }),
+      });
+
+      const data = await response.json();
+      const aiText = data.response || "I'm sorry, I couldn't process that request.";
+
+      const aiMsg: AiChatMessage = {
+        id: `${selectedMessage.id}-ai-${Date.now()}`,
+        isUser: false,
+        content: aiText,
+        timestamp: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+      };
+
+      setAiChatsByConversationId((prev) => ({
+        ...prev,
+        [selectedMessage.id]: [...(prev[selectedMessage.id] ?? []), aiMsg],
+      }));
+    } catch (error) {
+      console.error("AI Chat error:", error);
+      const errorMsg: AiChatMessage = {
+        id: `${selectedMessage.id}-ai-${Date.now()}`,
+        isUser: false,
+        content: "Sorry, I encountered an error. Please try again.",
+        timestamp: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+      };
+      setAiChatsByConversationId((prev) => ({
+        ...prev,
+        [selectedMessage.id]: [...(prev[selectedMessage.id] ?? []), errorMsg],
+      }));
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -1352,6 +1407,156 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
+  // Call handling functions
+  const handleCallClick = () => {
+    if (!selectedMessage) return;
+    
+    let toNumber = selectedMessage.contactPhone.replace(/[^\d+]/g, "");
+    if (!toNumber.startsWith("+")) {
+      toNumber = "+1" + toNumber;
+    }
+    
+    setPendingCall({ 
+      number: toNumber, 
+      name: selectedMessage.contactName 
+    });
+    setShowCallModeDialog(true);
+  };
+
+  const handleBrowserCall = async () => {
+    if (!pendingCall) return;
+    const { number, name } = pendingCall;
+    setShowCallModeDialog(false);
+    setIsCallingLoading(true);
+
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      if (!token) {
+        toast.error("Not logged in. Please refresh the page.");
+        setIsCallingLoading(false);
+        return;
+      }
+      
+      const response = await fetch("/api/twilio/token", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message);
+      }
+
+      const newDevice = new Device(data.token);
+
+      newDevice.on("error", (error) => {
+        console.error("Twilio Device Error:", error);
+        toast.error("Call error: " + error.message);
+        setIsCallingLoading(false);
+      });
+
+      await newDevice.register();
+      setDevice(newDevice);
+
+      const fromNumber = twilioNumber;
+      if (!fromNumber) {
+        toast.error("No Twilio number found. Contact admin to assign a number.");
+        setIsCallingLoading(false);
+        return;
+      }
+      
+      const call = await newDevice.connect({
+        params: {
+          To: number,
+          customCallerId: fromNumber
+        },
+      });
+
+      toast.success(`Calling ${name || number} via Browser...`);
+
+      call.on("accept", () => {
+        console.log("Call accepted");
+        setIsCallingLoading(false);
+      });
+
+      call.on("disconnect", () => {
+        console.log("Call disconnected");
+        setIsCallingLoading(false);
+      });
+      
+      call.on("cancel", () => {
+        setIsCallingLoading(false);
+      });
+
+    } catch (error: any) {
+      console.error("Browser call failed:", error);
+      toast.error("Failed to start browser call: " + error.message);
+      setIsCallingLoading(false);
+    }
+  };
+
+  const handleBridgeCall = () => {
+    if (!pendingCall) return;
+    setShowCallModeDialog(false);
+    // Default to user's forwarding number (from routing settings) for bridging
+    setBridgeNumber(user?.forwardingNumber || "");
+    setShowBridgeDialog(true);
+  };
+
+  const confirmBridgeCall = async () => {
+    if (!pendingCall) return;
+    const { number, name } = pendingCall;
+    
+    if (!bridgeNumber) {
+      toast.error("Please enter your phone number.");
+      return;
+    }
+
+    setShowBridgeDialog(false);
+    setIsCallingLoading(true);
+    
+    const fromNum = twilioNumber;
+    
+    if (!fromNum) {
+      toast.error("No Twilio number found. Please contact admin to assign a number.");
+      setIsCallingLoading(false);
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch("/api/twilio/make-call", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          toNumber: number,
+          fromNumber: fromNum,
+          bridgeTo: bridgeNumber,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success(`Calling your phone... We'll connect you to ${name || number}`);
+      } else {
+        toast.error(data.message || "Failed to place call");
+      }
+    } catch (error: any) {
+      console.error("Bridge call failed:", error);
+      toast.error("Failed to place call: " + error.message);
+    } finally {
+      setIsCallingLoading(false);
+    }
+  };
+
   const handlePin = async () => {
     if (!selectedMessage) return;
     const isPinned = selectedMessage.isPinned || false;
@@ -1482,7 +1687,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       scheduleDesc = ` from ${formatDate(start)} to ${formatDate(end)}`;
     }
     
-    toast.success(`Transfer rule created! ${transferDescription} → ${contactName}${scheduleDesc}`);
+    toast.success(`Transfer rule created! ${transferDescription} â†’ ${contactName}${scheduleDesc}`);
 
     // Remember last used transfer settings per conversation
     if (selectedMessage) {
@@ -1590,21 +1795,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const conversationId = selectedMessage.id;
     const contactId = selectedMessage.contactId;
     const phone = selectedMessage.contactPhone;
+    
+    // Store for potential rollback
+    const deletedMessage = selectedMessage;
+    const deletedThread = threadsByContactId[contactId];
+    const deletedTransferPrefs = transferPrefsByConversation[conversationId];
 
-    // Delete via API
-    try {
-      const token = localStorage.getItem("comsierge_token");
-      await fetch(`/api/messages/conversation/${encodeURIComponent(phone)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-      });
-    } catch (e) {
-      console.error("Delete API error:", e);
-    }
-
+    // Add to recently deleted to prevent polling from bringing it back
+    const normalizedPhone = normalizePhone(phone);
+    recentlyDeletedPhones.current.add(normalizedPhone);
+    
+    // Optimistic update - remove immediately for smooth UX
     setMessages(prev => prev.filter(m => m.id !== conversationId));
     setThreadsByContactId(prev => {
       const next = { ...prev };
@@ -1617,8 +1818,43 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       return next;
     });
     setSelectedMessageId(null);
-    toast.success("Conversation deleted");
     setShowMoreMenu(false);
+
+    // Delete via API
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch(`/api/messages/conversation/${encodeURIComponent(phone)}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error("Delete failed");
+      }
+      
+      toast.success("Conversation deleted");
+      
+      // Remove from recently deleted after a delay (so server has time to process)
+      setTimeout(() => {
+        recentlyDeletedPhones.current.delete(normalizedPhone);
+      }, 10000);
+    } catch (e) {
+      console.error("Delete API error:", e);
+      // Remove from recently deleted on error so it can come back
+      recentlyDeletedPhones.current.delete(normalizedPhone);
+      // Rollback on error
+      setMessages(prev => [deletedMessage, ...prev]);
+      if (deletedThread) {
+        setThreadsByContactId(prev => ({ ...prev, [contactId]: deletedThread }));
+      }
+      if (deletedTransferPrefs) {
+        setTransferPrefsByConversation(prev => ({ ...prev, [conversationId]: deletedTransferPrefs }));
+      }
+      toast.error("Failed to delete conversation");
+    }
   };
 
   // Advanced Search handler
@@ -1695,9 +1931,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const base = [
       "Thank you for reaching out! I'll look into this right away.",
       "I understand your concern. Let me help you with that.",
-      "Got it — I can help. Can you share one more detail?",
-      "Thanks — I’m on it. I’ll update you shortly.",
-      "Understood. I’ll take care of this today.",
+      "Got it â€” I can help. Can you share one more detail?",
+      "Thanks â€” Iâ€™m on it. Iâ€™ll update you shortly.",
+      "Understood. Iâ€™ll take care of this today.",
     ];
 
     const picks = base.slice().sort(() => Math.random() - 0.5).slice(0, 3);
@@ -1836,7 +2072,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
         {/* Conversation list */}
         <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-          {searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
+          {isLoadingMessages && messages.length === 0 ? (
+            <div className="divide-y divide-gray-100">
+              {[...Array(8)].map((_, i) => (
+                <ConversationSkeleton key={i} />
+              ))}
+            </div>
+          ) : searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
             <div className="border-b border-gray-100">
               {matchingContacts.map((contact) => (
                 <button
@@ -1876,7 +2118,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             </div>
           )}
 
-          {filteredMessages.length === 0 ? (
+          {!isLoadingMessages && filteredMessages.length === 0 ? (
             searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) ? null : (
               <div className="p-6 text-center">
                 <p className="text-sm text-gray-500">No conversations found</p>
@@ -2093,9 +2335,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 <button
                   className="p-2 rounded hover:bg-green-50 transition-colors"
                   aria-label="Call"
-                  onClick={() => toast("Calling…", { description: selectedMessage.contactName })}
+                  onClick={handleCallClick}
+                  disabled={isCallingLoading}
                 >
-                  <Phone className="w-4 h-4 text-green-600" />
+                  {isCallingLoading ? (
+                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                  ) : (
+                    <Phone className="w-4 h-4 text-green-600" />
+                  )}
                 </button>
                 
                 {/* More menu */}
@@ -2342,7 +2589,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </div>
               )}
 
-              {/* AI assist output — subtle, above composer */}
+              {/* AI assist output â€” subtle, above composer */}
               {aiAssistOpen &&
                 aiAssistMode &&
                 ((aiAssistMode === "rewrite" && aiAssistRewrite.trim().length > 0) ||
@@ -2392,7 +2639,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             }}
                             title={s}
                           >
-                            {s.length > 30 ? s.slice(0, 30) + "…" : s}
+                            {s.length > 30 ? s.slice(0, 30) + "â€¦" : s}
                           </button>
                         ))}
                         <button
@@ -2500,29 +2747,29 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <div className="absolute bottom-full left-0 mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-20">
                       <div className="grid grid-cols-8 gap-1">
                         {[
-                          "😀",
-                          "😁",
-                          "😂",
-                          "😊",
-                          "😍",
-                          "🥳",
-                          "😎",
-                          "😅",
-                          "🙏",
-                          "👍",
-                          "👎",
-                          "❤️",
-                          "🔥",
-                          "🎉",
-                          "✅",
-                          "❗",
-                          "✨",
-                          "🕒",
-                          "📎",
-                          "🚨",
-                          "📝",
-                          "📅",
-                          "🏁",
+                          "ðŸ˜€",
+                          "ðŸ˜",
+                          "ðŸ˜‚",
+                          "ðŸ˜Š",
+                          "ðŸ˜",
+                          "ðŸ¥³",
+                          "ðŸ˜Ž",
+                          "ðŸ˜…",
+                          "ðŸ™",
+                          "ðŸ‘",
+                          "ðŸ‘Ž",
+                          "â¤ï¸",
+                          "ðŸ”¥",
+                          "ðŸŽ‰",
+                          "âœ…",
+                          "â—",
+                          "âœ¨",
+                          "ðŸ•’",
+                          "ðŸ“Ž",
+                          "ðŸš¨",
+                          "ðŸ“",
+                          "ðŸ“…",
+                          "ðŸ",
                         ].map((em) => (
                           <button
                             key={em}
@@ -3045,7 +3292,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      toast.success(`Translation settings saved! Incoming → ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing → ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
+                      toast.success(`Translation settings saved! Incoming â†’ ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing â†’ ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
                       setShowTranslateModal(false);
                     }}
                     className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
@@ -3477,6 +3724,105 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Call Mode Selection Dialog */}
+      {showCallModeDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-800">Choose Calling Method</h3>
+              <Button variant="ghost" size="icon" className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100" onClick={() => setShowCallModeDialog(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-4">
+                How would you like to place this call to <strong>{pendingCall?.name || pendingCall?.number}</strong>?
+              </p>
+
+              <button
+                onClick={handleBrowserCall}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all group text-left"
+              >
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 group-hover:bg-indigo-200">
+                  <Phone className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Browser Call (VoIP)</p>
+                  <p className="text-xs text-gray-500">Call directly from this device using microphone</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleBridgeCall}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group text-left"
+              >
+                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0 group-hover:bg-green-200">
+                  <PhoneCall className="w-4 h-4 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Call via My Phone</p>
+                  <p className="text-xs text-gray-500">We'll ring your phone, then connect you to them</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bridge Call Dialog */}
+      {showBridgeDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-800">Call via My Phone</h3>
+              <Button variant="ghost" size="icon" className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100" onClick={() => setShowBridgeDialog(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-xs text-green-800 font-medium mb-1">How it works:</p>
+                <ol className="text-xs text-green-700 list-decimal list-inside space-y-0.5">
+                  <li>We call your phone</li>
+                  <li>When you answer, we connect you to <strong>{pendingCall?.name || pendingCall?.number}</strong></li>
+                  <li>They see your Comsierge number as caller ID</li>
+                </ol>
+              </div>
+              
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Your phone number</label>
+                <input
+                  type="tel"
+                  value={bridgeNumber}
+                  onChange={(e) => setBridgeNumber(e.target.value)}
+                  placeholder="+1 (555) 123-4567"
+                  className="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-gray-300"
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 rounded h-8 text-xs border-gray-200 bg-white text-gray-700 hover:bg-gray-50" 
+                  onClick={() => setShowBridgeDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="flex-1 rounded h-8 text-xs bg-green-600 hover:bg-green-700 text-white" 
+                  onClick={confirmBridgeCall}
+                  disabled={!bridgeNumber}
+                >
+                  Call Now
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

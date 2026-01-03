@@ -31,3 +31,7 @@ dist-ssr
 # Server specific
 server/node_modules
 server/.env
+
+# Test files with credentials
+check_user_forwarding*.js
+test_forwarding*.js

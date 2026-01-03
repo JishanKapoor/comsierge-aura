@@ -24,7 +24,6 @@ interface AuthContextType {
   loginWithGoogle: () => void;
   logout: () => void;
   requestPasswordReset: (email: string) => Promise<boolean>;
-  updateProfile: (updates: Partial<Pick<User, 'name' | 'email' | 'avatar'>>) => Promise<void>;
   refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -313,46 +312,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("comsierge.inbox.languages");
     localStorage.removeItem("comsierge.contacts");
     localStorage.removeItem("comsierge_rules");
-    toast.success("Logged out successfully");
-  };
-
-  const updateProfile = async (updates: Partial<Pick<User, 'name' | 'email' | 'avatar'>>) => {
-    const token = localStorage.getItem("comsierge_token");
-    
-    if (!token || !user) {
-      // Fallback to local update if no token
-      const updatedUser = { ...user!, ...updates };
-      setUser(updatedUser);
-      setCachedSession(updatedUser);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/auth/profile`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(updates),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setUser(data.data.user);
-        setCachedSession(data.data.user);
-        toast.success("Profile updated");
-      } else {
-        toast.error(data.message || "Failed to update profile");
-      }
-    } catch (error) {
-      console.error("Profile update error:", error);
-      // Update locally as fallback
-      const updatedUser = { ...user, ...updates };
-      setUser(updatedUser);
-      setCachedSession(updatedUser);
-    }
   };
 
   const requestPasswordReset = async (email: string): Promise<boolean> => {
@@ -376,7 +335,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         loginWithGoogle,
         logout,
         requestPasswordReset,
-        updateProfile,
         refreshUser,
         isAuthenticated: !!user,
         isAdmin: user?.role === "admin",

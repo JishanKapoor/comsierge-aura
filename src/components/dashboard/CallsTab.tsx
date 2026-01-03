@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Search,
   Phone,
@@ -35,6 +35,7 @@ import { fetchContacts } from "./contactsApi";
 import { fetchCalls, saveCallRecord, deleteCallRecord, CallRecord } from "./callsApi";
 import { useAuth } from "@/contexts/AuthContext";
 import { Device } from "@twilio/voice-sdk";
+import { CallSkeleton } from "./LoadingSkeletons";
 
 type Filter = "all" | "missed" | "incoming" | "outgoing";
 
@@ -195,65 +196,82 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     };
     loadContactsData();
   }, []);
-  
+
+  // Reusable function to load calls from API
+  const loadCalls = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsLoadingCalls(true);
+    try {
+      const callRecords = await fetchCalls(filter === "all" ? undefined : filter);
+      
+      // Helper functions for formatting (inside callback to avoid closure issues)
+      const formatDurationForCall = (seconds: number): string | undefined => {
+        if (!seconds || seconds <= 0) return undefined;
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        if (mins === 0) return `${secs}s`;
+        return `${mins}m ${secs}s`;
+      };
+      
+      const formatTimestampForCall = (dateStr: string): string => {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const isYesterday = date.toDateString() === yesterday.toDateString();
+        
+        const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        
+        if (isToday) {
+          return `Today, ${timeStr}`;
+        } else if (isYesterday) {
+          return `Yesterday, ${timeStr}`;
+        } else {
+          return date.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${timeStr}`;
+        }
+      };
+      
+      // Convert CallRecord to Call type for display
+      const formattedCalls: Call[] = callRecords.map((record) => ({
+        id: record.id,
+        contactId: `phone:${record.contactPhone}`,
+        contactName: record.contactName || record.contactPhone,
+        phone: record.contactPhone,
+        timestamp: formatTimestampForCall(record.createdAt),
+        type: record.type,
+        duration: formatDurationForCall(record.duration),
+        isBlocked: false,
+      }));
+      setCalls(formattedCalls);
+    } catch (error) {
+      console.error("Error loading calls:", error);
+      // Only show toast on initial load, not on silent refreshes
+      if (showLoading) {
+        toast.error("Failed to load call history");
+      }
+    } finally {
+      if (showLoading) setIsLoadingCalls(false);
+    }
+  }, [filter]);
+
+  // Track if this is the initial load
+  const hasInitiallyLoaded = useRef(false);
+
   // Fetch call history from API on mount and when filter changes
   useEffect(() => {
-    const loadCallsData = async () => {
-      setIsLoadingCalls(true);
-      try {
-        const callRecords = await fetchCalls(filter === "all" ? undefined : filter);
-        // Convert CallRecord to Call type for display
-        const formattedCalls: Call[] = callRecords.map((record) => {
-          // Format duration from seconds to human readable
-          const formatDuration = (seconds: number): string | undefined => {
-            if (!seconds || seconds <= 0) return undefined;
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            if (mins === 0) return `${secs}s`;
-            return `${mins}m ${secs}s`;
-          };
-          
-          // Format timestamp
-          const formatTimestamp = (dateStr: string): string => {
-            const date = new Date(dateStr);
-            const now = new Date();
-            const isToday = date.toDateString() === now.toDateString();
-            const yesterday = new Date(now);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const isYesterday = date.toDateString() === yesterday.toDateString();
-            
-            const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            
-            if (isToday) {
-              return `Today, ${timeStr}`;
-            } else if (isYesterday) {
-              return `Yesterday, ${timeStr}`;
-            } else {
-              return date.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${timeStr}`;
-            }
-          };
-          
-          return {
-            id: record.id,
-            contactId: `phone:${record.contactPhone}`,
-            contactName: record.contactName || record.contactPhone,
-            phone: record.contactPhone,
-            timestamp: formatTimestamp(record.createdAt),
-            type: record.type,
-            duration: formatDuration(record.duration),
-            isBlocked: false,
-          };
-        });
-        setCalls(formattedCalls);
-      } catch (error) {
-        console.error("Error loading calls:", error);
-        toast.error("Failed to load call history");
-      } finally {
-        setIsLoadingCalls(false);
-      }
-    };
-    loadCallsData();
-  }, [filter]);
+    // Only show loading skeleton on very first load, not on filter changes
+    const shouldShowLoading = !hasInitiallyLoaded.current;
+    loadCalls(shouldShowLoading);
+    hasInitiallyLoaded.current = true;
+  }, [loadCalls]);
+
+  // Poll for new calls every 10 seconds (silent refresh)
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadCalls(false);
+    }, 10000);
+    return () => clearInterval(pollInterval);
+  }, [loadCalls]);
   
   // Get Twilio credentials helper - uses the API-fetched twilioNumber
   // Backend will handle actual credentials lookup
@@ -493,8 +511,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const handleBridgeCall = async () => {
     if (!pendingCall) return;
     setShowCallModeDialog(false);
-    // Default to user's profile number for bridging
-    setBridgeNumber(user?.phoneNumber || "");
+    // Default to user's forwarding number (from routing settings) for bridging
+    setBridgeNumber(user?.forwardingNumber || "");
     setShowBridgeDialog(true);
   };
 
@@ -1063,10 +1081,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
       {/* Calls List */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex-1 min-h-0">
-        {isLoadingCalls ? (
-          <div className="p-10 text-center text-gray-400">
-            <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin opacity-50" />
-            <p className="text-xs">Loading call history...</p>
+        {isLoadingCalls && calls.length === 0 ? (
+          <div className="divide-y divide-gray-100">
+            {[...Array(6)].map((_, i) => (
+              <CallSkeleton key={i} />
+            ))}
           </div>
         ) : filteredCalls.length === 0 ? (
           <div className="p-10 text-center text-gray-400">

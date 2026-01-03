@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Trash2,
   Zap,
@@ -32,16 +32,9 @@ interface ActiveRulesTabProps {
 
 type RuleType = "auto-reply" | "forward" | "block" | "priority" | "transfer" | "custom";
 
-interface ParsedRule {
-  type: RuleType;
-  condition: string;
-  action: string;
-  schedule?: string;
-}
-
 type ChatMessage =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; suggestion: ParsedRule };
+  | { id: string; role: "assistant"; text: string };
 
 const RULE_TYPE_META: Record<RuleType, { label: string; icon: typeof Zap; color: string; bgColor: string }> = {
   "auto-reply": { label: "Auto-reply", icon: Send, color: "text-blue-600", bgColor: "bg-blue-50" },
@@ -63,71 +56,6 @@ const AI_EXAMPLES = [
   "Mute group messages, only notify direct ones",
 ];
 
-// Simulate AI parsing a natural language request
-const parseAIRequest = (input: string): ParsedRule => {
-  const lower = input.toLowerCase();
-
-  // Detect type
-  let type: RuleType = "custom";
-  if (lower.includes("reply") || lower.includes("respond")) type = "auto-reply";
-  else if (lower.includes("forward") || lower.includes("send to")) type = "forward";
-  else if (lower.includes("block") || lower.includes("ignore") || lower.includes("mute")) type = "block";
-  else if (lower.includes("priority") || lower.includes("urgent") || lower.includes("notify") || lower.includes("alert")) type = "priority";
-
-  // Extract condition
-  let condition = "All messages";
-  if (lower.includes("weekend")) condition = "On weekends";
-  else if (lower.includes("after") && /\d+\s*(pm|am)/.test(lower)) {
-    const timeMatch = lower.match(/after\s+(\d+)\s*(pm|am)/);
-    if (timeMatch) condition = `After ${timeMatch[1]}${timeMatch[2].toUpperCase()}`;
-  }
-  else if (lower.includes("before") && /\d+\s*(pm|am)/.test(lower)) {
-    const timeMatch = lower.match(/before\s+(\d+)\s*(pm|am)/);
-    if (timeMatch) condition = `Before ${timeMatch[1]}${timeMatch[2].toUpperCase()}`;
-  }
-  else if (lower.includes("weekday")) condition = "Weekdays only";
-  else if (lower.includes("from") && (lower.includes("boss") || lower.includes("dad") || lower.includes("mom") || lower.includes("family"))) {
-    const contactMatch = lower.match(/from\s+(boss|dad|mom|family|wife|husband)/i);
-    if (contactMatch) condition = `From contact '${contactMatch[1]}'`;
-  }
-  else if (lower.includes("contain") || lower.includes("include") || lower.includes("with")) {
-    const keywordMatch = lower.match(/(contain|include|with)\s+['""]?([^'""]+)['""]?/i);
-    if (keywordMatch) condition = `Message contains '${keywordMatch[2].trim()}'`;
-  }
-  else if (lower.includes("unknown")) condition = "From unknown numbers";
-  else if (lower.includes("sleep") || lower.includes("night")) condition = "During sleep hours (10PM-7AM)";
-
-  // Extract action
-  let action = input;
-  if (type === "auto-reply") {
-    action = "Send polite auto-reply message";
-    if (lower.includes("monday")) action = "Reply: 'Thanks — I'll get back to you on Monday.'";
-    else if (lower.includes("morning")) action = "Reply: 'Thanks — I'll reply in the morning.'";
-    else if (lower.includes("calendar") || lower.includes("link")) action = "Reply with calendar booking link";
-    else action = "Reply: 'Thanks for your message — I'll respond soon.'";
-  } else if (type === "forward") {
-    action = "Forward to personal number";
-    if (lower.includes("second number")) action = "Forward to secondary number";
-  } else if (type === "block") {
-    action = "Block and don't notify";
-    if (lower.includes("mute")) action = "Mute notifications";
-  } else if (type === "priority") {
-    action = "Mark as high priority + push notification";
-    if (lower.includes("loud")) action = "Mark high priority + loud alert";
-  }
-
-  // Extract schedule
-  let schedule: string | undefined;
-  if (lower.includes("weekend")) schedule = "Weekends only";
-  else if (lower.includes("weekday")) schedule = "Weekdays only";
-  else if (/\d+\s*(pm|am)/.test(lower)) {
-    const times = lower.match(/(\d+)\s*(pm|am)/g);
-    if (times && times.length >= 1) schedule = `Scheduled: ${times.join(" - ")}`;
-  }
-
-  return { type, condition, action, schedule };
-};
-
 const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) => {
   const [rules, setRules] = useState<ActiveRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,22 +65,34 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
   const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
   const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
 
+  // Reusable function to load rules from API
+  const loadRules = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsLoading(true);
+    try {
+      const apiRules = await fetchRules();
+      setRules(apiRules);
+    } catch (error) {
+      console.error("Failed to load rules:", error);
+      if (showLoading) {
+        toast.error("Failed to load rules");
+      }
+    } finally {
+      if (showLoading) setIsLoading(false);
+    }
+  }, []);
+
   // Fetch rules from API on mount
   useEffect(() => {
-    const loadRulesFromApi = async () => {
-      setIsLoading(true);
-      try {
-        const apiRules = await fetchRules();
-        setRules(apiRules);
-      } catch (error) {
-        console.error("Failed to load rules:", error);
-        toast.error("Failed to load rules");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadRulesFromApi();
-  }, []);
+    loadRules(true);
+  }, [loadRules]);
+
+  // Poll for rule updates every 30 seconds (silent refresh)
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadRules(false);
+    }, 30000);
+    return () => clearInterval(pollInterval);
+  }, [loadRules]);
 
   // Sync with external rules (from Transfer modal)
   useEffect(() => {
@@ -216,38 +156,57 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
     }
   };
 
-  const sendAiMessage = () => {
+  const sendAiMessage = async () => {
     const text = aiDraft.trim();
-    if (!text) {
-      toast.error("Describe the rule you want");
-      return;
-    }
+    if (!text) return;
 
-    const userId = `u-${Date.now()}`;
-    setChat((prev) => [...prev, { id: userId, role: "user", text }]);
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      text,
+    };
+
+    setChat((prev) => [...prev, userMsg]);
     setAiDraft("");
     setAiProcessing(true);
 
-    setTimeout(() => {
-      const suggestion = parseAIRequest(text);
-      const assistantId = `a-${Date.now()}`;
-      setChat((prev) => [...prev, { id: assistantId, role: "assistant", suggestion }]);
-      setPendingSuggestionId(assistantId);
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({ message: text }),
+      });
+
+      const data = await response.json();
+      
+      const aiMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        text: data.response || "I processed your request.",
+      };
+      
+      setChat((prev) => [...prev, aiMsg]);
+      
+      // Refresh rules
+      const updatedRules = await fetchRules();
+      setRules(updatedRules);
+      
+    } catch (error) {
+      console.error("AI Chat error:", error);
+      toast.error("Failed to communicate with AI");
+      
+      setChat((prev) => [...prev, { 
+        id: (Date.now() + 1).toString(), 
+        role: "assistant", 
+        text: "Sorry, I encountered an error. Please try again." 
+      }]);
+    } finally {
       setAiProcessing(false);
-    }, 650);
-  };
-
-  const acceptSuggestion = (messageId: string) => {
-    const msg = chat.find((m) => m.id === messageId);
-    if (!msg || msg.role !== "assistant") return;
-    const ruleText = `${msg.suggestion.condition}: ${msg.suggestion.action}`;
-    addRule(ruleText, msg.suggestion.type);
-    setPendingSuggestionId(null);
-  };
-
-  const dismissSuggestion = (messageId: string) => {
-    if (pendingSuggestionId === messageId) setPendingSuggestionId(null);
-    setChat((prev) => prev.filter((m) => m.id !== messageId));
+    }
   };
 
   const handleDragStart = (id: string) => {
@@ -321,70 +280,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
                   );
                 }
 
-                const meta = RULE_TYPE_META[m.suggestion.type];
-                const Icon = meta.icon;
-                const isPending = pendingSuggestionId === m.id;
-
                 return (
                   <div key={m.id} className="flex justify-start gap-2">
                     <div className="w-7 h-7 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center shrink-0 mt-0.5">
                       <Sparkles className="w-3.5 h-3.5 text-gray-500" />
                     </div>
-                    <div
-                      className={cn(
-                        "max-w-[85%] rounded-2xl px-3 py-2 bg-white border text-left shadow-sm",
-                        isPending ? "border-indigo-200 bg-indigo-50/40" : "border-gray-200"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
-                            meta.bgColor,
-                            meta.color
-                          )}
-                        >
-                          <Icon className="w-3 h-3" />
-                          {meta.label}
-                        </span>
-                        <span className="text-xs text-gray-400">Suggested rule</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-sm text-gray-800">
-                          <span className="text-xs text-gray-500">Condition:</span> {m.suggestion.condition}
-                        </div>
-                        <div className="text-sm text-gray-800">
-                          <span className="text-xs text-gray-500">Action:</span> {m.suggestion.action}
-                        </div>
-                        {m.suggestion.schedule && (
-                          <div className="text-sm text-gray-800">
-                            <span className="text-xs text-gray-500">Schedule:</span> {m.suggestion.schedule}
-                          </div>
-                        )}
-                      </div>
-
-                      {isPending && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => acceptSuggestion(m.id)}
-                            className="h-8 text-xs bg-gray-900 hover:bg-gray-800"
-                          >
-                            <Check className="w-3.5 h-3.5 mr-1.5" />
-                            Add
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => dismissSuggestion(m.id)}
-                            className="h-8 text-xs"
-                          >
-                            <X className="w-3.5 h-3.5 mr-1.5" />
-                            Dismiss
-                          </Button>
-                        </div>
-                      )}
+                    <div className="max-w-[85%] rounded-2xl px-3 py-2 bg-white border border-gray-200 text-sm text-gray-800 shadow-sm whitespace-pre-wrap">
+                      {m.text}
                     </div>
                   </div>
                 );
@@ -451,10 +353,19 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
           <span className="text-[10px] text-gray-400">Drag to reorder</span>
         </div>
 
-        {isLoading ? (
-          <div className="p-6 text-center">
-            <span className="w-5 h-5 border-2 border-gray-300 border-t-indigo-600 rounded-full animate-spin inline-block" />
-            <p className="text-xs text-gray-400 mt-2">Loading rules...</p>
+        {isLoading && rules.length === 0 ? (
+          <div className="divide-y divide-gray-100">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="px-4 py-3 flex items-start gap-3">
+                <div className="w-4 h-4 bg-gray-200 rounded animate-pulse mt-1" />
+                <div className="w-7 h-7 bg-gray-200 rounded-md animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                  <div className="h-3 w-48 bg-gray-200 rounded animate-pulse" />
+                </div>
+                <div className="w-10 h-5 bg-gray-200 rounded-full animate-pulse" />
+              </div>
+            ))}
           </div>
         ) : rules.length > 0 ? (
           <div>

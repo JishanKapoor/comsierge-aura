@@ -1,20 +1,67 @@
 import express from "express";
 import {
   analyzeIncomingMessage,
+  classifyMessageAsSpam,
   quickPriorityCheck,
   batchAnalyzeMessages,
   generateAutoResponse,
   shouldHoldMessage,
 } from "../services/aiService.js";
+import { chatWithAI, conversationChat } from "../services/aiAgentService.js";
+import Contact from "../models/Contact.js";
+import Conversation from "../models/Conversation.js";
+import Message from "../models/Message.js";
+import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
 
-// @route   POST /api/ai/analyze
-// @desc    Analyze a single message
-// @access  Private
-router.post("/analyze", async (req, res) => {
+// Helper to build sender context from database
+async function buildSenderContext(userId, senderPhone) {
+  const context = {
+    isSavedContact: false,
+    isFavorite: false,
+    tags: [],
+    hasConversationHistory: false,
+    messageCount: 0,
+    userHasReplied: false,
+    isBlocked: false,
+  };
+  
   try {
-    const { message, senderPhone, senderName, conversationHistory } = req.body;
+    // Check if sender is a saved contact
+    const contact = await Contact.findOne({ userId, phone: senderPhone });
+    if (contact) {
+      context.isSavedContact = true;
+      context.isFavorite = contact.isFavorite || false;
+      context.tags = contact.tags || [];
+      context.isBlocked = contact.isBlocked || false;
+    }
+    
+    // Check conversation history
+    const conversation = await Conversation.findOne({ userId, contactPhone: senderPhone });
+    if (conversation) {
+      context.hasConversationHistory = true;
+      context.isBlocked = context.isBlocked || conversation.isBlocked || false;
+    }
+    
+    // Count messages and check if user has replied
+    const messages = await Message.find({ userId, contactPhone: senderPhone }).limit(50);
+    context.messageCount = messages.length;
+    context.userHasReplied = messages.some(m => m.direction === 'outgoing');
+    
+  } catch (error) {
+    console.error("Error building sender context:", error);
+  }
+  
+  return context;
+}
+
+// @route   POST /api/ai/analyze
+// @desc    Analyze a single message with multi-factor spam classification
+// @access  Private
+router.post("/analyze", authMiddleware, async (req, res) => {
+  try {
+    const { message, senderPhone, senderName, conversationHistory, senderContext: providedContext } = req.body;
 
     if (!message) {
       return res.status(400).json({
@@ -23,11 +70,18 @@ router.post("/analyze", async (req, res) => {
       });
     }
 
+    // Build sender context from database if not provided
+    let senderContext = providedContext;
+    if (!senderContext && senderPhone && req.user) {
+      senderContext = await buildSenderContext(req.user._id, senderPhone);
+    }
+
     const analysis = await analyzeIncomingMessage(
       message,
       senderPhone || "",
       senderName || "",
-      conversationHistory || []
+      conversationHistory || [],
+      senderContext
     );
 
     res.json({
@@ -39,6 +93,51 @@ router.post("/analyze", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "AI analysis failed",
+      error: error.message,
+    });
+  }
+});
+
+// @route   POST /api/ai/classify-spam
+// @desc    Multi-factor spam classification for a message
+// @access  Private
+router.post("/classify-spam", authMiddleware, async (req, res) => {
+  try {
+    const { message, senderPhone, senderName, conversationHistory, senderContext: providedContext } = req.body;
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: "Message content is required",
+      });
+    }
+
+    // Build sender context from database if not provided
+    let senderContext = providedContext;
+    if (!senderContext && senderPhone && req.user) {
+      senderContext = await buildSenderContext(req.user._id, senderPhone);
+    }
+
+    const spamAnalysis = await classifyMessageAsSpam(
+      message,
+      senderPhone || "",
+      senderName || "",
+      senderContext,
+      conversationHistory || []
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...spamAnalysis,
+        senderContext, // Include context used for transparency
+      },
+    });
+  } catch (error) {
+    console.error("Spam classification error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Spam classification failed",
       error: error.message,
     });
   }
@@ -210,6 +309,57 @@ router.post("/process-incoming", async (req, res) => {
       message: "Failed to process incoming message",
       error: error.message,
     });
+  }
+});
+
+// AI Agent Chat Endpoint (for rules)
+router.post("/chat", authMiddleware, async (req, res) => {
+  try {
+    const { message, history } = req.body;
+    const userId = req.user.userId;
+    
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const response = await chatWithAI(userId, message, history);
+    
+    res.json({ response });
+  } catch (error) {
+    console.error("Error in AI chat:", error);
+    res.status(500).json({ error: "Failed to process chat request" });
+  }
+});
+
+// AI Conversation Chat Endpoint (for inbox assistant)
+router.post("/conversation-chat", authMiddleware, async (req, res) => {
+  try {
+    const { message, context, contactName, contactPhone } = req.body;
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    
+    console.log("Conversation chat - userId:", userId, "contactName:", contactName);
+    
+    if (!userId) {
+      return res.status(401).json({ error: "User not authenticated" });
+    }
+    
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    // Use the new LangChain-powered service
+    const response = await conversationChat(
+      userId.toString(),
+      message,
+      contactName || "Unknown Contact",
+      contactPhone,
+      context
+    );
+    
+    res.json({ response });
+  } catch (error) {
+    console.error("Error in conversation chat:", error);
+    res.status(500).json({ error: "Failed to process conversation chat" });
   }
 });
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus,
@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { isValidUsPhoneNumber } from "@/lib/validations";
 import { Contact } from "./types";
 import { fetchContacts, createContact as createContactApi, updateContact as updateContactApi, deleteContact as deleteContactApi } from "./contactsApi";
+import { useAuth } from "@/contexts/AuthContext";
+import { ContactSkeleton } from "./LoadingSkeletons";
 
 type View = "all" | "favorites";
 
@@ -31,6 +33,7 @@ interface ContactsTabProps {
 }
 
 const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
+  const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>("all");
@@ -57,10 +60,39 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [tagToDelete, setTagToDelete] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const [showAddTagInFilter, setShowAddTagInFilter] = useState(false);
+  const [newFilterTag, setNewFilterTag] = useState("");
+  const filterTagInputRef = useRef<HTMLInputElement>(null);
 
   const allAvailableTags = [...new Set([...availableTags, ...customTags])];
   const allTags = [...new Set(contacts.flatMap(c => c.tags))];
-  const filterTags = [...new Set([...availableTags, ...allTags])];
+  const filterTags = [...new Set([...availableTags, ...customTags, ...allTags])];
+
+  const customTagsStorageKey = `comsierge.contacts.customTags.${user?.id || user?.email || "anon"}`;
+
+  // Load persisted custom tags (per user)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(customTagsStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setCustomTags(parsed.filter((t) => typeof t === "string" && t.trim().length > 0));
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customTagsStorageKey]);
+
+  // Persist custom tags (per user)
+  useEffect(() => {
+    try {
+      localStorage.setItem(customTagsStorageKey, JSON.stringify(customTags));
+    } catch {
+      // ignore
+    }
+  }, [customTags, customTagsStorageKey]);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -75,16 +107,31 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
     };
   }, [showModal]);
 
-  // Fetch contacts from API on mount
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
+  // Reusable function to load contacts from API
+  const loadContacts = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
       const data = await fetchContacts();
       setContacts(data);
-      setLoading(false);
-    };
-    loadData();
+    } catch (error) {
+      console.error("Error loading contacts:", error);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
   }, []);
+
+  // Fetch contacts from API on mount
+  useEffect(() => {
+    loadContacts(true);
+  }, [loadContacts]);
+
+  // Poll for contact updates every 15 seconds (silent refresh)
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadContacts(false);
+    }, 15000);
+    return () => clearInterval(pollInterval);
+  }, [loadContacts]);
 
   // Close menu on outside click
   useEffect(() => {
@@ -117,6 +164,28 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
 
   const toggleSelectedTag = (tag: string) => {
     setSelectedTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
+  };
+
+  const handleAddFilterTag = () => {
+    const tag = newFilterTag.trim();
+    if (!tag) return;
+
+    const normalized = tag.toLowerCase();
+    const exists = filterTags.some((t) => t.toLowerCase() === normalized);
+    if (exists) {
+      toast.error("Tag already exists");
+      return;
+    }
+
+    setCustomTags((prev) => [...prev, tag]);
+    setSelectedTags((prev) => (prev.includes(tag) ? prev : [...prev, tag])); // Auto-select the new tag
+    setNewFilterTag("");
+
+    // Keep the add UI open for fast entry (e.g. adding many tags)
+    setShowAddTagInFilter(true);
+    setTimeout(() => filterTagInputRef.current?.focus(), 0);
+
+    toast.success(`Tag "${tag}" added`);
   };
 
   const groupByLetter = (contactList: Contact[]) => {
@@ -388,19 +457,105 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         {showTagFilter && (
           <div className="flex items-center gap-1.5">
             <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
-              {filterTags.map((tag) => (
+            <div className="flex flex-wrap items-center gap-1.5 max-h-24 overflow-y-auto">
+              {filterTags.map((tag) => {
+                const canDelete = !availableTags.includes(tag);
+                const isSelected = selectedTags.includes(tag);
+
+                if (!canDelete) {
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => toggleSelectedTag(tag)}
+                      className={cn(
+                        "px-2.5 py-1 rounded text-xs transition-colors whitespace-nowrap",
+                        isSelected ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      )}
+                    >
+                      {tag}
+                    </button>
+                  );
+                }
+
+                return (
+                  <div key={tag} className="flex items-center gap-0.5">
+                    <button
+                      onClick={() => toggleSelectedTag(tag)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-l text-xs transition-colors whitespace-nowrap",
+                        isSelected ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      )}
+                    >
+                      {tag}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTagToDelete(tag);
+                      }}
+                      className={cn(
+                        "px-1 py-1 rounded-r text-xs transition-colors flex items-center justify-center",
+                        isSelected
+                          ? "bg-gray-900 text-white/70 hover:text-white hover:bg-gray-950"
+                          : "bg-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-300"
+                      )}
+                      title="Delete tag permanently"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+              
+              {/* Add new tag */}
+              {showAddTagInFilter ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    ref={filterTagInputRef}
+                    type="text"
+                    value={newFilterTag}
+                    onChange={(e) => setNewFilterTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddFilterTag();
+                      if (e.key === "Escape") {
+                        setShowAddTagInFilter(false);
+                        setNewFilterTag("");
+                      }
+                    }}
+                    placeholder="Add tag"
+                    className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleAddFilterTag}
+                    className="p-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddTagInFilter(false);
+                      setNewFilterTag("");
+                    }}
+                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
                 <button
-                  key={tag}
-                  onClick={() => toggleSelectedTag(tag)}
-                  className={cn(
-                    "px-2.5 py-1 rounded text-xs transition-colors whitespace-nowrap",
-                    selectedTags.includes(tag) ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  )}
+                  onClick={() => {
+                    setShowAddTagInFilter(true);
+                    setTimeout(() => filterTagInputRef.current?.focus(), 0);
+                  }}
+                  className="flex items-center justify-center w-6 h-6 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors"
+                  title="Add new tag"
                 >
-                  {tag}
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
-              ))}
+              )}
+              
               {selectedTags.length > 0 && (
                 <button
                   onClick={() => setSelectedTags([])}
@@ -416,8 +571,23 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
 
       {/* Contacts List */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-visible">
-        {loading ? (
-          <div className="px-4 py-8 text-center text-gray-500 text-sm">Loading contacts...</div>
+        {loading && contacts.length === 0 ? (
+          <div className="divide-y divide-gray-100">
+            {/* Letter header skeleton */}
+            <div className="px-3 py-1 bg-gray-50">
+              <div className="w-4 h-3 bg-gray-200 rounded animate-pulse" />
+            </div>
+            {[...Array(4)].map((_, i) => (
+              <ContactSkeleton key={i} />
+            ))}
+            {/* Another letter */}
+            <div className="px-3 py-1 bg-gray-50">
+              <div className="w-4 h-3 bg-gray-200 rounded animate-pulse" />
+            </div>
+            {[...Array(3)].map((_, i) => (
+              <ContactSkeleton key={`b-${i}`} />
+            ))}
+          </div>
         ) : Object.entries(groupByLetter(visibleContacts)).length === 0 ? (
           <div className="px-4 py-8 text-center text-gray-500 text-sm">
             {contacts.length === 0 ? "No contacts yet. Add your first contact!" : "No contacts match your search."}
@@ -691,26 +861,14 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                           <button
                             onClick={() => toggleTag(tag)}
                             className={cn(
-                              "px-2 py-1 rounded-l text-xs transition-colors",
+                              "px-2 py-1 rounded text-xs transition-colors",
                               editForm.tags.includes(tag) ? "bg-indigo-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                             )}
                           >
                             {tag}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTagToDelete(tag);
-                            }}
-                            className={cn(
-                              "px-1 py-1 rounded-r text-xs transition-colors flex items-center justify-center",
-                              editForm.tags.includes(tag) 
-                                ? "bg-indigo-600 text-white/70 hover:text-white hover:bg-indigo-700" 
-                                : "bg-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-300"
+                            {editForm.tags.includes(tag) && (
+                              <X className="w-3 h-3 ml-1 inline-block" />
                             )}
-                            title="Delete tag permanently"
-                          >
-                            <X className="w-3 h-3" />
                           </button>
                         </div>
                       ))}
@@ -826,7 +984,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 text-amber-600">
+              <div className="flex items-center gap-2 text-red-600">
                 <AlertTriangle className="w-5 h-5" />
                 <h3 className="text-sm font-medium">Delete Tag</h3>
               </div>

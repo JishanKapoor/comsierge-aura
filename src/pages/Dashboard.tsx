@@ -13,6 +13,10 @@ import {
   Zap,
   ChevronUp,
   User as UserIcon,
+  Lock,
+  X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -35,6 +39,15 @@ const Dashboard = () => {
   const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Change password modal state
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Use the user's assigned phone number or a placeholder
   const phoneNumber = user?.phoneNumber || "No number assigned";
@@ -149,6 +162,53 @@ const Dashboard = () => {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords don't match");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      toast.error("New password must be different from current password");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const res = await fetch("/api/auth/change-password", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        toast.success("Password changed successfully");
+        setShowChangePassword(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        toast.error(data.message || "Failed to change password");
+      }
+    } catch (err) {
+      toast.error("Failed to change password");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const navItems = [
     { id: "inbox" as Tab, label: "Inbox", icon: Inbox },
     { id: "calls" as Tab, label: "Calls", icon: Phone },
@@ -158,26 +218,61 @@ const Dashboard = () => {
     { id: "support" as Tab, label: "Support", icon: Headphones },
   ];
 
-  const renderContent = () => {
-    switch (activeTab) {
+  // Render tab content - keep main data tabs mounted for smooth switching
+  const renderTabContent = (tab: Tab, isActive: boolean) => {
+    const baseStyle: React.CSSProperties = { display: isActive ? 'block' : 'none', height: '100%' };
+    const paddedStyle: React.CSSProperties = { ...baseStyle, padding: '1.5rem' };
+    
+    switch (tab) {
       case "inbox":
-        return <InboxView selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />;
+        return (
+          <div key="inbox" style={baseStyle}>
+            <InboxView selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />
+          </div>
+        );
       case "calls":
-        return <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />;
+        return (
+          <div key="calls" style={paddedStyle}>
+            <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />
+          </div>
+        );
       case "contacts":
-        return <ContactsTab onNavigate={handleNavigateFromContacts} />;
+        return (
+          <div key="contacts" style={paddedStyle}>
+            <ContactsTab onNavigate={handleNavigateFromContacts} />
+          </div>
+        );
+      case "rules":
+        return (
+          <div key="rules" style={paddedStyle}>
+            <ActiveRulesTab />
+          </div>
+        );
+      case "support":
+        return (
+          <div key="support" style={paddedStyle}>
+            <SupportTab />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // These tabs don't need to stay mounted
+  const renderOnDemandContent = () => {
+    switch (activeTab) {
       case "routing":
         return <RoutingPanel phoneNumber={phoneNumber} />;
-      case "rules":
-        return <ActiveRulesTab />;
-      case "support":
-        return <SupportTab />;
       case "profile":
         return <ProfileTab />;
       default:
         return null;
     }
   };
+
+  // Tabs that should stay mounted for smooth switching
+  const persistentTabs: Tab[] = ["inbox", "calls", "contacts", "rules", "support"];
 
   return (
     <div className="dashboard-layout flex w-full h-screen h-[100dvh] overflow-hidden bg-white font-sans text-sm text-gray-700" style={{ backgroundColor: '#ffffff', color: '#374151' }}>
@@ -281,15 +376,23 @@ const Dashboard = () => {
             {showUserMenu && (
               <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50">
                 <div className="px-3 py-2 border-b border-gray-100">
+                  <div className="text-sm font-medium text-gray-900">{user?.name || "User"}</div>
+                  <div className="text-xs text-gray-500 truncate">{user?.email || "No email"}</div>
+                </div>
+                <div className="px-3 py-2 border-b border-gray-100">
                   <div className="text-xs text-gray-500">Current plan</div>
                   <div className="text-sm font-medium text-gray-800">Free plan</div>
                 </div>
                 <button
-                  onClick={() => { setActiveTab("profile"); setShowUserMenu(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowChangePassword(true);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                 >
-                  <UserIcon className="w-4 h-4 text-gray-500" />
-                  Edit Profile
+                  <Lock className="w-3.5 h-3.5 text-gray-400" />
+                  Change Password
                 </button>
               </div>
             )}
@@ -324,8 +427,15 @@ const Dashboard = () => {
           )}
           style={activeTab !== "inbox" ? { scrollbarWidth: 'none', msOverflowStyle: 'none' } : undefined}
         >
-          <div className={cn("h-full", activeTab === "inbox" ? "" : "p-6")}>
-            {renderContent()}
+          <div className="h-full">
+            {/* Keep persistent tabs mounted for smooth switching */}
+            {persistentTabs.map(tab => renderTabContent(tab, activeTab === tab))}
+            {/* Render on-demand tabs normally */}
+            {!persistentTabs.includes(activeTab) && (
+              <div className="p-6 h-full">
+                {renderOnDemandContent()}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -336,6 +446,101 @@ const Dashboard = () => {
           className="fixed inset-0 bg-black/20 z-40 lg:hidden"
           onClick={() => setShowMenu(false)}
         />
+      )}
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Change Password</h3>
+              <button
+                onClick={() => {
+                  setShowChangePassword(false);
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPw ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm [&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden"
+                    placeholder="Enter current password"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPw(!showCurrentPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNewPw ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm [&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden"
+                    placeholder="Enter new password (min 6 characters)"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPw(!showNewPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm [&::-ms-reveal]:hidden [&::-webkit-credentials-auto-fill-button]:hidden"
+                  placeholder="Confirm new password"
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowChangePassword(false);
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleChangePassword}
+                disabled={isChangingPassword}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isChangingPassword ? "Changing..." : "Change Password"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

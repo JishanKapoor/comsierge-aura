@@ -1066,8 +1066,8 @@ const AdminDashboard = () => {
                         <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedTicket.message}</p>
                       </div>
 
-                      {/* Replies */}
-                      {selectedTicket.replies.map((reply, index) => (
+                      {/* Replies - skip first one since it's the original message */}
+                      {selectedTicket.replies.slice(1).map((reply, index) => (
                         <div 
                           key={index}
                           className={cn(

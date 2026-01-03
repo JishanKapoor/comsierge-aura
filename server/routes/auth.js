@@ -159,6 +159,7 @@ router.post("/login", async (req, res) => {
           role: user.role,
           avatar: user.avatar,
           phoneNumber: user.phoneNumber,
+          forwardingNumber: user.forwardingNumber,
           plan: user.plan,
           createdAt: user.createdAt,
         },
@@ -219,6 +220,73 @@ router.get("/me", async (req, res) => {
     res.status(401).json({
       success: false,
       message: "Invalid or expired token",
+    });
+  }
+});
+
+// @route   PUT /api/auth/change-password
+// @desc    Change user password
+// @access  Private
+router.put("/change-password", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select("+password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    // Validation
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide current password and new password",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters",
+      });
+    }
+
+    // Verify current password
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    // Update password (will be hashed by pre-save hook)
+    user.password = newPassword;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
     });
   }
 });

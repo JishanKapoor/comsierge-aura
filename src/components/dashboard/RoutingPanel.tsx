@@ -1,41 +1,38 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
-  Clock,
   PhoneCall,
   MessageSquare,
-  Moon,
+  ArrowRight,
+  Star,
+  Users,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { isValidUsPhoneNumber } from "@/lib/validations";
+import { isValidUsPhoneNumber, normalizeUsPhoneDigits } from "@/lib/validations";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchContacts } from "./contactsApi";
 
-type TransferType = "calls" | "messages" | "both";
-type MessagePriority = "all" | "high_medium" | "high_only";
-type QuietHoursMode = "all" | "high_only" | "dnd";
-type UrgentConfigMode = "auto" | "custom";
+type CallFilter = "all" | "favorites" | "contacts" | "tagged";
+type MessageFilter = "all" | "important" | "urgent";
 
 interface RoutingPanelProps {
   phoneNumber: string;
 }
 
-type AllowedNumber = {
-  id: string;
-  phone: string;
-  label?: string;
-};
-
 const STORAGE_KEY = "comsierge.routing.settings";
 
-const URGENT_LABELS: Array<{ id: string; label: string }> = [
-  { id: "emergency", label: "Emergency" },
-  { id: "family", label: "Family" },
-  { id: "meeting", label: "Meeting" },
-  { id: "appointment", label: "Appointment" },
-  { id: "deadline", label: "Deadline" },
-  { id: "bank", label: "Bank" },
-  { id: "other", label: "Other" },
-];
+// Same tags as ContactsTab
+const DEFAULT_TAGS = ["Family", "Work", "Friend", "VIP", "Business", "School", "Gym", "Medical"];
 
 const safeParseJson = <T,>(value: string | null): T | null => {
   if (!value) return null;
@@ -47,524 +44,494 @@ const safeParseJson = <T,>(value: string | null): T | null => {
 };
 
 const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
-  const [transferType, setTransferType] = useState<TransferType>("both");
-  const [messagePriority, setMessagePriority] = useState<MessagePriority>("all");
-  const [forwardingNumber, setForwardingNumber] = useState("+1 (437) 239-2448");
-  const [forwardingNumberError, setForwardingNumberError] = useState("");
+  const { user, refreshUser } = useAuth();
 
-  // High priority / urgent configuration
-  const [urgentConfigMode, setUrgentConfigMode] = useState<UrgentConfigMode>("auto");
-  const [urgentLabels, setUrgentLabels] = useState<string[]>(["emergency", "family", "meeting"]);
-  const [urgentAllowedNumbers, setUrgentAllowedNumbers] = useState<AllowedNumber[]>([]);
-  const [newUrgentPhone, setNewUrgentPhone] = useState("");
-  const [newUrgentLabel, setNewUrgentLabel] = useState("");
+  const contactsCustomTagsKey = `comsierge.contacts.customTags.${user?.id || user?.email || "anon"}`;
+  const [baseTags, setBaseTags] = useState<string[]>(DEFAULT_TAGS);
+  const [tagOptions, setTagOptions] = useState<string[]>(DEFAULT_TAGS);
   
-  // Quiet Hours state
-  const [quietHoursEnabled, setQuietHoursEnabled] = useState(true);
-  const [quietHoursFrom, setQuietHoursFrom] = useState("22:00");
-  const [quietHoursTo, setQuietHoursTo] = useState("07:00");
-  const [quietHoursCallMode, setQuietHoursCallMode] = useState<QuietHoursMode>("dnd");
-  const [quietHoursMessageMode, setQuietHoursMessageMode] = useState<QuietHoursMode>("high_only");
+  // Forwarding destination
+  const [forwardingNumber, setForwardingNumber] = useState(user?.forwardingNumber || "");
+  const [forwardingNumberError, setForwardingNumberError] = useState("");
+  const [isSavingForwarding, setIsSavingForwarding] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const savedForwardingNumber = useRef(user?.forwardingNumber || "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  // What to forward
+  const [forwardCalls, setForwardCalls] = useState(true);
+  const [forwardMessages, setForwardMessages] = useState(true);
+  
+  // Call filters
+  const [callFilter, setCallFilter] = useState<CallFilter>("all");
+  const [selectedCallTags, setSelectedCallTags] = useState<string[]>([]);
+  
+  // Message filters
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
+  const [selectedMessageTags, setSelectedMessageTags] = useState<string[]>([]);
+
+  const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
 
   const validateForwardingNumber = (value: string) => {
     setForwardingNumber(value);
+    // Allow empty or valid phone numbers
     if (value.trim() && !isValidUsPhoneNumber(value)) {
-      setForwardingNumberError("Enter a valid phone number (10 digits, optional +1)");
+      setForwardingNumberError("Enter a valid US phone number");
     } else {
       setForwardingNumberError("");
     }
   };
 
+  // Update forwarding number when user data loads
+  useEffect(() => {
+    if (user?.forwardingNumber && !forwardingNumber) {
+      setForwardingNumber(user.forwardingNumber);
+      savedForwardingNumber.current = user.forwardingNumber;
+    }
+  }, [user?.forwardingNumber, forwardingNumber]);
+
+  // Check if forwarding number has changed
+  const hasForwardingChanged = forwardingNumber !== savedForwardingNumber.current;
+
+  // Save forwarding number to the server
+  const saveForwardingNumber = async () => {
+    if (forwardingNumber.trim() && !isValidUsPhoneNumber(forwardingNumber)) {
+      toast.error("Please enter a valid US phone number");
+      return;
+    }
+
+    setIsSavingForwarding(true);
+    setShowSaveDialog(false);
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      // Format the number properly for the server
+      let formattedNumber = "";
+      if (forwardingNumber.trim()) {
+        const digits = normalizeUsPhoneDigits(forwardingNumber);
+        // If 11 digits starting with 1, just add +
+        // If 10 digits, add +1
+        formattedNumber = digits.length === 11 && digits.startsWith("1") 
+          ? `+${digits}` 
+          : `+1${digits}`;
+      }
+
+      const response = await fetch(`/api/auth/users/${user?.id}/forwarding`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ forwardingNumber: formattedNumber }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.message || "Failed to save forwarding number");
+        return;
+      }
+
+      savedForwardingNumber.current = forwardingNumber;
+      toast.success(forwardingNumber.trim() ? "Forwarding number saved!" : "Forwarding number cleared");
+      
+      // Refresh user data to update the context
+      await refreshUser();
+    } catch (error) {
+      console.error("Error saving forwarding number:", error);
+      toast.error("Failed to save forwarding number");
+    } finally {
+      setIsSavingForwarding(false);
+    }
+  };
+
+  // Cancel forwarding number change
+  const cancelForwardingChange = () => {
+    setForwardingNumber(savedForwardingNumber.current);
+    setForwardingNumberError("");
+    setShowSaveDialog(false);
+    inputRef.current?.blur();
+  };
+
+  // Handle Enter key to show save dialog
+  const handleForwardingKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && hasForwardingChanged && !forwardingNumberError && !isSavingForwarding) {
+      e.preventDefault();
+      setShowSaveDialog(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelForwardingChange();
+    }
+  };
+
+  // Handle blur to show save dialog if changed
+  const handleForwardingBlur = () => {
+    if (hasForwardingChanged && !forwardingNumberError && !isSavingForwarding) {
+      setShowSaveDialog(true);
+    }
+  };
+
   useEffect(() => {
     const saved = safeParseJson<{
-      transferType?: TransferType;
-      messagePriority?: MessagePriority;
-      forwardingNumber?: string;
-      quietHoursEnabled?: boolean;
-      quietHoursFrom?: string;
-      quietHoursTo?: string;
-      quietHoursCallMode?: QuietHoursMode;
-      quietHoursMessageMode?: QuietHoursMode;
-      urgentConfigMode?: UrgentConfigMode;
-      urgentLabels?: string[];
-      urgentAllowedNumbers?: AllowedNumber[];
+      forwardCalls?: boolean;
+      forwardMessages?: boolean;
+      callFilter?: CallFilter;
+      selectedCallTags?: string[];
+      messageFilter?: MessageFilter;
+      selectedMessageTags?: string[];
     }>(localStorage.getItem(STORAGE_KEY));
 
     if (!saved) return;
 
-    if (saved.transferType) setTransferType(saved.transferType);
-    if (saved.messagePriority) setMessagePriority(saved.messagePriority);
-    if (typeof saved.forwardingNumber === "string") validateForwardingNumber(saved.forwardingNumber);
-    if (typeof saved.quietHoursEnabled === "boolean") setQuietHoursEnabled(saved.quietHoursEnabled);
-    if (typeof saved.quietHoursFrom === "string") setQuietHoursFrom(saved.quietHoursFrom);
-    if (typeof saved.quietHoursTo === "string") setQuietHoursTo(saved.quietHoursTo);
-    if (saved.quietHoursCallMode) setQuietHoursCallMode(saved.quietHoursCallMode);
-    if (saved.quietHoursMessageMode) setQuietHoursMessageMode(saved.quietHoursMessageMode);
-    if (saved.urgentConfigMode) setUrgentConfigMode(saved.urgentConfigMode);
-    if (Array.isArray(saved.urgentLabels)) setUrgentLabels(saved.urgentLabels);
-    if (Array.isArray(saved.urgentAllowedNumbers)) setUrgentAllowedNumbers(saved.urgentAllowedNumbers);
+    if (typeof saved.forwardCalls === "boolean") setForwardCalls(saved.forwardCalls);
+    if (typeof saved.forwardMessages === "boolean") setForwardMessages(saved.forwardMessages);
+    if (saved.callFilter) setCallFilter(saved.callFilter);
+    if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
+    if (saved.messageFilter) setMessageFilter(saved.messageFilter);
+    if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSave = () => {
-    if (forwardingNumber.trim() && !isValidUsPhoneNumber(forwardingNumber)) {
-      toast.error("Please enter a valid personal number");
-      return;
-    }
+  // Load tags from contacts + persisted custom tags (from Contacts)
+  useEffect(() => {
+    let isCancelled = false;
 
+    const loadTags = async () => {
+      const persistedCustom = safeParseJson<string[]>(localStorage.getItem(contactsCustomTagsKey)) ?? [];
+      let contactTags: string[] = [];
+
+      try {
+        const contacts = await fetchContacts();
+        contactTags = Array.from(new Set(contacts.flatMap((c) => (c.tags || []) as string[])));
+      } catch {
+        contactTags = [];
+      }
+
+      if (isCancelled) return;
+      setBaseTags(uniq([...DEFAULT_TAGS, ...persistedCustom, ...contactTags]));
+    };
+
+    loadTags();
+    return () => {
+      isCancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactsCustomTagsKey]);
+
+  // Ensure selected tags always appear as options
+  useEffect(() => {
+    setTagOptions(uniq([...baseTags, ...selectedCallTags, ...selectedMessageTags]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseTags, selectedCallTags, selectedMessageTags]);
+
+  const handleSave = () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        transferType,
-        messagePriority,
-        forwardingNumber,
-        quietHoursEnabled,
-        quietHoursFrom,
-        quietHoursTo,
-        quietHoursCallMode,
-        quietHoursMessageMode,
-        urgentConfigMode,
-        urgentLabels,
-        urgentAllowedNumbers,
+        forwardCalls,
+        forwardMessages,
+        callFilter,
+        selectedCallTags,
+        messageFilter,
+        selectedMessageTags,
       })
     );
 
-    toast.success("Routing settings saved");
+    toast.success("Routing settings saved!");
   };
 
-  const forwardCalls = transferType === "calls" || transferType === "both";
-  const forwardMessages = transferType === "messages" || transferType === "both";
-
-  const setForwardCalls = (next: boolean) => {
-    if (next && forwardMessages) return setTransferType("both");
-    if (next && !forwardMessages) return setTransferType("calls");
-    // prevent turning both off
-    if (!next && forwardMessages) return setTransferType("messages");
-    return setTransferType("calls");
+  const toggleCallTag = (tag: string) => {
+    setSelectedCallTags((prev) => 
+      prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]
+    );
   };
 
-  const setForwardMessages = (next: boolean) => {
-    if (next && forwardCalls) return setTransferType("both");
-    if (next && !forwardCalls) return setTransferType("messages");
-    // prevent turning both off
-    if (!next && forwardCalls) return setTransferType("calls");
-    return setTransferType("messages");
+  const toggleMessageTag = (tag: string) => {
+    setSelectedMessageTags((prev) => 
+      prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]
+    );
   };
 
-  const timeMeta = useMemo(() => {
-    const parse = (value: string) => {
-      const [h, m] = value.split(":").map((v) => Number(v));
-      if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
-      return h * 60 + m;
-    };
-
-    const start = parse(quietHoursFrom);
-    const end = parse(quietHoursTo);
-    const raw = (end - start + 1440) % 1440;
-    const durationMinutes = raw === 0 ? 1440 : raw;
-    const isOvernight = end <= start && durationMinutes !== 1440;
-
-    const hours = Math.floor(durationMinutes / 60);
-    const minutes = durationMinutes % 60;
-    const durationText = minutes === 0 ? `${hours} hours` : `${hours}h ${minutes}m`;
-
-    return { isOvernight, durationText };
-  }, [quietHoursFrom, quietHoursTo]);
-
-  const showUrgentConfig =
-    (forwardMessages && messagePriority === "high_only") ||
-    quietHoursCallMode === "high_only" ||
-    quietHoursMessageMode === "high_only";
-
-  const toggleUrgentLabel = (id: string) => {
-    setUrgentLabels((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const addUrgentNumber = () => {
-    const phone = newUrgentPhone.trim();
-    const label = newUrgentLabel.trim();
-
-    if (!phone) {
-      toast.error("Enter a phone number");
-      return;
-    }
-    if (!isValidUsPhoneNumber(phone)) {
-      toast.error("Enter a valid phone number");
-      return;
-    }
-
-    setUrgentAllowedNumbers((prev) => {
-      const exists = prev.some((n) => n.phone === phone);
-      if (exists) return prev;
-      return [...prev, { id: `allow-${Date.now()}`, phone, label: label || undefined }];
-    });
-
-    setNewUrgentPhone("");
-    setNewUrgentLabel("");
-  };
-
-  const removeUrgentNumber = (id: string) => {
-    setUrgentAllowedNumbers((prev) => prev.filter((n) => n.id !== id));
-  };
+  // Show tags section
+  const showCallTags = forwardCalls && callFilter === "tagged";
+  const showMessageTags = forwardMessages && messageFilter !== "all";
 
   return (
     <div className="space-y-4 pb-4">
-      {/* 1) Global Forwarding (Baseline) */}
-      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
-        <div>
-          <h3 className="font-medium text-gray-800 text-sm">Global Forwarding</h3>
-          <p className="text-xs text-gray-500">This is how your number behaves during the day.</p>
+      {/* Forwarding Destination */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <h3 className="font-medium text-gray-900 text-sm">Forward To</h3>
+        
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+          <div className="text-center flex-1">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">From</p>
+            <p className="text-xs font-mono text-gray-800">{phoneNumber}</p>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-400" />
+          <div className="text-center flex-1">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wide">To</p>
+            <p className="text-xs font-mono text-gray-800">{forwardingNumber || "Not set"}</p>
+          </div>
         </div>
 
-        <div className="p-2 bg-gray-50 rounded border border-gray-100">
-          <p className="text-xs text-gray-600">
-            From: <span className="font-mono text-gray-800">Comsierge ({phoneNumber})</span>
-          </p>
-          <p className="text-xs text-gray-600">
-            To: <span className="font-mono text-gray-800">Personal</span>
-          </p>
-        </div>
-
         <div>
-          <label className="text-xs text-gray-500 block mb-1">To: Personal</label>
+          <label className="text-xs text-gray-600 block mb-1">Your personal number</label>
           <input
+            ref={inputRef}
             type="tel"
             value={forwardingNumber}
             onChange={(e) => validateForwardingNumber(e.target.value)}
+            onKeyDown={handleForwardingKeyDown}
+            onBlur={handleForwardingBlur}
             placeholder="+1 (555) 123-4567"
             className={cn(
-              "w-full px-2.5 py-2 bg-white border rounded text-gray-700 text-xs font-mono focus:outline-none",
-              forwardingNumberError ? "border-red-300 focus:border-red-400" : "border-gray-200 focus:border-indigo-400"
+              "w-full px-3 py-2 bg-white border rounded-lg text-gray-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10",
+              forwardingNumberError ? "border-red-300" : "border-gray-200"
             )}
           />
-          {forwardingNumberError ? (
-            <p className="text-[11px] text-red-500 mt-1">{forwardingNumberError}</p>
-          ) : (
-            <p className="text-[11px] text-gray-400 mt-1">Your personal number where calls/messages will be sent</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <div>
-            <p className="text-xs text-gray-500 mb-1">What to Forward</p>
-            <div className="flex items-center gap-4">
-              <label className="inline-flex items-center gap-2 text-xs text-gray-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={forwardCalls}
-                  onChange={(e) => setForwardCalls(e.target.checked)}
-                  className="accent-indigo-500"
-                />
-                Calls
-              </label>
-              <label className="inline-flex items-center gap-2 text-xs text-gray-700 select-none">
-                <input
-                  type="checkbox"
-                  checked={forwardMessages}
-                  onChange={(e) => setForwardMessages(e.target.checked)}
-                  className="accent-indigo-500"
-                />
-                Messages
-              </label>
-            </div>
-          </div>
-
-          {forwardMessages && (
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Message Filter</label>
-              <div className="inline-flex w-full bg-gray-50 border border-gray-200 rounded-full p-1">
-                {[
-                  { id: "all" as MessagePriority, label: "All" },
-                  { id: "high_medium" as MessagePriority, label: "High + Medium" },
-                  { id: "high_only" as MessagePriority, label: "High Only" },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setMessagePriority(opt.id)}
-                    className={cn(
-                      "flex-1 py-1.5 text-xs font-medium rounded-full transition-colors",
-                      messagePriority === opt.id
-                        ? "bg-white text-gray-800 shadow-sm"
-                        : "text-gray-600 hover:text-gray-800"
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {forwardingNumberError && (
+            <p className="text-xs text-red-500 mt-1">{forwardingNumberError}</p>
           )}
         </div>
       </div>
 
-      {/* High Priority (Urgent) Rules */}
-      {showUrgentConfig && (
-        <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
-          <div>
-            <h3 className="font-medium text-gray-800 text-xs">High Priority (Urgent) Rules</h3>
-            <p className="text-xs text-gray-500">
-              Used when you choose <span className="font-medium">High Only</span> or <span className="font-medium">Allow Urgent</span>.
-            </p>
-          </div>
+      {/* Save Forwarding Number Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="sm:max-w-sm bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-gray-900">Update Forwarding Number</DialogTitle>
+            <DialogDescription className="text-gray-600">
+              Are you sure you want to change your forwarding number to{" "}
+              <span className="font-mono font-medium text-gray-900">
+                {forwardingNumber || "none"}
+              </span>
+              ?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2 pt-4">
+            <button
+              type="button"
+              onClick={cancelForwardingChange}
+              disabled={isSavingForwarding}
+              className="flex-1 h-7 px-3 rounded text-xs font-medium transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:pointer-events-none focus:outline-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={saveForwardingNumber}
+              disabled={isSavingForwarding}
+              className="flex-1 h-7 px-3 rounded text-xs font-medium transition-colors bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:pointer-events-none focus:outline-none"
+            >
+              {isSavingForwarding ? "Saving..." : "Confirm"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Mode</label>
-            <div className="inline-flex w-full bg-gray-50 border border-gray-200 rounded-full p-1">
-              {[{ id: "auto" as UrgentConfigMode, label: "Auto" }, { id: "custom" as UrgentConfigMode, label: "Custom" }].map((opt) => (
+      {/* Calls */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <PhoneCall className="w-4 h-4 text-gray-600" />
+            <h3 className="font-medium text-gray-900 text-sm">Calls</h3>
+          </div>
+          <button
+            onClick={() => setForwardCalls(!forwardCalls)}
+            className={cn(
+              "relative w-10 h-5 rounded-full transition-colors",
+              forwardCalls ? "bg-gray-900" : "bg-gray-300"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                forwardCalls ? "left-5" : "left-0.5"
+              )}
+            />
+          </button>
+        </div>
+
+        {forwardCalls && (
+          <>
+            <p className="text-xs text-gray-500">Which calls should ring your phone?</p>
+            
+            <div className="space-y-1.5">
+              {[
+                { id: "all" as CallFilter, label: "All calls", icon: PhoneCall, desc: "Every incoming call" },
+                { id: "favorites" as CallFilter, label: "Favorites only", icon: Star, desc: "Contacts marked as favorite" },
+                { id: "contacts" as CallFilter, label: "Saved contacts", icon: Users, desc: "Anyone in your contacts" },
+                { id: "tagged" as CallFilter, label: "Specific tags", icon: Tag, desc: "Filter by contact tags" },
+              ].map((opt) => (
                 <button
                   key={opt.id}
-                  type="button"
-                  onClick={() => setUrgentConfigMode(opt.id)}
+                  onClick={() => setCallFilter(opt.id)}
                   className={cn(
-                    "flex-1 py-1.5 text-xs font-medium rounded-full transition-colors",
-                    urgentConfigMode === opt.id
-                      ? "bg-white text-gray-800 shadow-sm"
-                      : "text-gray-600 hover:text-gray-800"
+                    "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
+                    callFilter === opt.id
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-100 hover:border-gray-200"
                   )}
                 >
-                  {opt.label}
+                  <div className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center",
+                    callFilter === opt.id ? "bg-gray-900" : "bg-gray-100"
+                  )}>
+                    <opt.icon className={cn(
+                      "w-4 h-4",
+                      callFilter === opt.id ? "text-white" : "text-gray-500"
+                    )} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={cn(
+                      "text-sm font-medium",
+                      callFilter === opt.id ? "text-gray-900" : "text-gray-700"
+                    )}>
+                      {opt.label}
+                    </p>
+                    <p className="text-[11px] text-gray-500">{opt.desc}</p>
+                  </div>
+                  <div className={cn(
+                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                    callFilter === opt.id ? "border-gray-900" : "border-gray-300"
+                  )}>
+                    {callFilter === opt.id && (
+                      <div className="w-2 h-2 rounded-full bg-gray-900" />
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
-          </div>
 
-          {urgentConfigMode === "auto" && (
-            <p className="text-xs text-gray-600">
-              Auto uses Comsierge's best guess to treat emergencies and truly important messages as urgent.
-            </p>
-          )}
-
-          {urgentConfigMode === "custom" && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-gray-500">Urgent labels</label>
-                <span className="text-[11px] text-gray-400">{urgentLabels.length} selected</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {URGENT_LABELS.map((t) => {
-                  const selected = urgentLabels.includes(t.id);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => toggleUrgentLabel(t.id)}
-                      className={cn(
-                        "px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors",
-                        selected
-                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                      )}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label className="text-xs text-gray-500 block">Always allow these numbers</label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="tel"
-                value={newUrgentPhone}
-                onChange={(e) => setNewUrgentPhone(e.target.value)}
-                placeholder="+1 (555) 123-4567"
-                className="px-2.5 py-2 bg-white border border-gray-200 rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-indigo-400"
-              />
-              <input
-                type="text"
-                value={newUrgentLabel}
-                onChange={(e) => setNewUrgentLabel(e.target.value)}
-                placeholder="Label (optional)"
-                className="px-2.5 py-2 bg-white border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-indigo-400"
-              />
-            </div>
-            <Button
-              type="button"
-              onClick={addUrgentNumber}
-              className="h-8 text-xs bg-gray-900 hover:bg-gray-800 text-white"
-            >
-              Add number
-            </Button>
-
-            {urgentAllowedNumbers.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {urgentAllowedNumbers.map((n) => (
-                  <div
-                    key={n.id}
-                    className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-gray-50 border border-gray-200"
-                  >
-                    <span className="text-xs font-mono text-gray-800">{n.phone}</span>
-                    {n.label && <span className="text-xs text-gray-500">{n.label}</span>}
-                    <button
-                      type="button"
-                      onClick={() => removeUrgentNumber(n.id)}
-                      className="text-xs text-gray-500 hover:text-gray-800"
-                      aria-label="Remove"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+            {/* Tags selection */}
+            {showCallTags && (
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-xs text-gray-600 mb-2">Forward calls from contacts tagged:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {tagOptions.map((tag) => {
+                    const selected = selectedCallTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleCallTag(tag)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+                          selected
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        )}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* 2) Quiet Hours (Schedule) */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Moon className="w-3.5 h-3.5 text-gray-500" />
-            <h3 className="font-medium text-gray-800 text-xs">Quiet Hours</h3>
-          </div>
-          {quietHoursEnabled ? (
-            <button
-              type="button"
-              onClick={() => setQuietHoursEnabled(false)}
-              className="text-xs font-medium text-gray-600 hover:text-gray-800"
-            >
-              Turn off
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setQuietHoursEnabled(true)}
-              className="px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-            >
-              Turn on
-            </button>
-          )}
-        </div>
-        
-        {!quietHoursEnabled ? (
-          <div className="p-3 bg-white border border-gray-200 rounded-lg">
-            <p className="text-xs text-gray-600">
-              Quiet Hours is currently off. Turn it on to set a schedule and what can reach you.
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Time Range */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-gray-600">Schedule</p>
-                <div className="flex items-center gap-2">
-                  {timeMeta.isOvernight && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-indigo-100 text-indigo-700 border border-indigo-200">
-                      Overnight
-                    </span>
-                  )}
-                  <span className="text-[11px] text-gray-500">Active for {timeMeta.durationText}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
-                <Clock className="w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="time"
-                value={quietHoursFrom}
-                onChange={(e) => setQuietHoursFrom(e.target.value)}
-                className="px-2 py-1 bg-white border border-gray-200 rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-indigo-400 w-24"
-              />
-                <span className="text-xs text-gray-400">
-                  →
-                </span>
-              <input
-                type="time"
-                value={quietHoursTo}
-                onChange={(e) => setQuietHoursTo(e.target.value)}
-                className="px-2 py-1 bg-white border border-gray-200 rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-indigo-400 w-24"
-              />
-              </div>
-            </div>
-
-            {/* Exceptions */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-gray-700">Exceptions</p>
-              
-              {/* Calls behavior */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 w-20">
-                  <PhoneCall className="w-3 h-3 text-gray-500" />
-                  <span className="text-xs font-medium text-gray-700">Calls</span>
-                </div>
-                <div className="flex gap-1 flex-1">
-                  {[
-                    { id: "high_only" as QuietHoursMode, label: "Allow Urgent" },
-                    { id: "all" as QuietHoursMode, label: "Allow All" },
-                    { id: "dnd" as QuietHoursMode, label: "Block All" },
-                  ].map((mode) => (
-                    <button
-                      key={mode.id}
-                      onClick={() => setQuietHoursCallMode(mode.id)}
-                      className={cn(
-                        "flex-1 py-1.5 px-2 rounded text-xs font-medium transition-all border",
-                        quietHoursCallMode === mode.id
-                          ? mode.id === "all"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : mode.id === "high_only"
-                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                              : "bg-red-50 text-red-700 border-red-200"
-                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                      )}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Messages behavior */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 w-20">
-                  <MessageSquare className="w-3 h-3 text-gray-500" />
-                  <span className="text-xs font-medium text-gray-700">Messages</span>
-                </div>
-                <div className="flex gap-1 flex-1">
-                  {[
-                    { id: "high_only" as QuietHoursMode, label: "Allow Urgent" },
-                    { id: "all" as QuietHoursMode, label: "Allow All" },
-                    { id: "dnd" as QuietHoursMode, label: "Block All" },
-                  ].map((mode) => (
-                    <button
-                      key={mode.id}
-                      onClick={() => setQuietHoursMessageMode(mode.id)}
-                      className={cn(
-                        "flex-1 py-1.5 px-2 rounded text-xs font-medium transition-all border",
-                        quietHoursMessageMode === mode.id
-                          ? mode.id === "all"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : mode.id === "high_only"
-                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                              : "bg-red-50 text-red-700 border-red-200"
-                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                      )}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
           </>
         )}
       </div>
 
-      {/* Save */}
-      <div className="pt-1">
-        <Button
-          className="w-full h-9 text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
-          onClick={handleSave}
-          disabled={Boolean(forwardingNumberError)}
-        >
-          Save routing
-        </Button>
+      {/* Messages */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-gray-600" />
+            <h3 className="font-medium text-gray-900 text-sm">Messages</h3>
+          </div>
+          <button
+            onClick={() => setForwardMessages(!forwardMessages)}
+            className={cn(
+              "relative w-10 h-5 rounded-full transition-colors",
+              forwardMessages ? "bg-gray-900" : "bg-gray-300"
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                forwardMessages ? "left-5" : "left-0.5"
+              )}
+            />
+          </button>
+        </div>
+
+        {forwardMessages && (
+          <>
+            <p className="text-xs text-gray-500">Which messages should notify you?</p>
+            
+            <div className="space-y-1.5">
+              {[
+                { id: "all" as MessageFilter, label: "All messages", desc: "Every incoming message" },
+                { id: "important" as MessageFilter, label: "Important", desc: "High + medium priority only" },
+                { id: "urgent" as MessageFilter, label: "Urgent only", desc: "Critical messages only" },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setMessageFilter(opt.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
+                    messageFilter === opt.id
+                      ? "border-gray-900 bg-gray-50"
+                      : "border-gray-100 hover:border-gray-200"
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className={cn(
+                      "text-sm font-medium",
+                      messageFilter === opt.id ? "text-gray-900" : "text-gray-700"
+                    )}>
+                      {opt.label}
+                    </p>
+                    <p className="text-[11px] text-gray-500">{opt.desc}</p>
+                  </div>
+                  <div className={cn(
+                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                    messageFilter === opt.id ? "border-gray-900" : "border-gray-300"
+                  )}>
+                    {messageFilter === opt.id && (
+                      <div className="w-2 h-2 rounded-full bg-gray-900" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Tags selection for important/urgent */}
+            {showMessageTags && (
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-xs text-gray-600 mb-2">Always notify for messages from:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {tagOptions.map((tag) => {
+                    const selected = selectedMessageTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleMessageTag(tag)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+                          selected
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        )}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {/* Save Button */}
+      <Button
+        className="w-full h-10 text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white rounded-lg"
+        onClick={handleSave}
+        disabled={Boolean(forwardingNumberError)}
+      >
+        Save Settings
+      </Button>
     </div>
   );
 };
