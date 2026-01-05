@@ -136,6 +136,7 @@ const Auth = () => {
                   <input
                     type={showPassword ? "text" : "password"}
                     {...loginForm.register("password")}
+                    autoComplete="current-password"
                     className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                       loginForm.formState.errors.password ? "border-destructive" : "border-white/10"
                     }`}
@@ -205,6 +206,7 @@ const Auth = () => {
                   <input
                     type={showPassword ? "text" : "password"}
                     {...signupForm.register("password")}
+                    autoComplete="new-password"
                     className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                       signupForm.formState.errors.password ? "border-destructive" : "border-white/10"
                     }`}
@@ -229,6 +231,7 @@ const Auth = () => {
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     {...signupForm.register("confirmPassword")}
+                    autoComplete="new-password"
                     className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                       signupForm.formState.errors.confirmPassword ? "border-destructive" : "border-white/10"
                     }`}
