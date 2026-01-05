@@ -424,14 +424,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: '320917556164-gncrlmkhm6v412dl7h3ju3l8e2imc2lu.apps.googleusercontent.com',
         scope: 'email profile',
-        callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+        callback: async (tokenResponse: { access_token?: string; error?: string; error_description?: string }) => {
           if (tokenResponse.error) {
+            console.error('Google OAuth error:', tokenResponse.error, tokenResponse.error_description);
             toast.error('Google sign-in was cancelled');
+            return;
+          }
+
+          if (!tokenResponse.access_token) {
+            console.error('No access token received from Google');
+            toast.error('Google sign-in failed - no token received');
             return;
           }
 
           try {
             setIsLoading(true);
+            console.log('Sending access token to backend...');
             
             // Send access token to backend
             const response = await fetch(`${API_URL}/auth/google`, {
@@ -443,6 +451,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             });
 
             const data = await response.json();
+            console.log('Backend response:', response.status, data);
 
             if (!response.ok) {
               toast.error(data.message || 'Google sign-in failed');
@@ -473,8 +482,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
             setIsLoading(false);
           } catch (error) {
-            console.error('Google auth error:', error);
-            toast.error('Failed to complete Google sign-in');
+            console.error('Google auth backend error:', error);
+            toast.error('Failed to complete Google sign-in. Please try again.');
             setIsLoading(false);
           }
         },
@@ -483,8 +492,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Trigger the sign-in flow
       client.requestAccessToken();
     } catch (error) {
-      console.error('Google Sign-In error:', error);
-      toast.error('Failed to initialize Google Sign-In');
+      console.error('Google Sign-In initialization error:', error);
+      toast.error('Failed to initialize Google Sign-In. Please refresh and try again.');
     }
   };
 
