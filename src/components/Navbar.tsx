@@ -15,22 +15,10 @@ const Navbar = () => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       
-      // Add background when scrolled
+      // Add background when scrolled past threshold
       setScrolled(currentScrollY > 50);
-      
-      const faqSection = document.getElementById("faq-section");
-      
-      // Hide header when FAQ section is in view
-      if (faqSection) {
-        const faqRect = faqSection.getBoundingClientRect();
-        if (faqRect.top < 150 && faqRect.bottom > 0) {
-          setHidden(true);
-          lastScrollY.current = currentScrollY;
-          return;
-        }
-      }
 
-      // Hide on scroll down, show on scroll up
+      // Hide on scroll down (after scrolling 100px), show on scroll up
       if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
         setHidden(true);
       } else if (currentScrollY < lastScrollY.current) {
@@ -46,71 +34,93 @@ const Navbar = () => {
 
   return (
     <>
-      <nav
+      {/* Fixed container that handles the hide/show animation */}
+      <div
         className={[
-          "fixed top-0 left-0 right-0 z-50 px-4 sm:px-6",
-          "transition-all duration-300 ease-out will-change-transform",
-          hidden && !isAuthPage ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100",
-          scrolled && !isAuthPage 
-            ? "py-2 bg-background/95 backdrop-blur-lg border-b border-border/50 shadow-sm" 
-            : "py-4 sm:py-6 bg-transparent",
+          "fixed top-0 left-0 right-0 z-50",
+          "transition-transform duration-500 ease-out will-change-transform",
+          hidden && !isAuthPage ? "-translate-y-full" : "translate-y-0",
         ].join(" ")}
       >
-        <div className="max-w-7xl mx-auto flex items-center">
-          {/* Left spacer (keeps logo truly centered) */}
-          <div className="hidden md:flex w-[148px]" />
-
-          {/* Logo - Centered */}
-          <div className="flex-1 flex justify-center">
-            <Link to="/" className="text-lg sm:text-xl md:text-2xl">
-              <Logo />
-            </Link>
-          </div>
-
-          {/* Right - Login/Signup (Desktop) */}
-          {!isAuthPage && (
-            <div className="hidden md:flex items-center gap-4 w-[148px] justify-end">
-              <Link to="/auth" className="nav-link">
-                Log in
-              </Link>
-              <Link to="/auth" className="pill-button-ghost">
-                Sign up
+        {/* Inner nav with padding and conditional styling */}
+        <nav
+          className={[
+            "mx-4 sm:mx-6 mt-3 sm:mt-4 px-4 sm:px-6",
+            "transition-all duration-300 ease-out",
+            scrolled && !isAuthPage
+              ? "py-2.5 sm:py-3 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-full shadow-lg shadow-black/20"
+              : "py-3 sm:py-4 bg-transparent rounded-full",
+          ].join(" ")}
+        >
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            {/* Logo - Left aligned on desktop, centered on mobile */}
+            <div className="flex-shrink-0">
+              <Link to="/" className="text-lg sm:text-xl">
+                <Logo />
               </Link>
             </div>
-          )}
 
-          {/* Mobile Menu Toggle */}
-          {!isAuthPage && (
-            <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden text-foreground z-50"
-              aria-label={mobileOpen ? "Close menu" : "Open menu"}
-              type="button"
-            >
-              {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          )}
-        </div>
-      </nav>
+            {/* Right - Login/Signup (Desktop) */}
+            {!isAuthPage && (
+              <div className="hidden md:flex items-center gap-3">
+                <Link
+                  to="/auth"
+                  className={[
+                    "px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
+                    scrolled
+                      ? "text-white/80 hover:text-white hover:bg-white/10"
+                      : "text-white/70 hover:text-white",
+                  ].join(" ")}
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/auth"
+                  className={[
+                    "px-5 py-2 rounded-full text-sm font-medium transition-all duration-200",
+                    scrolled
+                      ? "bg-white/10 text-white border border-white/20 hover:bg-white/20"
+                      : "bg-white/5 text-white border border-white/10 hover:bg-white/10 hover:border-white/20",
+                  ].join(" ")}
+                >
+                  Get in touch
+                </Link>
+              </div>
+            )}
+
+            {/* Mobile Menu Toggle */}
+            {!isAuthPage && (
+              <button
+                onClick={() => setMobileOpen(!mobileOpen)}
+                className="md:hidden text-foreground z-50 p-2 -mr-2"
+                aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                type="button"
+              >
+                {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            )}
+          </div>
+        </nav>
+      </div>
 
       {/* Mobile Menu */}
       {mobileOpen && !isAuthPage && (
-        <div className="fixed inset-0 z-40 bg-background pt-24 px-6 md:hidden">
+        <div className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl pt-24 px-6 md:hidden">
           <div className="flex flex-col items-center gap-8">
             <div className="flex flex-col items-center gap-6">
               <Link
                 to="/auth"
-                className="text-lg text-muted-foreground"
+                className="text-lg text-muted-foreground hover:text-foreground transition-colors"
                 onClick={() => setMobileOpen(false)}
               >
                 Log in
               </Link>
               <Link
                 to="/auth"
-                className="pill-button-ghost inline-flex justify-center"
+                className="px-6 py-3 rounded-full text-base font-medium bg-white/10 text-white border border-white/20 hover:bg-white/20 transition-all"
                 onClick={() => setMobileOpen(false)}
               >
-                Sign up
+                Get in touch
               </Link>
             </div>
           </div>
