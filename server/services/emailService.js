@@ -1,6 +1,17 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend with API key (may be undefined during build)
+let resend = null;
+try {
+  if (process.env.RESEND_API_KEY) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+    console.log("Resend email service initialized");
+  } else {
+    console.warn("RESEND_API_KEY not set - email service disabled");
+  }
+} catch (error) {
+  console.error("Failed to initialize Resend:", error);
+}
 
 // Brand colors and styling
 const brandStyles = {
@@ -287,6 +298,11 @@ export const sendVerificationEmail = async (email, name, otp) => {
   `;
 
   try {
+    if (!resend) {
+      console.error("Resend not initialized - skipping email");
+      throw new Error("Email service not configured");
+    }
+    
     const { data, error } = await resend.emails.send({
       from: "Comsierge <onboarding@resend.dev>",
       to: email,
@@ -340,6 +356,11 @@ export const sendPasswordResetEmail = async (email, name, resetUrl) => {
   `;
 
   try {
+    if (!resend) {
+      console.error("Resend not initialized - skipping email");
+      throw new Error("Email service not configured");
+    }
+    
     const { data, error } = await resend.emails.send({
       from: "Comsierge <onboarding@resend.dev>",
       to: email,
@@ -393,6 +414,11 @@ export const sendWelcomeEmail = async (email, name) => {
   `;
 
   try {
+    if (!resend) {
+      console.warn("Resend not initialized - skipping welcome email");
+      return { success: false };
+    }
+    
     const { data, error } = await resend.emails.send({
       from: "Comsierge <onboarding@resend.dev>",
       to: email,
@@ -443,6 +469,11 @@ export const sendAccountLinkedEmail = async (email, name) => {
   `;
 
   try {
+    if (!resend) {
+      console.warn("Resend not initialized - skipping account linked email");
+      return { success: false };
+    }
+    
     const { data, error } = await resend.emails.send({
       from: "Comsierge <onboarding@resend.dev>",
       to: email,
