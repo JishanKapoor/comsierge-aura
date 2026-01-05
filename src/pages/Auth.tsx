@@ -88,6 +88,16 @@ const Auth = () => {
     img.src = preloadedImages.heroNyc;
   }, []);
 
+  // Allow deep-linking into signup/login
+  useEffect(() => {
+    const mode = searchParams.get("mode");
+    if (mode === "signup") {
+      setView("signup");
+    } else if (mode === "login") {
+      setView("login");
+    }
+  }, [searchParams]);
+
   // Resend cooldown timer
   useEffect(() => {
     if (resendCooldown > 0) {

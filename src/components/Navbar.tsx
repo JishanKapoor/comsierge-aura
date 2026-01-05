@@ -10,6 +10,12 @@ const Navbar = () => {
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
   const lastScrollY = useRef(0);
+  const scrollStopTimer = useRef<number | null>(null);
+  const mobileOpenRef = useRef(false);
+
+  useEffect(() => {
+    mobileOpenRef.current = mobileOpen;
+  }, [mobileOpen]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -19,18 +25,50 @@ const Navbar = () => {
       setScrolled(currentScrollY > 50);
 
       // Hide on scroll down (after scrolling 100px), show on scroll up
-      if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
-        setHidden(true);
-      } else if (currentScrollY < lastScrollY.current) {
-        setHidden(false);
+      if (!mobileOpenRef.current) {
+        if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+          setHidden(true);
+        } else if (currentScrollY < lastScrollY.current) {
+          setHidden(false);
+        }
       }
+
+      // If the user stops scrolling, show the header again.
+      if (scrollStopTimer.current) {
+        window.clearTimeout(scrollStopTimer.current);
+      }
+      scrollStopTimer.current = window.setTimeout(() => {
+        if (!mobileOpenRef.current) {
+          setHidden(false);
+        }
+      }, 180);
 
       lastScrollY.current = currentScrollY;
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (scrollStopTimer.current) {
+        window.clearTimeout(scrollStopTimer.current);
+      }
+    };
   }, []);
+
+  // Close mobile menu on route changes
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   return (
     <>
@@ -39,7 +77,7 @@ const Navbar = () => {
         className={[
           "fixed top-0 left-0 right-0 z-50",
           "transition-transform duration-500 ease-out will-change-transform",
-          hidden && !isAuthPage ? "-translate-y-full" : "translate-y-0",
+          hidden && !isAuthPage && !mobileOpen ? "-translate-y-full" : "translate-y-0",
         ].join(" ")}
       >
         {/* Inner nav with padding and conditional styling */}
@@ -52,76 +90,96 @@ const Navbar = () => {
               : "py-3 sm:py-4 bg-transparent rounded-full",
           ].join(" ")}
         >
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            {/* Logo - Left aligned on desktop, centered on mobile */}
-            <div className="flex-shrink-0">
+          <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
+            {/* Left column (kept for balance) */}
+            <div className="justify-self-start" />
+
+            {/* Center - Logo */}
+            <div className="justify-self-center">
               <Link to="/" className="text-lg sm:text-xl">
                 <Logo />
               </Link>
             </div>
 
-            {/* Right - Login/Signup (Desktop) */}
-            {!isAuthPage && (
-              <div className="hidden md:flex items-center gap-3">
-                <Link
-                  to="/auth"
-                  className={[
-                    "px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
-                    scrolled
-                      ? "text-white/80 hover:text-white hover:bg-white/10"
-                      : "text-white/70 hover:text-white",
-                  ].join(" ")}
-                >
-                  Log in
-                </Link>
-                <Link
-                  to="/auth"
-                  className={[
-                    "px-5 py-2 rounded-full text-sm font-medium transition-all duration-200",
-                    scrolled
-                      ? "bg-white/10 text-white border border-white/20 hover:bg-white/20"
-                      : "bg-white/5 text-white border border-white/10 hover:bg-white/10 hover:border-white/20",
-                  ].join(" ")}
-                >
-                  Get in touch
-                </Link>
-              </div>
-            )}
+            {/* Right - Desktop actions + Mobile toggle */}
+            <div className="justify-self-end flex items-center">
+              {!isAuthPage && (
+                <div className="hidden md:flex items-center gap-3">
+                  <Link
+                    to="/auth"
+                    className={[
+                      "px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
+                      scrolled
+                        ? "text-white/80 hover:text-white hover:bg-white/10"
+                        : "text-white/70 hover:text-white",
+                    ].join(" ")}
+                  >
+                    Log in
+                  </Link>
+                  <Link
+                    to="/auth?mode=signup"
+                    className={[
+                      "px-5 py-2 rounded-full text-sm font-medium transition-all duration-200",
+                      scrolled
+                        ? "bg-white/10 text-white border border-white/20 hover:bg-white/20"
+                        : "bg-white/5 text-white border border-white/10 hover:bg-white/10 hover:border-white/20",
+                    ].join(" ")}
+                  >
+                    Get Started
+                  </Link>
+                </div>
+              )}
 
-            {/* Mobile Menu Toggle */}
-            {!isAuthPage && (
-              <button
-                onClick={() => setMobileOpen(!mobileOpen)}
-                className="md:hidden text-foreground z-50 p-2 -mr-2"
-                aria-label={mobileOpen ? "Close menu" : "Open menu"}
-                type="button"
-              >
-                {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
-            )}
+              {!isAuthPage && (
+                <button
+                  onClick={() => setMobileOpen(!mobileOpen)}
+                  className="md:hidden text-foreground z-50 p-2 -mr-2"
+                  aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                  type="button"
+                >
+                  {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+              )}
+            </div>
           </div>
         </nav>
       </div>
 
       {/* Mobile Menu */}
-      {mobileOpen && !isAuthPage && (
-        <div className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl pt-24 px-6 md:hidden">
-          <div className="flex flex-col items-center gap-8">
-            <div className="flex flex-col items-center gap-6">
-              <Link
-                to="/auth"
-                className="text-lg text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setMobileOpen(false)}
-              >
-                Log in
-              </Link>
-              <Link
-                to="/auth"
-                className="px-6 py-3 rounded-full text-base font-medium bg-white/10 text-white border border-white/20 hover:bg-white/20 transition-all"
-                onClick={() => setMobileOpen(false)}
-              >
-                Get in touch
-              </Link>
+      {!isAuthPage && (
+        <div
+          className={[
+            "fixed inset-0 z-40 md:hidden",
+            "bg-background/95 backdrop-blur-xl",
+            "transition-opacity duration-500 ease-out",
+            mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+          ].join(" ")}
+          aria-hidden={!mobileOpen}
+        >
+          <div
+            className={[
+              "pt-24 px-6",
+              "transition-transform duration-500 ease-out",
+              mobileOpen ? "translate-y-0" : "-translate-y-2",
+            ].join(" ")}
+          >
+            <div className="flex flex-col items-center gap-8">
+              <div className="flex flex-col items-center gap-6">
+                <Link
+                  to="/auth"
+                  className="text-lg text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/auth?mode=signup"
+                  className="px-6 py-3 rounded-full text-base font-medium bg-white/10 text-white border border-white/20 hover:bg-white/20 transition-all duration-200"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Get Started
+                </Link>
+              </div>
             </div>
           </div>
         </div>
