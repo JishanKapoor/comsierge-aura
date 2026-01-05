@@ -483,6 +483,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               forwardingNumber: data.data.user.forwardingNumber,
             };
             localStorage.setItem('comsierge_user', JSON.stringify(userData));
+            setCachedSession(userData);
             setUser(userData);
 
             if (data.data.linked) {
@@ -491,6 +492,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               toast.success('Account created with Google!');
             } else {
               toast.success('Signed in with Google!');
+            }
+
+            // Ensure we leave /auth immediately after Google sign-in.
+            // This avoids edge cases where route guards or state timing keep the user on the auth screen.
+            try {
+              const nextPath =
+                userData.role === "admin"
+                  ? "/admin"
+                  : !userData.phoneNumber
+                    ? "/select-number"
+                    : !userData.forwardingNumber
+                      ? "/setup-forwarding"
+                      : "/dashboard";
+              window.location.replace(nextPath);
+            } catch {
+              // ignore
             }
 
             setIsLoading(false);
