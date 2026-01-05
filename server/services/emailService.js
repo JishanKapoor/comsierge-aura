@@ -288,7 +288,7 @@ export const sendVerificationEmail = async (email, name, otp) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: "Comsierge <noreply@comsierge.com>",
+      from: "Comsierge <onboarding@resend.dev>",
       to: email,
       subject: `${otp} is your Comsierge verification code`,
       html: emailWrapper(content, `Your verification code is ${otp}. Valid for 10 minutes.`),
@@ -341,7 +341,7 @@ export const sendPasswordResetEmail = async (email, name, resetUrl) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: "Comsierge <noreply@comsierge.com>",
+      from: "Comsierge <onboarding@resend.dev>",
       to: email,
       subject: "Reset your Comsierge password",
       html: emailWrapper(content, `Reset your Comsierge password. Link expires in 1 hour.`),
@@ -394,7 +394,7 @@ export const sendWelcomeEmail = async (email, name) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: "Comsierge <noreply@comsierge.com>",
+      from: "Comsierge <onboarding@resend.dev>",
       to: email,
       subject: "Welcome to Comsierge! 🎉",
       html: emailWrapper(content, `Welcome to Comsierge! Your account is now active.`),
@@ -444,7 +444,7 @@ export const sendAccountLinkedEmail = async (email, name) => {
 
   try {
     const { data, error } = await resend.emails.send({
-      from: "Comsierge <noreply@comsierge.com>",
+      from: "Comsierge <onboarding@resend.dev>",
       to: email,
       subject: "Google account linked to Comsierge",
       html: emailWrapper(content, `Your Google account has been linked to Comsierge.`),
