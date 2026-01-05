@@ -1,9 +1,19 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 import User from "../models/User.js";
 
 const router = express.Router();
+
+// Email transporter setup
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "comsiergeai@Gmail.com",
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -404,7 +414,8 @@ router.post("/google", async (req, res) => {
     const googleResponse = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`);
 
     if (!googleResponse.ok) {
-      console.error("Google userinfo error:", await googleResponse.text());
+      const errorText = await googleResponse.text();
+      console.error("Google userinfo error details:", errorText);
       return res.status(401).json({ success: false, message: "Invalid or expired Google token" });
     }
 
@@ -503,6 +514,28 @@ router.post("/forgot-password", async (req, res) => {
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
     console.log(`Password reset for ${email}: ${resetUrl}`);
+
+    try {
+      await transporter.sendMail({
+        from: '"Comsierge AI" <comsiergeai@Gmail.com>',
+        to: email,
+        subject: "Password Reset Request",
+        html: `
+          <h1>Password Reset Request</h1>
+          <p>You requested a password reset for your Comsierge AI account.</p>
+          <p>Please click the link below to reset your password:</p>
+          <a href="${resetUrl}" style="padding: 10px 20px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">Reset Password</a>
+          <p>If you didn't request this, please ignore this email.</p>
+          <p>This link will expire in 1 hour.</p>
+        `,
+      });
+      console.log(`Password reset email sent to ${email}`);
+    } catch (emailError) {
+      console.error("Error sending email:", emailError);
+      // Don't fail the request, but log the error. 
+      // In production, we might want to alert the user, 
+      // but for security we usually pretend it worked.
+    }
 
     res.json({
       success: true,
