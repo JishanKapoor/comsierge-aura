@@ -143,7 +143,7 @@ const ForgotPassword = () => {
 
               <div className="mt-6 bg-primary/5 border border-primary/10 rounded-xl p-4">
                 <p className="text-xs text-muted-foreground text-center">
-                  Didn't receive the email? Check your spam folder or{" "}
+                  Didn't receive the email? Check spam/promotions. If you signed up with Google, use Google sign-in (password reset won’t apply). Or{" "}
                   <button
                     type="button"
                     onClick={() => setIsSubmitted(false)}
