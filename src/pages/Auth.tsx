@@ -141,10 +141,15 @@ const Auth = () => {
   const handleSignupSubmit = async (data: SignupFormData) => {
     const result = await signup(data.name, data.email, data.password);
     
-    if (result.success && result.requiresVerification && result.email) {
-      setVerificationEmail(result.email);
-      setView("verify");
-      setResendCooldown(60);
+    if (result.success) {
+      // Navigate based on user state
+      const userData = localStorage.getItem("comsierge_user");
+      if (userData) {
+        const user = JSON.parse(userData);
+        navigateToUser(user);
+      } else {
+        navigate("/select-number");
+      }
     }
   };
 

@@ -311,22 +311,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return { success: false, message: data.message };
       }
 
-      // Check if verification is required
-      if (data.data?.requiresVerification) {
-        toast.success("Verification code sent to your email!");
-        setIsLoading(false);
-        return { 
-          success: true, 
-          requiresVerification: true, 
-          email: data.data.email 
-        };
-      }
-
-      // Old flow (shouldn't happen now, but just in case)
+      // Direct signup - save token and user
       if (data.data?.token) {
         localStorage.setItem("comsierge_token", data.data.token);
-        setCachedSession(data.data.user);
-        setUser(data.data.user);
+        const userData = {
+          id: data.data.user.id,
+          email: data.data.user.email,
+          name: data.data.user.name,
+          role: data.data.user.role,
+          avatar: data.data.user.avatar,
+          phoneNumber: data.data.user.phoneNumber,
+          forwardingNumber: data.data.user.forwardingNumber,
+        };
+        localStorage.setItem("comsierge_user", JSON.stringify(userData));
+        setCachedSession(userData);
+        setUser(userData);
       }
       
       toast.success("Account created successfully!");
@@ -406,9 +405,87 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const loginWithGoogle = () => {
-    // Redirect to backend Google OAuth route
-    window.location.href = `${API_URL}/auth/google`;
+  const loginWithGoogle = async () => {
+    try {
+      // Load Google Identity Services script if not already loaded
+      if (!window.google) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://accounts.google.com/gsi/client';
+          script.async = true;
+          script.defer = true;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Failed to load Google Sign-In'));
+          document.head.appendChild(script);
+        });
+      }
+
+      // Initialize Google Sign-In
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: '320917556164-gncrlmkhm6v412dl7h3ju3l8e2imc2lu.apps.googleusercontent.com',
+        scope: 'email profile',
+        callback: async (tokenResponse: { access_token?: string; error?: string }) => {
+          if (tokenResponse.error) {
+            toast.error('Google sign-in was cancelled');
+            return;
+          }
+
+          try {
+            setIsLoading(true);
+            
+            // Send access token to backend
+            const response = await fetch(`${API_URL}/auth/google`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ accessToken: tokenResponse.access_token }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              toast.error(data.message || 'Google sign-in failed');
+              setIsLoading(false);
+              return;
+            }
+
+            // Store token and user
+            localStorage.setItem('comsierge_token', data.data.token);
+            const userData = {
+              id: data.data.user.id,
+              email: data.data.user.email,
+              name: data.data.user.name,
+              role: data.data.user.role,
+              phoneNumber: data.data.user.phoneNumber,
+              forwardingNumber: data.data.user.forwardingNumber,
+            };
+            localStorage.setItem('comsierge_user', JSON.stringify(userData));
+            setUser(userData);
+
+            if (data.data.linked) {
+              toast.success('Google account linked successfully!');
+            } else if (data.data.isNew) {
+              toast.success('Account created with Google!');
+            } else {
+              toast.success('Signed in with Google!');
+            }
+
+            setIsLoading(false);
+          } catch (error) {
+            console.error('Google auth error:', error);
+            toast.error('Failed to complete Google sign-in');
+            setIsLoading(false);
+          }
+        },
+      });
+
+      // Trigger the sign-in flow
+      client.requestAccessToken();
+    } catch (error) {
+      console.error('Google Sign-In error:', error);
+      toast.error('Failed to initialize Google Sign-In');
+    }
   };
 
   const logout = () => {
