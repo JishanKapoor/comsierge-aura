@@ -159,7 +159,15 @@ const Auth = () => {
     const result = await signup(data.name, data.email, data.password);
     
     if (result.success) {
-      // Navigate based on user state
+      // Check if OTP verification is required
+      if (result.requiresVerification && result.email) {
+        setVerificationEmail(result.email);
+        setView("verify");
+        setResendCooldown(60);
+        return;
+      }
+      
+      // Navigate based on user state (only if no verification needed)
       const userData = localStorage.getItem("comsierge_user");
       if (userData) {
         const user = JSON.parse(userData);

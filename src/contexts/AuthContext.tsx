@@ -311,7 +311,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return { success: false, message: data.message };
       }
 
-      // Direct signup - save token and user
+      // Check if email verification is required
+      if (data.requiresVerification) {
+        toast.success(data.message || "Please check your email for verification code.");
+        setIsLoading(false);
+        return { success: true, requiresVerification: true, email: data.email };
+      }
+
+      // Direct signup (if verification is disabled) - save token and user
       if (data.data?.token) {
         localStorage.setItem("comsierge_token", data.data.token);
         const userData = {
@@ -326,9 +333,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem("comsierge_user", JSON.stringify(userData));
         setCachedSession(userData);
         setUser(userData);
+        toast.success("Account created successfully!");
       }
       
-      toast.success("Account created successfully!");
       setIsLoading(false);
       return { success: true };
     } catch (error) {
