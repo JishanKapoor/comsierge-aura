@@ -27,7 +27,7 @@ services:
         sync: false
       - key: TWILIO_PHONE_NUMBER
         sync: false
-    healthCheckPath: /api/auth/me
+    healthCheckPath: /api/health
     autoDeploy: true
 
   # Frontend
