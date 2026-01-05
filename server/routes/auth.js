@@ -1,8 +1,19 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 
 const router = express.Router();
+
+// Google OAuth client
+const googleClient = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.NODE_ENV === "production"
+    ? "https://comsierge-iwe0.onrender.com/api/auth/google/callback"
+    : "http://localhost:5000/api/auth/google/callback"
+);
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -569,6 +580,229 @@ router.post("/create-admin", async (req, res) => {
       success: false,
       message: "Server error",
       error: error.message,
+    });
+  }
+});
+
+// ========== GOOGLE OAUTH ==========
+
+// @route   GET /api/auth/google
+// @desc    Redirect to Google OAuth
+// @access  Public
+router.get("/google", (req, res) => {
+  const frontendUrl = process.env.NODE_ENV === "production"
+    ? "https://comsierge-ai.onrender.com"
+    : "http://localhost:5173";
+  
+  const authUrl = googleClient.generateAuthUrl({
+    access_type: "offline",
+    scope: ["profile", "email"],
+    prompt: "consent",
+    state: frontendUrl, // Pass frontend URL in state for redirect
+  });
+  
+  res.redirect(authUrl);
+});
+
+// @route   GET /api/auth/google/callback
+// @desc    Handle Google OAuth callback
+// @access  Public
+router.get("/google/callback", async (req, res) => {
+  const frontendUrl = process.env.NODE_ENV === "production"
+    ? "https://comsierge-ai.onrender.com"
+    : "http://localhost:5173";
+  
+  try {
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.redirect(`${frontendUrl}/auth?error=no_code`);
+    }
+
+    // Exchange code for tokens
+    const { tokens } = await googleClient.getToken(code);
+    googleClient.setCredentials(tokens);
+
+    // Get user info from Google
+    const ticket = await googleClient.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
+
+    // Find or create user
+    let user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      // Create new user with Google info
+      user = await User.create({
+        name: name || email.split("@")[0],
+        email: email.toLowerCase(),
+        password: crypto.randomBytes(32).toString("hex"), // Random password for OAuth users
+        avatar: picture,
+        googleId,
+        isActive: true,
+      });
+      console.log("Created new user via Google OAuth:", email);
+    } else {
+      // Update existing user with Google info if missing
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.avatar && picture) {
+        user.avatar = picture;
+      }
+      user.lastLogin = new Date();
+      await user.save();
+      console.log("Existing user logged in via Google:", email);
+    }
+
+    // Generate JWT token
+    const token = generateToken(user._id);
+
+    // Redirect to frontend with token
+    res.redirect(`${frontendUrl}/auth?token=${token}&google=success`);
+  } catch (error) {
+    console.error("Google OAuth callback error:", error);
+    res.redirect(`${frontendUrl}/auth?error=oauth_failed`);
+  }
+});
+
+// ========== FORGOT PASSWORD ==========
+
+// @route   POST /api/auth/forgot-password
+// @desc    Request password reset (sends email)
+// @access  Public
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an email address",
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({
+        success: true,
+        message: "If an account exists with this email, you will receive a password reset link",
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+
+    // Save reset token to user (expires in 1 hour)
+    user.passwordResetToken = resetTokenHash;
+    user.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+    await user.save();
+
+    // Build reset URL
+    const frontendUrl = process.env.NODE_ENV === "production"
+      ? "https://comsierge-ai.onrender.com"
+      : "http://localhost:5173";
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    // For now, log the reset URL (in production, send via email)
+    console.log(`Password reset requested for ${email}`);
+    console.log(`Reset URL: ${resetUrl}`);
+
+    // TODO: Send email with reset link using your email service
+    // Example with Resend:
+    // await resend.emails.send({
+    //   from: 'noreply@comsierge.com',
+    //   to: email,
+    //   subject: 'Reset your Comsierge password',
+    //   html: `<p>Click <a href="${resetUrl}">here</a> to reset your password. Link expires in 1 hour.</p>`
+    // });
+
+    res.json({
+      success: true,
+      message: "If an account exists with this email, you will receive a password reset link",
+      // Include reset URL in dev for testing
+      ...(process.env.NODE_ENV !== "production" && { resetUrl }),
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
+  }
+});
+
+// @route   POST /api/auth/reset-password
+// @desc    Reset password with token
+// @access  Public
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide token and new password",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    // Hash the token to compare with stored hash
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    // Find user with valid reset token
+    const user = await User.findOne({
+      passwordResetToken: tokenHash,
+      passwordResetExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    // Update password and clear reset token
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    // Generate new JWT token so user is logged in
+    const jwtToken = generateToken(user._id);
+
+    res.json({
+      success: true,
+      message: "Password reset successfully",
+      data: {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+        token: jwtToken,
+      },
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
     });
   }
 });

@@ -54,6 +54,21 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Google OAuth fields
+    googleId: {
+      type: String,
+      default: null,
+      sparse: true,
+    },
+    // Password reset fields
+    passwordResetToken: {
+      type: String,
+      default: null,
+    },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt

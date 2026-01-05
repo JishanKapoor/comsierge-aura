@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import SelectNumber from "./pages/SelectNumber";
 import SetupForwarding from "./pages/SetupForwarding";
 import Dashboard from "./pages/Dashboard";
@@ -33,6 +34,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Index />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/select-number" element={<SelectNumber />} />
       <Route path="/setup-forwarding" element={<SetupForwarding />} />
       <Route path="/dashboard" element={<Dashboard />} />

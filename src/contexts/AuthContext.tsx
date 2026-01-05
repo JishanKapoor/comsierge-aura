@@ -294,9 +294,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const loginWithGoogle = () => {
-    toast.info("Google OAuth coming soon!", {
-      duration: 3000,
-    });
+    // Redirect to backend Google OAuth route
+    window.location.href = `${API_URL}/auth/google`;
   };
 
   const logout = () => {
@@ -318,12 +317,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const requestPasswordReset = async (email: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Simulate API delay (implement actual endpoint later)
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
 
-    setIsLoading(false);
-    toast.success("Password reset link sent! Check your email.");
-    return true;
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.message || "Failed to send reset link");
+        setIsLoading(false);
+        return false;
+      }
+
+      toast.success("If an account exists with this email, you will receive a password reset link.");
+      setIsLoading(false);
+      return true;
+    } catch (error) {
+      console.error("Password reset error:", error);
+      toast.error("Unable to connect to server. Please try again.");
+      setIsLoading(false);
+      return false;
+    }
   };
 
   return (

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { ArrowRight, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { loginSchema, signupSchema, LoginFormData, SignupFormData } from "@/lib/validations";
 import { preloadedImages } from "@/hooks/useImagePreloader";
@@ -15,7 +16,56 @@ const Auth = () => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useNavigate();
-  const { login, signup, loginWithGoogle, isLoading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { login, signup, loginWithGoogle, isLoading, refreshUser } = useAuth();
+
+  // Handle Google OAuth callback
+  useEffect(() => {
+    const token = searchParams.get("token");
+    const googleSuccess = searchParams.get("google");
+    const error = searchParams.get("error");
+
+    if (error) {
+      if (error === "oauth_failed") {
+        toast.error("Google sign-in failed. Please try again.");
+      } else if (error === "no_code") {
+        toast.error("Authorization code missing.");
+      } else {
+        toast.error("Authentication error. Please try again.");
+      }
+      // Clear URL params
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    if (token && googleSuccess === "success") {
+      // Store token and refresh user data
+      localStorage.setItem("comsierge_token", token);
+      toast.success("Successfully signed in with Google!");
+      
+      // Fetch user data and navigate
+      refreshUser().then(() => {
+        // Small delay to ensure user state is updated
+        setTimeout(() => {
+          const userData = localStorage.getItem("comsierge_user");
+          if (userData) {
+            const user = JSON.parse(userData);
+            if (user.role === "admin") {
+              navigate("/admin", { replace: true });
+            } else if (!user.phoneNumber) {
+              navigate("/select-number", { replace: true });
+            } else if (!user.forwardingNumber) {
+              navigate("/setup-forwarding", { replace: true });
+            } else {
+              navigate("/dashboard", { replace: true });
+            }
+          } else {
+            navigate("/dashboard", { replace: true });
+          }
+        }, 100);
+      });
+    }
+  }, [searchParams, navigate, refreshUser]);
 
   // Preload background image
   useEffect(() => {
