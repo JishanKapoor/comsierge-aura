@@ -1,4 +1,5 @@
 // API-based store for messages and conversations (replaces localStorage)
+import { API_BASE_URL } from "@/config";
 
 export type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
 export type SentimentType = "positive" | "neutral" | "negative";
@@ -105,7 +106,7 @@ export const searchMessages = async (params: SearchParams): Promise<SearchResult
   if (params.limit) queryParams.set("limit", params.limit.toString());
   if (params.skip) queryParams.set("skip", params.skip.toString());
 
-  const response = await fetch(`/api/messages/search?${queryParams.toString()}`, {
+  const response = await fetch(`${API_BASE_URL}/api/messages/search?${queryParams.toString()}`, {
     headers: getAuthHeaders(),
   });
 
@@ -147,7 +148,7 @@ export const searchMessages = async (params: SearchParams): Promise<SearchResult
 
 // Fetch all conversations with optional filter
 export const fetchConversations = async (filter: FilterType = "all"): Promise<Conversation[]> => {
-  const response = await fetch(`/api/messages/conversations?filter=${filter}&_t=${Date.now()}`, {
+  const response = await fetch(`${API_BASE_URL}/api/messages/conversations?filter=${filter}&_t=${Date.now()}`, {
     headers: getAuthHeaders(),
   });
 
@@ -184,7 +185,7 @@ export const fetchConversations = async (filter: FilterType = "all"): Promise<Co
 
 // Fetch message thread
 export const fetchThread = async (contactPhone: string, limit = 50): Promise<Message[]> => {
-  const response = await fetch(`/api/messages/thread/${encodeURIComponent(contactPhone)}?limit=${limit}&_t=${Date.now()}`, {
+  const response = await fetch(`${API_BASE_URL}/api/messages/thread/${encodeURIComponent(contactPhone)}?limit=${limit}&_t=${Date.now()}`, {
     headers: getAuthHeaders(),
   });
 
@@ -227,7 +228,7 @@ export const saveMessage = async (message: {
   toNumber?: string;
 }): Promise<Message | null> => {
   try {
-    const response = await fetch("/api/messages", {
+    const response = await fetch(`${API_BASE_URL}/api/messages`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(message),
@@ -264,7 +265,7 @@ export const updateConversation = async (
   updates: Partial<Pick<Conversation, "isPinned" | "isMuted" | "isArchived" | "isHeld" | "isBlocked" | "isPriority" | "priority" | "transferPrefs" | "language">>
 ): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/messages/conversation/${encodeURIComponent(contactPhone)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(contactPhone)}`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -280,7 +281,7 @@ export const updateConversation = async (
 // Delete conversation
 export const deleteConversation = async (contactPhone: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/messages/conversation/${encodeURIComponent(contactPhone)}`, {
+    const response = await fetch(`${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(contactPhone)}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
@@ -298,7 +299,7 @@ export const updateMessage = async (
   updates: { isRead?: boolean; isHeld?: boolean; isSpam?: boolean; labels?: string[] }
 ): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/messages/${messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -314,7 +315,7 @@ export const updateMessage = async (
 // Delete a single message
 export const deleteMessage = async (messageId: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/messages/${messageId}`, {
+    const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
@@ -344,7 +345,7 @@ export const bulkMessageAction = async (
   value?: string
 ): Promise<{ success: boolean; count: number }> => {
   try {
-    const response = await fetch("/api/messages/bulk-action", {
+    const response = await fetch(`${API_BASE_URL}/api/messages/bulk-action`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ messageIds, action, value }),

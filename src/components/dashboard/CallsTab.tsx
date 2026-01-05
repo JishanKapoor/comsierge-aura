@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { API_BASE_URL } from "@/config";
 import {
-  Search,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
@@ -58,7 +58,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     const loadTwilioConfig = async () => {
       try {
         const token = localStorage.getItem("comsierge_token");
-        const response = await fetch("/api/twilio/config", {
+        const response = await fetch(`${API_BASE_URL}/api/twilio/config`, {
           headers: { 
             "Authorization": token ? `Bearer ${token}` : "" 
           }
@@ -505,7 +505,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         return;
       }
       
-      const response = await fetch("/api/twilio/token", {
+      const response = await fetch(`${API_BASE_URL}/api/twilio/token`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -627,7 +627,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       };
       
       const token = localStorage.getItem("comsierge_token");
-      const response = await fetch("/api/twilio/make-call", {
+      const response = await fetch(`${API_BASE_URL}/api/twilio/make-call`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -727,7 +727,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     // If we have a real call SID, end it via API
     if (creds && activeCall.callSid) {
       try {
-        await fetch("/api/twilio/end-call", {
+        await fetch(`${API_BASE_URL}/api/twilio/end-call`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -803,7 +803,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     
     if (creds && activeCall.callSid) {
       try {
-        const response = await fetch("/api/twilio/hold-call", {
+        const response = await fetch(`${API_BASE_URL}/api/twilio/hold-call`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -835,7 +835,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     
     if (creds && activeCall.callSid) {
       try {
-        const response = await fetch("/api/twilio/record-call", {
+        const response = await fetch(`${API_BASE_URL}/api/twilio/record-call`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -866,7 +866,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     
     if (creds && activeCall.callSid) {
       try {
-        await fetch("/api/twilio/send-dtmf", {
+        await fetch(`${API_BASE_URL}/api/twilio/send-dtmf`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -907,7 +907,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       if (creds) {
         try {
           const confName = `comsierge-conf-${Date.now()}`;
-          const response = await fetch("/api/twilio/create-conference", {
+          const response = await fetch(`${API_BASE_URL}/api/twilio/create-conference`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -953,7 +953,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       // Add to existing conference
       if (creds) {
         try {
-          const response = await fetch("/api/twilio/add-participant", {
+          const response = await fetch(`${API_BASE_URL}/api/twilio/add-participant`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1017,7 +1017,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     
     if (creds && activeCall.callSid) {
       try {
-        const response = await fetch("/api/twilio/transfer-call", {
+        const response = await fetch(`${API_BASE_URL}/api/twilio/transfer-call`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

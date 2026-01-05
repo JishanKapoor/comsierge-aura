@@ -1,4 +1,5 @@
 // API-based store for call records (replaces localStorage)
+import { API_BASE_URL } from "@/config";
 
 export interface CallRecord {
   id: string;
@@ -37,7 +38,7 @@ export const fetchCalls = async (type?: string, limit = 50): Promise<CallRecord[
     const params = new URLSearchParams({ limit: String(limit) });
     if (type && type !== "all") params.append("type", type);
     
-    const response = await fetch(`/api/calls?${params}`, {
+    const response = await fetch(`${API_BASE_URL}/api/calls?${params}`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -86,7 +87,7 @@ export const saveCallRecord = async (call: {
   endTime?: string;
 }): Promise<CallRecord | null> => {
   try {
-    const response = await fetch("/api/calls", {
+    const response = await fetch(`${API_BASE_URL}/api/calls`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(call),
@@ -124,7 +125,7 @@ export const updateCallRecord = async (
   updates: Partial<Pick<CallRecord, "status" | "duration" | "endTime" | "recordingUrl" | "transcription">>
 ): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/calls/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/calls/${id}`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -140,7 +141,7 @@ export const updateCallRecord = async (
 // Delete a call record
 export const deleteCallRecord = async (id: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/calls/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/calls/${id}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
@@ -156,7 +157,7 @@ export const deleteCallRecord = async (id: string): Promise<boolean> => {
 export const fetchCallsForContact = async (phone: string, limit = 50): Promise<CallRecord[]> => {
   try {
     const encodedPhone = encodeURIComponent(phone);
-    const response = await fetch(`/api/calls/contact/${encodedPhone}?limit=${limit}`, {
+    const response = await fetch(`${API_BASE_URL}/api/calls/contact/${encodedPhone}?limit=${limit}`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -198,7 +199,7 @@ export interface CallStats {
 
 export const fetchCallStats = async (): Promise<CallStats | null> => {
   try {
-    const response = await fetch("/api/calls/stats", {
+    const response = await fetch(`${API_BASE_URL}/api/calls/stats`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();

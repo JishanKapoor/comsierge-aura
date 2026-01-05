@@ -995,7 +995,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           return;
         }
         
-        const response = await fetch("/api/twilio/send-sms", {
+        const response = await fetch(`${API_BASE_URL}/api/twilio/send-sms`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -1206,7 +1206,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const context = buildConversationContext();
       const token = localStorage.getItem("comsierge_token");
       
-      const response = await fetch("/api/ai/conversation-chat", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/conversation-chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1440,7 +1440,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         return;
       }
       
-      const response = await fetch("/api/twilio/token", {
+      const response = await fetch(`${API_BASE_URL}/api/twilio/token`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -1532,7 +1532,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     
     try {
       const token = localStorage.getItem("comsierge_token");
-      const response = await fetch("/api/twilio/make-call", {
+      const response = await fetch(`${API_BASE_URL}/api/twilio/make-call`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",

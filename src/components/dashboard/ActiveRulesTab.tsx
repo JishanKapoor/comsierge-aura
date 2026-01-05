@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { API_BASE_URL } from "@/config";
 import {
-  Trash2,
   Zap,
   Clock,
   ArrowRightLeft,
@@ -173,7 +173,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
 
     try {
       const token = localStorage.getItem("comsierge_token");
-      const response = await fetch("/api/ai/chat", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

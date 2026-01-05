@@ -51,7 +51,9 @@ const Navbar = () => {
           "fixed top-0 left-0 right-0 z-50 px-4 sm:px-6",
           "transition-all duration-300 ease-out will-change-transform",
           hidden && !isAuthPage ? "-translate-y-full opacity-0" : "translate-y-0 opacity-100",
-          scrolled && !isAuthPage ? "py-3 bg-background/80 backdrop-blur-md border-b border-border/30" : "py-4 sm:py-6",
+          scrolled && !isAuthPage 
+            ? "py-2 bg-background/95 backdrop-blur-lg border-b border-border/50 shadow-sm" 
+            : "py-4 sm:py-6 bg-transparent",
         ].join(" ")}
       >
         <div className="max-w-7xl mx-auto flex items-center">

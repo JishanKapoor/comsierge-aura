@@ -21,7 +21,7 @@ const getAuthHeaders = () => {
 // Fetch all contacts from API
 export const fetchContacts = async (): Promise<Contact[]> => {
   try {
-    const response = await fetch("/api/contacts", {
+    const response = await fetch(`${API_BASE_URL}/api/contacts`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -109,7 +109,7 @@ export const updateContact = async (id: string, updates: Partial<Contact>): Prom
       normalizedUpdates.phone = normalizedPhone;
     }
     
-    const response = await fetch(`/api/contacts/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/contacts/${id}`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(normalizedUpdates),
@@ -129,7 +129,7 @@ export const updateContact = async (id: string, updates: Partial<Contact>): Prom
 // Delete a contact
 export const deleteContact = async (id: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/contacts/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/contacts/${id}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });

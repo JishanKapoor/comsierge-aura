@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
+import { API_BASE_URL } from "@/config";
 import {
-  PhoneCall,
   MessageSquare,
   ArrowRight,
   Star,
@@ -115,7 +115,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           : `+1${digits}`;
       }
 
-      const response = await fetch(`/api/auth/users/${user?.id}/forwarding`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/users/${user?.id}/forwarding`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -288,7 +288,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       };
       
       // First, get existing rules and delete them
-      const existingRulesRes = await fetch("/api/rules", {
+      const existingRulesRes = await fetch(`${API_BASE_URL}/api/rules`, {
         headers: { Authorization: token ? `Bearer ${token}` : "" }
       });
       
@@ -300,7 +300,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         
         // Delete old rules
         for (const oldRule of rulesToDelete) {
-          await fetch(`/api/rules/${oldRule._id || oldRule.id}`, {
+          await fetch(`${API_BASE_URL}/api/rules/${oldRule._id || oldRule.id}`, {
             method: "DELETE",
             headers: { Authorization: token ? `Bearer ${token}` : "" }
           });
@@ -308,7 +308,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       }
       
       // Create new call forwarding rule
-      const createCallRes = await fetch("/api/rules", {
+      const createCallRes = await fetch(`${API_BASE_URL}/api/rules`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -322,7 +322,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       }
       
       // Create new message notification rule
-      const createMsgRes = await fetch("/api/rules", {
+      const createMsgRes = await fetch(`${API_BASE_URL}/api/rules`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
