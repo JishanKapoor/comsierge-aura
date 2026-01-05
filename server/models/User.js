@@ -54,11 +54,30 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Email verification fields
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationOTP: {
+      type: String,
+      default: null,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
     // Google OAuth fields
     googleId: {
       type: String,
       default: null,
       sparse: true,
+    },
+    // Auth provider tracking
+    authProvider: {
+      type: String,
+      enum: ["email", "google"],
+      default: "email",
     },
     // Password reset fields
     passwordResetToken: {

@@ -17,11 +17,27 @@ export interface User {
   createdAt?: string;
 }
 
+interface SignupResult {
+  success: boolean;
+  requiresVerification?: boolean;
+  email?: string;
+  message?: string;
+}
+
+interface LoginResult {
+  user: User | null;
+  requiresVerification?: boolean;
+  email?: string;
+  useGoogle?: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<User | null>;
-  signup: (name: string, email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  signup: (name: string, email: string, password: string) => Promise<SignupResult>;
+  verifyEmail: (email: string, otp: string) => Promise<User | null>;
+  resendOTP: (email: string) => Promise<boolean>;
   loginWithGoogle: () => void;
   logout: () => void;
   requestPasswordReset: (email: string) => Promise<boolean>;
@@ -221,7 +237,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [fetchCurrentUser]);
 
-  const login = async (email: string, password: string): Promise<User | null> => {
+  const login = async (email: string, password: string): Promise<LoginResult> => {
     setIsLoading(true);
 
     try {
@@ -235,10 +251,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const data = await response.json();
 
+      // Handle email verification required
+      if (response.status === 403 && data.requiresVerification) {
+        toast.info("Please verify your email. A new code has been sent.");
+        setIsLoading(false);
+        return { 
+          user: null, 
+          requiresVerification: true, 
+          email: data.email 
+        };
+      }
+
+      // Handle Google-only account
+      if (response.status === 401 && data.useGoogle) {
+        toast.error(data.message);
+        setIsLoading(false);
+        return { user: null, useGoogle: true };
+      }
+
       if (!response.ok) {
         toast.error(data.message || "Login failed");
         setIsLoading(false);
-        return null;
+        return { user: null };
       }
 
       // Save token and user with session cache
@@ -248,16 +282,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       toast.success("Welcome back!");
       setIsLoading(false);
-      return data.data.user;
+      return { user: data.data.user };
     } catch (error) {
       console.error("Login error:", error);
       toast.error("Unable to connect to server. Please try again.");
       setIsLoading(false);
-      return null;
+      return { user: null };
     }
   };
 
-  const signup = async (name: string, email: string, password: string): Promise<boolean> => {
+  const signup = async (name: string, email: string, password: string): Promise<SignupResult> => {
     setIsLoading(true);
 
     try {
@@ -274,7 +308,60 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!response.ok) {
         toast.error(data.message || "Signup failed");
         setIsLoading(false);
-        return false;
+        return { success: false, message: data.message };
+      }
+
+      // Check if verification is required
+      if (data.data?.requiresVerification) {
+        toast.success("Verification code sent to your email!");
+        setIsLoading(false);
+        return { 
+          success: true, 
+          requiresVerification: true, 
+          email: data.data.email 
+        };
+      }
+
+      // Old flow (shouldn't happen now, but just in case)
+      if (data.data?.token) {
+        localStorage.setItem("comsierge_token", data.data.token);
+        setCachedSession(data.data.user);
+        setUser(data.data.user);
+      }
+      
+      toast.success("Account created successfully!");
+      setIsLoading(false);
+      return { success: true };
+    } catch (error) {
+      console.error("Signup error:", error);
+      toast.error("Unable to connect to server. Please try again.");
+      setIsLoading(false);
+      return { success: false, message: "Connection error" };
+    }
+  };
+
+  const verifyEmail = async (email: string, otp: string): Promise<User | null> => {
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/verify-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, otp }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.expired) {
+          toast.error("Code expired. Please request a new one.");
+        } else {
+          toast.error(data.message || "Verification failed");
+        }
+        setIsLoading(false);
+        return null;
       }
 
       // Save token and user with session cache
@@ -282,13 +369,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setCachedSession(data.data.user);
       setUser(data.data.user);
       
-      toast.success("Account created successfully!");
+      toast.success("Email verified successfully!");
       setIsLoading(false);
-      return true;
+      return data.data.user;
     } catch (error) {
-      console.error("Signup error:", error);
+      console.error("Verify email error:", error);
       toast.error("Unable to connect to server. Please try again.");
       setIsLoading(false);
+      return null;
+    }
+  };
+
+  const resendOTP = async (email: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-otp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        toast.error(data.message || "Failed to resend code");
+        return false;
+      }
+
+      toast.success("New verification code sent!");
+      return true;
+    } catch (error) {
+      console.error("Resend OTP error:", error);
+      toast.error("Unable to connect to server.");
       return false;
     }
   };
@@ -352,6 +465,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         login,
         signup,
+        verifyEmail,
+        resendOTP,
         loginWithGoogle,
         logout,
         requestPasswordReset,
