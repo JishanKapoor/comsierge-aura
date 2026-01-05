@@ -44,7 +44,13 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (isDev) return cb(null, isAllowedDevOrigin(origin));
-      // Production: default to no CORS unless explicitly configured
+      // Production: allow Render frontend and common origins
+      const prodAllowed = [
+        /^https:\/\/comsierge.*\.onrender\.com$/i,
+        /^https:\/\/.*\.vercel\.app$/i,
+        /^https:\/\/.*\.netlify\.app$/i,
+      ];
+      if (!origin || prodAllowed.some(re => re.test(origin))) return cb(null, true);
       return cb(null, false);
     },
     credentials: true,
