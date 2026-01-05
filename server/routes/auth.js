@@ -6,12 +6,21 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
+const SMTP_USER = process.env.SMTP_USER || "comsiergeai@gmail.com";
+const SMTP_PASSWORD = process.env.SMTP_PASSWORD;
+
+if (!SMTP_PASSWORD) {
+  console.warn("⚠️ SMTP_PASSWORD is not set. Forgot password + OTP emails will not send.");
+}
+
 // Email transporter setup
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
-    user: "comsiergeai@gmail.com",
-    pass: process.env.SMTP_PASSWORD,
+    user: SMTP_USER,
+    pass: SMTP_PASSWORD,
   },
 });
 
@@ -23,7 +32,7 @@ const generateOTP = () => {
 // Send verification email
 const sendVerificationEmail = async (email, otp, name) => {
   await transporter.sendMail({
-    from: '"Comsierge AI" <comsiergeai@gmail.com>',
+    from: `"Comsierge AI" <${SMTP_USER}>`,
     to: email,
     subject: "Verify your email - Comsierge AI",
     html: `
@@ -697,7 +706,7 @@ router.post("/forgot-password", async (req, res) => {
 
     try {
       await transporter.sendMail({
-        from: '"Comsierge AI" <comsiergeai@gmail.com>',
+        from: `"Comsierge AI" <${SMTP_USER}>`,
         to: email,
         subject: "Password Reset Request",
         html: `

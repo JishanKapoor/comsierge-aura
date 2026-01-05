@@ -24,7 +24,7 @@ const Auth = () => {
   
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, signup, verifyEmail, resendOTP, loginWithGoogle, isLoading, refreshUser } = useAuth();
+  const { user, login, signup, verifyEmail, resendOTP, loginWithGoogle, isLoading, refreshUser } = useAuth();
 
   // Handle Google OAuth callback
   useEffect(() => {
@@ -117,6 +117,13 @@ const Auth = () => {
       navigate("/dashboard");
     }
   };
+
+  // If user becomes authenticated (e.g., after Google sign-in), redirect out of /auth.
+  useEffect(() => {
+    if (!isLoading && user) {
+      navigateToUser(user);
+    }
+  }, [user, isLoading]);
 
   const handleLoginSubmit = async (data: LoginFormData) => {
     const result = await login(data.email, data.password);

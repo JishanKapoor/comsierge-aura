@@ -420,6 +420,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         });
       }
 
+      if (!window.google?.accounts?.oauth2?.initTokenClient) {
+        throw new Error('Google Identity Services unavailable');
+      }
+
       // Initialize Google Sign-In
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: '320917556164-gncrlmkhm6v412dl7h3ju3l8e2imc2lu.apps.googleusercontent.com',
@@ -427,13 +431,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         callback: async (tokenResponse: { access_token?: string; error?: string; error_description?: string }) => {
           if (tokenResponse.error) {
             console.error('Google OAuth error:', tokenResponse.error, tokenResponse.error_description);
-            toast.error('Google sign-in was cancelled');
+            const msg = tokenResponse.error_description || tokenResponse.error || 'Google sign-in failed';
+            toast.error(msg);
+            setIsLoading(false);
             return;
           }
 
           if (!tokenResponse.access_token) {
             console.error('No access token received from Google');
             toast.error('Google sign-in failed - no token received');
+            setIsLoading(false);
             return;
           }
 
@@ -450,7 +457,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               body: JSON.stringify({ accessToken: tokenResponse.access_token }),
             });
 
-            const data = await response.json();
+            const raw = await response.text();
+            let data: any = null;
+            try {
+              data = raw ? JSON.parse(raw) : null;
+            } catch {
+              data = { message: raw };
+            }
             console.log('Backend response:', response.status, data);
 
             if (!response.ok) {
@@ -483,17 +496,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setIsLoading(false);
           } catch (error) {
             console.error('Google auth backend error:', error);
-            toast.error('Failed to complete Google sign-in. Please try again.');
+            const msg = error instanceof Error ? error.message : 'Failed to complete Google sign-in. Please try again.';
+            toast.error(msg);
             setIsLoading(false);
           }
         },
       });
 
       // Trigger the sign-in flow
-      client.requestAccessToken();
+      setIsLoading(true);
+      (client as any).requestAccessToken({ prompt: 'consent' });
     } catch (error) {
       console.error('Google Sign-In initialization error:', error);
-      toast.error('Failed to initialize Google Sign-In. Please refresh and try again.');
+      const msg = error instanceof Error ? error.message : 'Failed to initialize Google Sign-In. Please refresh and try again.';
+      toast.error(msg);
+      setIsLoading(false);
     }
   };
 
