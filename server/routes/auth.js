@@ -688,7 +688,14 @@ router.post("/forgot-password", async (req, res) => {
       return res.json({ success: true, message: "If an account exists, you will receive a password reset link" });
     }
 
-    if (user.passwordResetExpires && user.passwordResetExpires > Date.now() - 58 * 60 * 1000) {
+    // Throttle reset emails to prevent abuse.
+    // We only store `passwordResetExpires` (set to now + 1 hour), so infer the request time from it.
+    const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
+    const RESET_COOLDOWN_MS = 30 * 1000;
+    if (
+      user.passwordResetExpires &&
+      user.passwordResetExpires > Date.now() + (RESET_TOKEN_TTL_MS - RESET_COOLDOWN_MS)
+    ) {
       return res.status(429).json({ success: false, message: "Please wait before requesting another reset link" });
     }
 
