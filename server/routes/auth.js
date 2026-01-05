@@ -1096,6 +1096,8 @@ router.post("/reset-password", async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          phoneNumber: user.phoneNumber,
+          forwardingNumber: user.forwardingNumber,
         },
         token: jwtToken,
       },
