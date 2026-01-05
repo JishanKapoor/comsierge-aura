@@ -1,7 +1,7 @@
 services:
   # Backend API
   - type: web
-    name: comsierge-api
+    name: comsierge-iwe0
     runtime: node
     region: oregon
     plan: free
@@ -32,7 +32,7 @@ services:
 
   # Frontend
   - type: web
-    name: comsierge-app
+    name: comsierge-ai
     runtime: static
     region: oregon
     plan: free
@@ -40,7 +40,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        value: https://comsierge-api.onrender.com
+        value: https://comsierge-iwe0.onrender.com
     headers:
       - path: /*
         name: Cache-Control

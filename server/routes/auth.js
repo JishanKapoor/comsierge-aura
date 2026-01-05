@@ -690,7 +690,7 @@ router.post("/forgot-password", async (req, res) => {
     user.passwordResetExpires = Date.now() + 60 * 60 * 1000;
     await user.save();
 
-    const frontendUrl = process.env.NODE_ENV === "production" ? "https://comsierge-app.onrender.com" : "http://localhost:5173";
+    const frontendUrl = process.env.NODE_ENV === "production" ? "https://comsierge-ai.onrender.com" : "http://localhost:5173";
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
     console.log(`Password reset for ${email}: ${resetUrl}`);
