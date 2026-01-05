@@ -6,7 +6,9 @@ import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Contact from "../models/Contact.js";
 import CallRecord from "../models/CallRecord.js";
+import Rule from "../models/Rule.js";
 import { authMiddleware } from "./auth.js";
+import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 
 const router = express.Router();
 
@@ -658,7 +660,7 @@ router.post("/configure-webhooks", async (req, res) => {
 });
 
 // @route   POST /api/twilio/webhook/sms
-// @desc    Handle incoming SMS messages
+// @desc    Handle incoming SMS messages with AI analysis and routing rules
 // @access  Public (Twilio webhook)
 router.post("/webhook/sms", async (req, res) => {
   try {
@@ -721,7 +723,6 @@ router.post("/webhook/sms", async (req, res) => {
       
       // If not found, try regex on last 10 digits (allowing for formatting)
       if (!user && last10.length === 10) {
-         // Create regex: 5.*5.*5.*... to match (555) 123-4567
          const regexPattern = last10.split('').join('[^0-9]*');
          console.log(`   ⚠️ Exact match failed, trying regex: ${regexPattern}`);
          user = await User.findOne({ phoneNumber: { $regex: regexPattern, $options: 'i' } });
@@ -730,7 +731,6 @@ router.post("/webhook/sms", async (req, res) => {
       // If still not found, check TwilioAccount phone assignments
       if (!user) {
         console.log(`   ⚠️ User not found by phone number, checking TwilioAccount assignments...`);
-        // Find account that has this number assigned
         const account = await TwilioAccount.findOne({
           "phoneAssignments.phoneNumber": { $in: toCandidates }
         });
@@ -747,44 +747,334 @@ router.post("/webhook/sms", async (req, res) => {
       }
 
       // FALLBACK: If still no user, assign to the first Admin user found
-      // This ensures messages are not lost if phone number mapping is missing
       if (!user) {
         console.log(`   ⚠️ User still not found. Falling back to Admin user.`);
         user = await User.findOne({ role: 'admin' });
         if (user) {
            console.log(`   ✅ Fallback: Assigned message to Admin ${user.email}`);
         } else {
-           // If no admin, try ANY user (last resort)
            user = await User.findOne({});
            if (user) console.log(`   ✅ Fallback: Assigned message to first user ${user.email}`);
         }
       }
 
       if (user) {
-        // Look up contact name - use phone number if not in contacts
+        // Look up contact info
         const { variations: fromCandidates } = buildPhoneVariations(From);
         const contact = await Contact.findOne({ userId: user._id, phone: { $in: fromCandidates } });
         
-        await saveMessageToDB({
+        // Build sender context for AI analysis
+        const senderContext = {
+          isSavedContact: !!contact,
+          isFavorite: contact?.isFavorite || false,
+          isBlocked: contact?.isBlocked || false,
+          tags: contact?.tags || [],
+          hasConversationHistory: false,
+          messageCount: 0,
+          userHasReplied: false,
+        };
+        
+        // Get conversation history for context
+        const previousMessages = await Message.find({
+          userId: user._id,
+          contactPhone: { $in: fromCandidates }
+        }).sort({ createdAt: -1 }).limit(10);
+        
+        const conversationHistory = previousMessages.reverse().map(m => ({
+          direction: m.direction,
+          content: m.body,
+          timestamp: m.createdAt
+        }));
+        
+        senderContext.hasConversationHistory = conversationHistory.length > 0;
+        senderContext.messageCount = conversationHistory.length;
+        senderContext.userHasReplied = conversationHistory.some(m => m.direction === 'outgoing');
+        
+        console.log(`   📋 Sender context:`, JSON.stringify(senderContext, null, 2));
+        
+        // Check if sender is blocked
+        if (senderContext.isBlocked) {
+          console.log(`   🚫 Sender is BLOCKED - marking message as blocked`);
+          await saveMessageToDB({
+            userId: user._id,
+            contactPhone: normalizeToE164ish(From),
+            contactName: contact?.name || normalizeToE164ish(From),
+            direction: "incoming",
+            body: Body,
+            status: "blocked",
+            twilioSid: MessageSid,
+            fromNumber: normalizeToE164ish(From),
+            toNumber: normalizeToE164ish(To),
+            isRead: true, // Blocked messages don't need to be "read"
+            isBlocked: true,
+          });
+          
+          // Update conversation as blocked
+          await Conversation.findOneAndUpdate(
+            { userId: user._id, contactPhone: normalizeToE164ish(From) },
+            { isBlocked: true },
+            { upsert: false }
+          );
+          
+          res.type("text/xml");
+          return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+        }
+        
+        // Run AI analysis
+        let aiAnalysis = null;
+        let spamAnalysis = null;
+        let messageStatus = "received";
+        let isHeld = false;
+        let isPriority = false;
+        let shouldNotify = true;
+        
+        try {
+          console.log(`   Running AI analysis...`);
+          
+          // Run fast classification for ALL messages (uses your exact logic)
+          spamAnalysis = await classifyMessageAsSpam(
+            Body,
+            From,
+            contact?.name || From,
+            senderContext,
+            conversationHistory
+          );
+          
+          console.log(`   Classification result:`, JSON.stringify(spamAnalysis, null, 2));
+          
+          // Use the category from classification
+          const category = spamAnalysis.category || "INBOX";
+          
+          if (category === "SPAM") {
+            console.log(`   → SPAM: ${spamAnalysis.reasoning}`);
+            messageStatus = "spam";
+            isHeld = true;
+            shouldNotify = false;
+          } else if (category === "HELD") {
+            console.log(`   → HELD: ${spamAnalysis.reasoning}`);
+            messageStatus = "held";
+            isHeld = true;
+            shouldNotify = true; // Still notify for held messages
+          } else {
+            console.log(`   → INBOX: ${spamAnalysis.reasoning}`);
+            messageStatus = "received";
+            isHeld = false;
+            shouldNotify = true;
+          }
+          
+          // Run full analysis only for INBOX messages that need it
+          if (category === "INBOX" && !senderContext.isSavedContact) {
+            aiAnalysis = await analyzeIncomingMessage(
+              Body,
+              From,
+              contact?.name || From,
+              conversationHistory,
+              senderContext
+            );
+            
+            // Determine priority
+            if (aiAnalysis?.priority === "high") {
+              isPriority = true;
+            }
+          }
+        } catch (aiError) {
+          console.error(`   AI analysis failed:`, aiError.message);
+          // Default to HELD on error for safety
+          messageStatus = "held";
+          isHeld = true;
+        }
+        
+        // Get user's message notification rules
+        const messageNotifyRules = await Rule.find({
+          userId: user._id,
+          type: "message-notify",
+          active: true
+        });
+        
+        console.log(`   Found ${messageNotifyRules.length} active message notification rules`);
+        
+        // Evaluate message notification rules
+        for (const rule of messageNotifyRules) {
+          const conditions = rule.conditions || {};
+          const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
+          const notifyTags = conditions.notifyTags || [];
+          
+          console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter})`);
+          
+          // Check "Always notify for messages from:" tags first
+          if (notifyTags.length > 0) {
+            const hasMatchingTag = notifyTags.some(tag => senderContext.tags.includes(tag));
+            if (hasMatchingTag) {
+              console.log(`   Tag match found - always notify`);
+              shouldNotify = true;
+              if (isHeld && !spamAnalysis?.isSpam) {
+                isHeld = false;
+                messageStatus = "received";
+              }
+              break;
+            }
+          }
+          
+          // Apply priority filter
+          // all = notify for all messages
+          // important = notify only for high + medium priority
+          // urgent = notify only for high priority
+          const messagePriority = aiAnalysis?.priority || "medium";
+          
+          switch (priorityFilter) {
+            case "all":
+              shouldNotify = true;
+              break;
+            case "important":
+              // Notify for high and medium priority
+              if (messagePriority === "high" || messagePriority === "medium") {
+                shouldNotify = true;
+              } else {
+                shouldNotify = false;
+                isHeld = true;
+                messageStatus = "held";
+                console.log(`   Low priority message - holding (filter: important)`);
+              }
+              break;
+            case "urgent":
+              // Notify only for high priority
+              if (messagePriority === "high") {
+                shouldNotify = true;
+              } else {
+                shouldNotify = false;
+                isHeld = true;
+                messageStatus = "held";
+                console.log(`   Non-urgent message - holding (filter: urgent)`);
+              }
+              break;
+          }
+          break; // Only process first active rule
+        }
+        
+        // If no message-notify rules exist, default to notify all
+        if (messageNotifyRules.length === 0) {
+          console.log(`   No message notification rules - defaulting to notify all`);
+          shouldNotify = true;
+        }
+        
+        // Track if message will be forwarded
+        let wasForwarded = false;
+        let forwardedTo = null;
+        
+        // Save message to database with analysis results
+        const savedMessage = await saveMessageToDB({
           userId: user._id,
           contactPhone: normalizeToE164ish(From),
-          contactName: contact?.name || normalizeToE164ish(From), // Use phone number as name if no contact
+          contactName: contact?.name || normalizeToE164ish(From),
           direction: "incoming",
           body: Body,
-          status: "received",
+          status: messageStatus,
           twilioSid: MessageSid,
           fromNumber: normalizeToE164ish(From),
           toNumber: normalizeToE164ish(To),
           isRead: false,
+          // AI analysis fields
+          aiAnalysis: aiAnalysis ? {
+            priority: aiAnalysis.priority,
+            category: aiAnalysis.category,
+            sentiment: aiAnalysis.sentiment,
+            keyTopics: aiAnalysis.keyTopics,
+            suggestedResponse: aiAnalysis.suggestedResponse,
+            confidence: aiAnalysis.confidence,
+          } : null,
+          spamAnalysis: spamAnalysis ? {
+            isSpam: spamAnalysis.isSpam,
+            spamProbability: spamAnalysis.spamProbability,
+            senderTrust: spamAnalysis.senderTrust,
+            intent: spamAnalysis.intent,
+            reasoning: spamAnalysis.reasoning,
+          } : null,
+          // Status flags
+          isHeld,
+          isPriority,
+          isBlocked: false,
         });
-        console.log(`   ✅ Saved to MongoDB for user ${user.email}`);
+        
+        // Update conversation with analysis results
+        await Conversation.findOneAndUpdate(
+          { userId: user._id, contactPhone: normalizeToE164ish(From) },
+          {
+            $set: {
+              isHeld,
+              isPriority: isPriority || undefined,
+              lastAiAnalysis: aiAnalysis ? {
+                priority: aiAnalysis.priority,
+                category: aiAnalysis.category,
+                sentiment: aiAnalysis.sentiment,
+              } : undefined,
+            }
+          },
+          { upsert: false }
+        );
+        
+        console.log(`   Saved to MongoDB for user ${user.email}`);
+        console.log(`   Final status: ${messageStatus}, held: ${isHeld}, priority: ${isPriority}, notify: ${shouldNotify}`);
+        
+        // FORWARD SMS to user's personal phone if shouldNotify is true
+        // But skip if the sender IS the user's personal number (no point forwarding to yourself)
+        const normalizedFrom = normalizeToE164ish(From);
+        const normalizedForwardingNumber = user.forwardingNumber ? normalizeToE164ish(user.forwardingNumber) : null;
+        const isSenderPersonalNumber = normalizedForwardingNumber && normalizedFrom === normalizedForwardingNumber;
+        
+        if (isSenderPersonalNumber) {
+          console.log(`   Skipping SMS forward - sender (${From}) is user's personal number`);
+        } else if (shouldNotify && user.forwardingNumber) {
+          console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);
+          try {
+            // Use env variables directly - they're already configured
+            const accountSid = process.env.TWILIO_ACCOUNT_SID;
+            const authToken = process.env.TWILIO_AUTH_TOKEN;
+            
+            if (accountSid && authToken) {
+              const forwardClient = twilio(accountSid, authToken);
+              
+              // Build forwarded message with sender info
+              const senderName = contact?.name || From;
+              const forwardedBody = `[SMS from ${senderName}]\n${Body}`;
+              
+              // Use the normalized To number
+              const fromNumber = normalizeToE164ish(To);
+              
+              const forwardResult = await forwardClient.messages.create({
+                body: forwardedBody,
+                from: fromNumber,
+                to: user.forwardingNumber
+              });
+              
+              wasForwarded = true;
+              forwardedTo = user.forwardingNumber;
+              console.log(`   SMS forwarded successfully to ${user.forwardingNumber}`);
+              
+              // Update the original message to mark it as forwarded
+              await Message.findByIdAndUpdate(savedMessage._id, {
+                wasForwarded: true,
+                forwardedTo: user.forwardingNumber,
+                forwardedAt: new Date(),
+                forwardedTwilioSid: forwardResult.sid
+              });
+              
+            } else {
+              console.log(`   Missing Twilio credentials in env`);
+            }
+          } catch (forwardErr) {
+            console.error(`   Failed to forward SMS:`, forwardErr.message);
+          }
+        } else if (!shouldNotify) {
+          console.log(`   SMS NOT forwarded (held by filter)`);
+        } else if (!user.forwardingNumber) {
+          console.log(`   SMS NOT forwarded (no forwarding number set)`);
+        }
+        
       } else {
-        console.log(`   ⚠️ No user found for phone ${To}. Candidates checked: ${toCandidates.join(', ')}`);
-        // Try to save to a "system" user or log it as an orphan?
-        // For now, just log it.
+        console.log(`   No user found for phone ${To}. Candidates checked: ${toCandidates.join(', ')}`);
       }
     } catch (dbError) {
-      console.error("   ❌ DB save error:", dbError.message);
+      console.error("   DB save error:", dbError.message);
     }
 
     // Respond with TwiML (empty response = no auto-reply)
@@ -836,31 +1126,176 @@ router.post("/webhook/voice", async (req, res) => {
     else {
       console.log("   ⬅️ Incoming Call to Number");
       
-      // Find which user owns this number (To)
-      // We need to find the user and then dial their client identity
-      // Identity format: user.email or "user_" + user._id
-      
       const normalize = (p) => p ? p.replace(/[^\d+]/g, "") : "";
-      const targetPhone = normalize(To);
+      const callerPhone = normalize(From);
 
-      // Find user by phone number (exact match first)
-      // Note: We might need to handle +1 prefix differences
+      // Find user by phone number
       let user = await User.findOne({ phoneNumber: To });
-      
       if (!user) {
-          // Try without + if present, or with + if missing
           const altPhone = To.startsWith("+") ? To.substring(1) : "+" + To;
           user = await User.findOne({ phoneNumber: altPhone });
       }
 
       if (user) {
-        const identity = user.email || "user_" + user._id;
-        console.log(`   ✅ Found user: ${user.email}. Dialing client: ${identity}`);
+        console.log(`   ✅ Found user: ${user.email}`);
         
-        const dial = response.dial({
-            timeout: 20
+        // Check caller info against contacts
+        let contact = await Contact.findOne({ userId: user._id, phone: From });
+        if (!contact) {
+          const altCallerPhone = From.startsWith("+") ? From.substring(1) : "+" + From;
+          contact = await Contact.findOne({ userId: user._id, phone: altCallerPhone });
+        }
+        
+        const callerInfo = {
+          isSavedContact: !!contact,
+          isFavorite: contact?.isFavorite || false,
+          isBlocked: contact?.isBlocked || false,
+          tags: contact?.tags || [],
+          contactName: contact?.name || From
+        };
+        
+        console.log(`   📋 Caller Info:`, callerInfo);
+        
+        // Check if caller is blocked
+        if (callerInfo.isBlocked) {
+          console.log(`   🚫 Caller is BLOCKED. Rejecting call.`);
+          response.reject();
+          
+          // Still log the call as blocked
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: From,
+            contactName: callerInfo.contactName,
+            direction: "incoming",
+            status: "blocked",
+            twilioCallSid: CallSid
+          });
+          
+          res.type("text/xml");
+          return res.send(response.toString());
+        }
+        
+        // Get active forward rules for this user
+        const forwardRules = await Rule.find({ 
+          userId: user._id, 
+          type: "forward",
+          active: true 
         });
-        dial.client(identity);
+        
+        console.log(`   📜 Found ${forwardRules.length} active forward rules`);
+        
+        // Determine if call should be forwarded based on rules
+        let shouldForward = false;
+        let matchedRule = null;
+        
+        for (const rule of forwardRules) {
+          const conditions = rule.conditions || {};
+          const mode = conditions.mode || "all"; // all, favorites, saved, tags
+          
+          console.log(`   🔍 Checking rule: "${rule.rule}" (mode: ${mode})`);
+          
+          // Check if rule applies to calls
+          const transferMode = rule.transferDetails?.mode || "both";
+          if (transferMode !== "calls" && transferMode !== "both") {
+            console.log(`      ⏭️ Rule is for messages only, skipping`);
+            continue;
+          }
+          
+          // Check schedule
+          if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
+            if (new Date() > new Date(rule.schedule.endTime)) {
+              console.log(`      ⏭️ Rule expired, skipping`);
+              continue;
+            }
+          }
+          
+          // Check conditions
+          let matches = false;
+          
+          switch (mode) {
+            case "all":
+              matches = true;
+              console.log(`      ✓ Mode 'all' - matches`);
+              break;
+              
+            case "favorites":
+              matches = callerInfo.isFavorite;
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'favorites' - isFavorite: ${callerInfo.isFavorite}`);
+              break;
+              
+            case "saved":
+              matches = callerInfo.isSavedContact;
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'saved' - isSavedContact: ${callerInfo.isSavedContact}`);
+              break;
+              
+            case "tags":
+              const requiredTags = conditions.tags || [];
+              matches = requiredTags.length === 0 || requiredTags.some(tag => callerInfo.tags.includes(tag));
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'tags' - required: [${requiredTags}], caller has: [${callerInfo.tags}]`);
+              break;
+              
+            default:
+              matches = false;
+          }
+          
+          if (matches) {
+            shouldForward = true;
+            matchedRule = rule;
+            console.log(`   ✅ Rule matched! Will forward call.`);
+            break;
+          }
+        }
+        
+        // Get forwarding number
+        const forwardingNumber = user.forwardingNumber;
+        
+        if (shouldForward && forwardingNumber) {
+          console.log(`   📱 Forwarding call to: ${forwardingNumber}`);
+          
+          // Log the call as forwarded
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: From,
+            contactName: callerInfo.contactName,
+            direction: "incoming",
+            status: "forwarded",
+            twilioCallSid: CallSid,
+            forwardedTo: forwardingNumber,
+            matchedRule: matchedRule?.rule
+          });
+          
+          // Forward to personal number with timeout, then voicemail
+          const dial = response.dial({
+            callerId: From, // Show original caller ID
+            timeout: 25,
+            action: "/api/twilio/webhook/forward-status"
+          });
+          dial.number(forwardingNumber);
+          
+        } else {
+          // No matching rule or no forwarding number - log as missed, don't ring
+          console.log(`   📵 No forward rule matched or no forwarding number. Logging as missed.`);
+          
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: From,
+            contactName: callerInfo.contactName,
+            direction: "incoming",
+            status: "missed",
+            twilioCallSid: CallSid,
+            reason: !forwardingNumber ? "no_forwarding_number" : "no_matching_rule"
+          });
+          
+          // Play a message and optionally record voicemail
+          response.say({ voice: "alice" }, "Hello, the person you are trying to reach is unavailable. Please leave a message after the beep.");
+          response.record({ 
+            maxLength: 120, 
+            transcribe: true,
+            action: "/api/twilio/webhook/voicemail"
+          });
+          response.say({ voice: "alice" }, "Thank you. Goodbye.");
+        }
+        
       } else {
         console.log("   ⚠️ No user found for this number. Playing voicemail.");
         response.say("Hello, thank you for calling. Please leave a message after the beep.");
@@ -876,6 +1311,90 @@ router.post("/webhook/voice", async (req, res) => {
     console.error("Voice webhook error:", error);
     const response = new twilio.twiml.VoiceResponse();
     response.say("Sorry, an error occurred.");
+    res.type("text/xml");
+    res.send(response.toString());
+  }
+});
+
+// @route   POST /api/twilio/webhook/forward-status
+// @desc    Handle result of forwarded call attempt
+// @access  Public (Twilio webhook)
+router.post("/webhook/forward-status", async (req, res) => {
+  try {
+    const { CallSid, DialCallStatus, DialCallDuration } = req.body;
+    console.log("📞 Forward Status:", { CallSid, DialCallStatus, DialCallDuration });
+    
+    const response = new twilio.twiml.VoiceResponse();
+    
+    // Update call record with actual status
+    const statusMap = {
+      "completed": "completed",
+      "answered": "completed",
+      "busy": "missed",
+      "no-answer": "missed",
+      "failed": "missed",
+      "canceled": "missed"
+    };
+    
+    const finalStatus = statusMap[DialCallStatus] || "missed";
+    
+    await CallRecord.findOneAndUpdate(
+      { twilioCallSid: CallSid },
+      { 
+        status: finalStatus,
+        duration: parseInt(DialCallDuration) || 0
+      }
+    );
+    
+    // If not answered, offer voicemail
+    if (DialCallStatus !== "completed" && DialCallStatus !== "answered") {
+      response.say({ voice: "alice" }, "The call could not be completed. Please leave a message after the beep.");
+      response.record({ 
+        maxLength: 120, 
+        transcribe: true,
+        action: "/api/twilio/webhook/voicemail"
+      });
+      response.say({ voice: "alice" }, "Thank you. Goodbye.");
+    }
+    
+    res.type("text/xml");
+    res.send(response.toString());
+  } catch (error) {
+    console.error("Forward status error:", error);
+    const response = new twilio.twiml.VoiceResponse();
+    res.type("text/xml");
+    res.send(response.toString());
+  }
+});
+
+// @route   POST /api/twilio/webhook/voicemail
+// @desc    Handle voicemail recording
+// @access  Public (Twilio webhook)
+router.post("/webhook/voicemail", async (req, res) => {
+  try {
+    const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText } = req.body;
+    console.log("📞 Voicemail received:", { CallSid, RecordingUrl, RecordingDuration });
+    
+    // Update call record with voicemail info
+    await CallRecord.findOneAndUpdate(
+      { twilioCallSid: CallSid },
+      { 
+        hasVoicemail: true,
+        voicemailUrl: RecordingUrl,
+        voicemailDuration: parseInt(RecordingDuration) || 0,
+        voicemailTranscript: TranscriptionText || null
+      }
+    );
+    
+    const response = new twilio.twiml.VoiceResponse();
+    response.say({ voice: "alice" }, "Thank you for your message. Goodbye.");
+    response.hangup();
+    
+    res.type("text/xml");
+    res.send(response.toString());
+  } catch (error) {
+    console.error("Voicemail error:", error);
+    const response = new twilio.twiml.VoiceResponse();
     res.type("text/xml");
     res.send(response.toString());
   }

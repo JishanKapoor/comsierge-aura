@@ -30,24 +30,29 @@ const callRecordSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: ["incoming", "outgoing", "missed"],
-      required: true,
+      default: "incoming",
     },
     status: {
       type: String,
-      enum: ["initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled"],
+      enum: ["initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled", "missed", "forwarded", "blocked"],
       default: "initiated",
     },
     twilioSid: {
       type: String,
       default: null,
     },
+    twilioCallSid: {
+      type: String,
+      default: null,
+      index: true,
+    },
     fromNumber: {
       type: String,
-      required: true,
+      default: null,
     },
     toNumber: {
       type: String,
-      required: true,
+      default: null,
     },
     duration: {
       type: Number, // in seconds
@@ -66,6 +71,36 @@ const callRecordSchema = new mongoose.Schema(
       default: null,
     },
     transcription: {
+      type: String,
+      default: null,
+    },
+    // Forwarding fields
+    forwardedTo: {
+      type: String,
+      default: null,
+    },
+    matchedRule: {
+      type: String,
+      default: null,
+    },
+    reason: {
+      type: String,
+      default: null,
+    },
+    // Voicemail fields
+    hasVoicemail: {
+      type: Boolean,
+      default: false,
+    },
+    voicemailUrl: {
+      type: String,
+      default: null,
+    },
+    voicemailDuration: {
+      type: Number,
+      default: 0,
+    },
+    voicemailTranscript: {
       type: String,
       default: null,
     },

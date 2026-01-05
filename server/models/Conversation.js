@@ -58,6 +58,29 @@ const conversationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Last AI analysis for this conversation
+    lastAiAnalysis: {
+      priority: {
+        type: String,
+        enum: ["high", "medium", "low"],
+        default: null,
+      },
+      category: {
+        type: String,
+        default: null,
+      },
+      sentiment: {
+        type: String,
+        enum: ["positive", "negative", "neutral"],
+        default: null,
+      },
+      spamProbability: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 0,
+      },
+    },
     priority: {
       type: String,
       enum: ["normal", "high", "urgent"],

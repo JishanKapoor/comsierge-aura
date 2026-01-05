@@ -258,4 +258,68 @@ router.get("/stats", async (req, res) => {
   }
 });
 
+// @route   GET /api/calls/:id/voicemail
+// @desc    Stream voicemail audio (proxy to Twilio with auth)
+// @access  Private
+router.get("/:id/voicemail", async (req, res) => {
+  try {
+    const call = await CallRecord.findOne({ 
+      _id: req.params.id, 
+      userId: req.user._id 
+    });
+
+    if (!call) {
+      return res.status(404).json({ success: false, message: "Call not found" });
+    }
+
+    if (!call.voicemailUrl) {
+      return res.status(404).json({ success: false, message: "No voicemail for this call" });
+    }
+
+    // Get Twilio credentials from user's account or env
+    const TwilioAccount = (await import("../models/TwilioAccount.js")).default;
+    const twilioAccount = await TwilioAccount.findOne({ userId: req.user._id });
+    
+    const accountSid = twilioAccount?.accountSid || process.env.TWILIO_ACCOUNT_SID;
+    const authToken = twilioAccount?.authToken || process.env.TWILIO_AUTH_TOKEN;
+
+    if (!accountSid || !authToken) {
+      return res.status(500).json({ success: false, message: "Twilio not configured" });
+    }
+
+    // Fetch the recording from Twilio with authentication
+    const recordingUrl = call.voicemailUrl.endsWith('.mp3') 
+      ? call.voicemailUrl 
+      : `${call.voicemailUrl}.mp3`;
+
+    const response = await fetch(recordingUrl, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64')
+      }
+    });
+
+    if (!response.ok) {
+      console.error("Twilio recording fetch failed:", response.status, await response.text());
+      return res.status(response.status).json({ success: false, message: "Failed to fetch voicemail" });
+    }
+
+    // Stream the audio back to the client
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': response.headers.get('content-length'),
+    });
+
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+
+  } catch (error) {
+    console.error("Get voicemail error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 export default router;

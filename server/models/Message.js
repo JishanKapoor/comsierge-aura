@@ -33,7 +33,7 @@ const messageSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "sent", "delivered", "failed", "received"],
+      enum: ["pending", "sent", "delivered", "failed", "received", "spam", "held", "blocked"],
       default: "pending",
     },
     twilioSid: {
@@ -64,9 +64,74 @@ const messageSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isBlocked: {
+      type: Boolean,
+      default: false,
+    },
+    isPriority: {
+      type: Boolean,
+      default: false,
+    },
     isSpam: {
       type: Boolean,
       default: false,
+    },
+    // AI Analysis results
+    aiAnalysis: {
+      priority: {
+        type: String,
+        enum: ["high", "medium", "low"],
+        default: null,
+      },
+      category: {
+        type: String,
+        enum: ["inquiry", "complaint", "support", "sales", "spam", "personal", "urgent", "other"],
+        default: null,
+      },
+      sentiment: {
+        type: String,
+        enum: ["positive", "negative", "neutral"],
+        default: null,
+      },
+      keyTopics: [{
+        type: String,
+      }],
+      suggestedResponse: {
+        type: String,
+        default: null,
+      },
+      confidence: {
+        type: Number,
+        min: 0,
+        max: 1,
+        default: null,
+      },
+    },
+    // Spam Analysis results
+    spamAnalysis: {
+      isSpam: {
+        type: Boolean,
+        default: false,
+      },
+      spamProbability: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 0,
+      },
+      senderTrust: {
+        type: String,
+        enum: ["high", "medium", "low"],
+        default: null,
+      },
+      intent: {
+        type: String,
+        default: null,
+      },
+      reasoning: {
+        type: String,
+        default: null,
+      },
     },
     // AI/Sentiment fields
     sentiment: {
@@ -117,6 +182,18 @@ const messageSchema = new mongoose.Schema(
       default: null,
     },
     forwardedTo: {
+      type: String,
+      default: null,
+    },
+    wasForwarded: {
+      type: Boolean,
+      default: false,
+    },
+    forwardedAt: {
+      type: Date,
+      default: null,
+    },
+    forwardedTwilioSid: {
       type: String,
       default: null,
     },

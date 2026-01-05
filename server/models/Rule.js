@@ -14,7 +14,7 @@ const ruleSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["transfer", "auto-reply", "block", "forward", "priority", "custom"],
+      enum: ["transfer", "auto-reply", "block", "forward", "priority", "custom", "message-notify"],
       default: "custom",
     },
     active: {

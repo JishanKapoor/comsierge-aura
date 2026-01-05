@@ -7,10 +7,10 @@ import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 
-// Initialize OpenAI with GPT-4o (GPT-5.2 compatible)
+// Initialize OpenAI with GPT-5.2 (User requested)
 const llm = new ChatOpenAI({
-  modelName: "gpt-4o",
-  temperature: 0.3,
+  modelName: "gpt-5.2",
+  temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -27,10 +27,19 @@ const createTransferRuleTool = tool(
       let resolvedName = targetName;
       
       if (!targetPhone || targetPhone === "TBD") {
-        const targetContact = await Contact.findOne({
+        // Try exact match first
+        let targetContact = await Contact.findOne({
           userId,
-          name: { $regex: targetName, $options: "i" }
+          name: { $regex: `^${targetName}$`, $options: "i" }
         });
+        
+        // If not found, try partial match
+        if (!targetContact) {
+           targetContact = await Contact.findOne({
+            userId,
+            name: { $regex: targetName, $options: "i" }
+          });
+        }
         
         if (targetContact) {
           resolvedPhone = targetContact.phone;
@@ -38,7 +47,9 @@ const createTransferRuleTool = tool(
           console.log(`Found contact: ${resolvedName} - ${resolvedPhone}`);
         } else {
           console.log(`Contact "${targetName}" not found in database`);
-          return `⚠️ I couldn't find a contact named "${targetName}" in your contacts. Please save their contact first, or provide their phone number.`;
+          // If we can't find the contact, we can't create a forwarding rule effectively without a number.
+          // But maybe the user meant to forward TO the current contact? No, "forward to jeremy".
+          return `⚠️ I couldn't find a contact named "${targetName}" in your contacts. Please provide their phone number or save them as a contact first.`;
         }
       }
       
@@ -114,7 +125,9 @@ const createAutoReplyTool = tool(
 const blockContactTool = tool(
   async ({ userId, sourceContact, sourcePhone, reason }) => {
     try {
-      console.log("Blocking contact:", { userId, sourceContact });
+      console.log("Blocking contact:", { userId, sourceContact, sourcePhone });
+      
+      // Create a block rule
       await Rule.create({
         userId,
         rule: `Block ${sourceContact}${reason ? `: ${reason}` : ""}`,
@@ -122,6 +135,17 @@ const blockContactTool = tool(
         active: true,
         transferDetails: { sourceContact, sourcePhone }
       });
+
+      // Also set isBlocked on the conversation so it takes effect immediately
+      if (sourcePhone) {
+        const normalizedPhone = sourcePhone.replace(/\D/g, '');
+        await Conversation.updateMany(
+          { userId, contactPhone: { $regex: normalizedPhone } },
+          { isBlocked: true }
+        );
+        console.log("Updated conversation isBlocked for phone:", normalizedPhone);
+      }
+
       return `✅ Done! Blocked ${sourceContact}. They won't be able to reach you.`;
     } catch (error) {
       console.error("Block error:", error);
@@ -140,17 +164,93 @@ const blockContactTool = tool(
   }
 );
 
+// Tool: Unblock Contact
+const unblockContactTool = tool(
+  async ({ userId, sourceContact, sourcePhone }) => {
+    try {
+      console.log("Unblocking contact:", { userId, sourceContact, sourcePhone });
+      
+      // Delete block rules for this contact
+      await Rule.deleteMany({
+        userId,
+        type: "block",
+        $or: [
+          { "transferDetails.sourceContact": sourceContact },
+          { "transferDetails.sourcePhone": sourcePhone }
+        ]
+      });
+
+      // Set isBlocked to false on the conversation
+      if (sourcePhone) {
+        const normalizedPhone = sourcePhone.replace(/\D/g, '');
+        await Conversation.updateMany(
+          { userId, contactPhone: { $regex: normalizedPhone } },
+          { isBlocked: false }
+        );
+        console.log("Updated conversation isBlocked=false for phone:", normalizedPhone);
+      }
+
+      return `✅ Done! Unblocked ${sourceContact}. They can now message you again.`;
+    } catch (error) {
+      console.error("Unblock error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "unblock_contact",
+    description: "Unblock a blocked contact. Use when user says: unblock, allow again, remove block, let them message.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      sourceContact: z.string().describe("Contact to unblock"),
+      sourcePhone: z.string().optional().describe("Contact phone"),
+    }),
+  }
+);
+
 // Tool: Update Contact Name
 const updateContactTool = tool(
   async ({ userId, currentPhone, newName }) => {
     try {
       console.log("Updating contact:", { userId, currentPhone, newName });
+      
+      if (!currentPhone || currentPhone === "unknown") {
+        return "Error: I don't have a phone number for this contact to save them.";
+      }
+
       const normalizedPhone = currentPhone.replace(/\D/g, '');
-      const contact = await Contact.findOneAndUpdate(
-        { userId, phone: { $regex: normalizedPhone } },
-        { name: newName },
-        { new: true, upsert: true }
+      
+      if (!normalizedPhone) {
+        return "Error: Invalid phone number.";
+      }
+
+      // Update Contact model
+      // We use $setOnInsert to ensure phone is set only if creating a new doc
+      // But actually, we can just set it. If it exists, it matches the regex anyway (mostly).
+      // Better: Try to find first to avoid regex upsert issues.
+      
+      let contact = await Contact.findOne({ 
+        userId, 
+        phone: { $regex: normalizedPhone } 
+      });
+
+      if (contact) {
+        contact.name = newName;
+        await contact.save();
+      } else {
+        // Create new contact
+        contact = await Contact.create({
+          userId,
+          phone: `+${normalizedPhone}`, // Ensure + format if possible, or just normalized
+          name: newName
+        });
+      }
+
+      // Update Conversation model to reflect the new name immediately
+      await Conversation.updateMany(
+        { userId, contactPhone: { $regex: normalizedPhone } },
+        { contactName: newName }
       );
+
       return `✅ Done! Contact renamed to "${newName}"`;
     } catch (error) {
       console.error("Update contact error:", error);
@@ -240,11 +340,21 @@ const searchMessagesTool = tool(
       const conversations = await Conversation.find(conversationFilter).select('_id contactPhone contactName');
       const conversationIds = conversations.map(c => c._id);
       
-      // Search messages in those conversations
-      const messages = await Message.find({
+      // Search messages - try by conversationId first
+      let messages = await Message.find({
         conversationId: { $in: conversationIds },
-        content: { $regex: searchRegex }
-      }).sort({ timestamp: -1 }).limit(20);
+        body: { $regex: searchRegex }
+      }).sort({ createdAt: -1 }).limit(20);
+      
+      // Fallback: search by userId and contactPhone if no results
+      if (messages.length === 0 && contactPhone) {
+        const normalizedPhone = contactPhone.replace(/\D/g, '');
+        messages = await Message.find({
+          userId,
+          contactPhone: { $regex: normalizedPhone },
+          body: { $regex: searchRegex }
+        }).sort({ createdAt: -1 }).limit(20);
+      }
       
       if (messages.length === 0) {
         return `No messages found containing "${query}".`;
@@ -252,10 +362,10 @@ const searchMessagesTool = tool(
       
       // Format results
       const results = messages.map(m => {
-        const conv = conversations.find(c => c._id.toString() === m.conversationId.toString());
-        const contact = conv?.contactName || "Unknown";
-        const date = new Date(m.timestamp).toLocaleDateString();
-        return `[${date}] ${contact}: ${m.content}`;
+        const conv = conversations.find(c => c._id.toString() === m.conversationId?.toString());
+        const contact = conv?.contactName || m.contactName || "Unknown";
+        const date = new Date(m.createdAt).toLocaleDateString();
+        return `[${date}] ${contact}: ${m.body}`;
       });
       
       return `Found ${messages.length} messages:\n${results.join("\n")}`;
@@ -275,15 +385,215 @@ const searchMessagesTool = tool(
   }
 );
 
+// Tool: Search Messages by Date Range
+const searchMessagesByDateTool = tool(
+  async ({ userId, startDate, endDate, contactPhone }) => {
+    try {
+      console.log("Searching messages by date:", { userId, startDate, endDate, contactPhone });
+      
+      // Parse dates
+      const start = new Date(startDate);
+      const end = endDate ? new Date(endDate) : new Date();
+      end.setHours(23, 59, 59, 999); // End of day
+      
+      // Find conversations for this user
+      let conversationFilter = { userId };
+      if (contactPhone) {
+        conversationFilter.contactPhone = contactPhone;
+      }
+      
+      const conversations = await Conversation.find(conversationFilter).select('_id contactPhone contactName');
+      const conversationIds = conversations.map(c => c._id);
+      
+      // Search messages in date range
+      const messages = await Message.find({
+        conversationId: { $in: conversationIds },
+        timestamp: { $gte: start, $lte: end }
+      }).sort({ timestamp: -1 }).limit(50);
+      
+      if (messages.length === 0) {
+        return `No messages found between ${start.toLocaleDateString()} and ${end.toLocaleDateString()}.`;
+      }
+      
+      // Format results
+      const results = messages.map(m => {
+        const conv = conversations.find(c => c._id.toString() === m.conversationId.toString());
+        const contact = conv?.contactName || conv?.contactPhone || "Unknown";
+        const date = new Date(m.timestamp).toLocaleDateString();
+        const time = new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const direction = m.direction === 'outgoing' ? '→' : '←';
+        return `[${date} ${time}] ${direction} ${contact}: ${m.content}`;
+      });
+      
+      return `Found ${messages.length} messages:\n${results.join("\n")}`;
+    } catch (error) {
+      console.error("Search messages by date error:", error);
+      return `Error searching: ${error.message}`;
+    }
+  },
+  {
+    name: "search_messages_by_date",
+    description: "Search messages within a date range. Use when user asks 'what did we talk about on January 1', 'show messages from last week', 'summarize conversations from March'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      startDate: z.string().describe("Start date in ISO format or natural language (e.g., 2024-01-01, January 1 2024)"),
+      endDate: z.string().optional().describe("End date - defaults to today"),
+      contactPhone: z.string().optional().describe("Filter to specific contact"),
+    }),
+  }
+);
+
+// Tool: Get All Rules
+const getRulesTool = tool(
+  async ({ userId }) => {
+    try {
+      console.log("Getting rules for user:", userId);
+      const rules = await Rule.find({ userId, active: true });
+      
+      if (rules.length === 0) {
+        return "You have no active rules set up.";
+      }
+      
+      const ruleList = rules.map((r, i) => {
+        let details = `${i + 1}. [${r.type.toUpperCase()}] ${r.rule}`;
+        if (r.transferDetails?.contactName) {
+          details += ` (to: ${r.transferDetails.contactName})`;
+        }
+        return details;
+      });
+      
+      return `Your active rules:\n${ruleList.join("\n")}`;
+    } catch (error) {
+      console.error("Get rules error:", error);
+      return `Error getting rules: ${error.message}`;
+    }
+  },
+  {
+    name: "get_rules",
+    description: "List all active rules for the user. Use when user asks 'what rules do I have', 'show my rules', 'list transfers'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+    }),
+  }
+);
+
+// Tool: Delete Rule
+const deleteRuleTool = tool(
+  async ({ userId, ruleDescription }) => {
+    try {
+      console.log("Deleting rule:", { userId, ruleDescription });
+      
+      // Find and delete rule matching description
+      const result = await Rule.findOneAndDelete({
+        userId,
+        rule: { $regex: ruleDescription, $options: "i" }
+      });
+      
+      if (result) {
+        return `✅ Rule deleted: "${result.rule}"`;
+      } else {
+        return `Could not find a rule matching "${ruleDescription}". Use "show my rules" to see your active rules.`;
+      }
+    } catch (error) {
+      console.error("Delete rule error:", error);
+      return `Error deleting rule: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_rule",
+    description: "Delete a specific rule. Use when user says 'stop forwarding', 'remove rule', 'delete the auto-reply', 'cancel transfer'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      ruleDescription: z.string().describe("Part of rule description to match"),
+    }),
+  }
+);
+
+// Tool: Summarize Conversation
+const summarizeConversationTool = tool(
+  async ({ userId, contactPhone, contactName }) => {
+    try {
+      console.log("Summarizing conversation:", { userId, contactPhone, contactName });
+      
+      // Find the conversation
+      let conversation;
+      if (contactPhone) {
+        conversation = await Conversation.findOne({ userId, contactPhone });
+      } else if (contactName) {
+        conversation = await Conversation.findOne({ 
+          userId, 
+          contactName: { $regex: contactName, $options: "i" } 
+        });
+      }
+      
+      if (!conversation) {
+        return `Could not find conversation with ${contactName || contactPhone}.`;
+      }
+      
+      // Get recent messages
+      // Note: Message model might not have conversationId populated correctly in all cases, 
+      // or it might be a string vs ObjectId issue.
+      // Let's try finding by userId and contactPhone as a fallback if conversationId yields nothing.
+      
+      let messages = await Message.find({
+        conversationId: conversation._id
+      }).sort({ createdAt: -1 }).limit(30);
+      
+      if (messages.length === 0) {
+        console.log("No messages found by conversationId, trying by phone...");
+        messages = await Message.find({
+          userId,
+          contactPhone: conversation.contactPhone
+        }).sort({ createdAt: -1 }).limit(30);
+      }
+      
+      if (messages.length === 0) {
+        return "No messages found in this conversation.";
+      }
+      
+      // Build conversation text for summarization
+      const msgText = messages.reverse().map(m => {
+        const dir = m.direction === 'outgoing' ? 'You' : (contactName || contactPhone);
+        return `${dir}: ${m.body}`;
+      }).join("\n");
+      
+      // Use LLM to summarize
+      const summaryResponse = await llm.invoke([
+        new SystemMessage("You are a helpful assistant. Summarize the following conversation concisely, highlighting key points, any action items, and any scheduled meetings or appointments."),
+        new HumanMessage(msgText)
+      ]);
+      
+      return `📝 Conversation Summary with ${contactName || contactPhone}:\n\n${summaryResponse.content}`;
+    } catch (error) {
+      console.error("Summarize conversation error:", error);
+      return `Error summarizing: ${error.message}`;
+    }
+  },
+  {
+    name: "summarize_conversation",
+    description: "Summarize the conversation with current or specified contact. Use when user asks 'summarize', 'what did we talk about', 'give me a summary'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactPhone: z.string().optional().describe("Phone of contact to summarize"),
+      contactName: z.string().optional().describe("Name of contact to summarize"),
+    }),
+  }
+);
+
 // All conversation tools
 const conversationTools = [
   createTransferRuleTool,
   createAutoReplyTool,
   blockContactTool,
+  unblockContactTool,
   updateContactTool,
   searchContactsTool,
   markPriorityTool,
   searchMessagesTool,
+  searchMessagesByDateTool,
+  getRulesTool,
+  deleteRuleTool,
+  summarizeConversationTool,
 ];
 
 // Create LLM with tools bound
@@ -294,10 +604,15 @@ const toolMap = {
   create_transfer_rule: createTransferRuleTool,
   create_auto_reply: createAutoReplyTool,
   block_contact: blockContactTool,
+  unblock_contact: unblockContactTool,
   update_contact: updateContactTool,
   search_contacts: searchContactsTool,
   mark_priority: markPriorityTool,
   search_messages: searchMessagesTool,
+  search_messages_by_date: searchMessagesByDateTool,
+  get_rules: getRulesTool,
+  delete_rule: deleteRuleTool,
+  summarize_conversation: summarizeConversationTool,
 };
 
 // ==================== MAIN FUNCTION ====================
@@ -346,6 +661,21 @@ You have these tools - USE THEM when the user's intent matches:
    Triggers: "do I have a meeting", "any appointments", "find messages about", "when did they say", "search for", "look for"
    ALWAYS USE THIS when user asks about meetings, appointments, plans, events, dates, times, lunch, dinner, calls scheduled
 
+8. search_messages_by_date - Search messages in a date range
+   Triggers: "what did we talk about on [date]", "messages from January", "show messages from last week", "conversations on March 5"
+
+9. get_rules - List all active rules
+   Triggers: "show my rules", "what rules do I have", "list my transfers", "my auto-replies"
+
+10. delete_rule - Remove a rule
+    Triggers: "stop forwarding", "remove rule", "delete auto-reply", "cancel transfer to X"
+
+11. summarize_conversation - Summarize chat with contact
+    Triggers: "summarize", "what did we talk about", "give me a summary", "recap our conversation"
+
+12. unblock_contact - Unblock a blocked contact
+    Triggers: "unblock", "allow again", "remove block", "let them message"
+
 === CRITICAL RULES ===
 1. BE ACTION-ORIENTED - Execute immediately, don't ask unnecessary questions
 2. ALWAYS include these in tool calls:
@@ -355,7 +685,10 @@ You have these tools - USE THEM when the user's intent matches:
 3. When user says "transfer to X" → call create_transfer_rule with targetName=X
 4. When user says "change name to X" or "rename to X" or "change contact to X" → call update_contact with newName=X, currentPhone="${contactPhone}"
 5. When user asks about meetings/appointments/events → call search_messages with query="meeting" or relevant keywords
-6. If no tool matches, analyze the conversation or answer the question
+6. When user asks about messages on a specific date → use search_messages_by_date
+7. When user asks "summarize" with no specific contact → use summarize_conversation with current contact
+8. When user says "unblock" → call unblock_contact with sourceContact and sourcePhone
+9. If no tool matches, analyze the conversation or answer the question
 
 === CONVERSATION HISTORY ===
 ${conversationContext || "No history available."}`;
@@ -402,4 +735,450 @@ ${conversationContext || "No history available."}`;
 // Export for rules tab (simpler version)
 export async function chatWithAI(userId, message, history = []) {
   return conversationChat(userId, message, "General", null, "");
+}
+// ==================== FULL AGENT FOR RULES TAB ====================
+// This agent can do EVERYTHING - call, message, create rules, search, etc.
+
+import TwilioAccount from "../models/TwilioAccount.js";
+import User from "../models/User.js";
+
+import mongoose from "mongoose";
+
+// Tool: Make a phone call
+const makeCallTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      console.log("📞 Make call request:", { userId, contactName, contactPhone });
+      
+      // Resolve contact phone if not provided
+      let phone = contactPhone;
+      let resolvedName = contactName;
+      
+      if (!phone && contactName) {
+        // Convert userId to ObjectId for proper query
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        
+        // First try Contacts collection
+        let contact = await Contact.findOne({
+          userId: userObjectId,
+          name: { $regex: contactName, $options: "i" }
+        });
+        
+        // If not found, also try by phone field having the name
+        if (!contact) {
+          contact = await Contact.findOne({
+            userId: userObjectId,
+            phone: { $regex: contactName, $options: "i" }
+          });
+        }
+        
+        if (contact && contact.phone) {
+          phone = contact.phone;
+          resolvedName = contact.name || contactName;
+          console.log("Found in Contacts:", resolvedName, phone);
+        } else {
+          // Try Conversations collection
+          const conversation = await Conversation.findOne({
+            userId: userObjectId,
+            contactName: { $regex: contactName, $options: "i" }
+          });
+          
+          if (conversation && conversation.contactPhone) {
+            phone = conversation.contactPhone;
+            resolvedName = conversation.contactName || contactName;
+            console.log("Found in Conversations:", resolvedName, phone);
+          }
+        }
+        
+        if (!phone) {
+          return `⚠️ I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
+        }
+      }
+      
+      if (!phone) {
+        return "⚠️ I need either a contact name or phone number to make a call.";
+      }
+      
+      // Convert userId for Twilio lookup
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      
+      // Get user's Twilio account for calling
+      const twilioAccount = await TwilioAccount.findOne({ userId: userObjectId });
+      if (!twilioAccount) {
+        return "⚠️ You don't have a phone number set up yet. Go to Settings to configure your Twilio number.";
+      }
+      
+      // Return confirmation with call details - frontend will handle the actual call
+      return JSON.stringify({
+        action: "call",
+        confirm: true,
+        contactName: resolvedName || phone,
+        contactPhone: phone,
+        fromNumber: twilioAccount.phoneNumber,
+        message: `📞 Ready to call ${resolvedName || phone}. How would you like to call?\n\n1. **VoIP** - Call through the app\n2. **SIP** - Call via your desk phone\n3. **Callback** - Have me call your phone first, then connect`
+      });
+    } catch (error) {
+      console.error("Make call error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "make_call",
+    description: "Initiate a phone call to a contact. Use when user says: call, phone, dial, ring",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Name of contact to call"),
+      contactPhone: z.string().optional().describe("Phone number to call"),
+    }),
+  }
+);
+
+// Tool: Send SMS message
+const sendMessageTool = tool(
+  async ({ userId, contactName, contactPhone, messageText }) => {
+    try {
+      console.log("💬 Send message request:", { userId, contactName, messageText });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (!phone && contactName) {
+        // Convert userId to ObjectId
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        
+        // Try Contacts first
+        let contact = await Contact.findOne({
+          userId: userObjectId,
+          name: { $regex: contactName, $options: "i" }
+        });
+        
+        if (contact && contact.phone) {
+          phone = contact.phone;
+          name = contact.name || contactName;
+        } else {
+          // Try Conversations
+          const conversation = await Conversation.findOne({
+            userId: userObjectId,
+            contactName: { $regex: contactName, $options: "i" }
+          });
+          
+          if (conversation && conversation.contactPhone) {
+            phone = conversation.contactPhone;
+            name = conversation.contactName || contactName;
+          }
+        }
+        
+        if (!phone) {
+          return `⚠️ I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
+        }
+      }
+      
+      if (!phone) {
+        return "⚠️ I need either a contact name or phone number to send a message.";
+      }
+      
+      if (!messageText) {
+        return `📝 What would you like to say to ${name || phone}?`;
+      }
+      
+      // Return confirmation - frontend will handle actual sending
+      return JSON.stringify({
+        action: "send_message",
+        confirm: true,
+        contactName: name || phone,
+        contactPhone: phone,
+        messageText,
+        message: `📱 Ready to send to ${name || phone}:\n\n"${messageText}"\n\n**Reply "yes" to send** or tell me what changes to make.`
+      });
+    } catch (error) {
+      console.error("Send message error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "send_message",
+    description: "Send an SMS message to a contact. Use when user says: text, message, send, tell them, say to",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Name of contact"),
+      contactPhone: z.string().optional().describe("Phone number"),
+      messageText: z.string().optional().describe("The message to send"),
+    }),
+  }
+);
+
+// Tool: List all contacts
+const listContactsTool = tool(
+  async ({ userId, filter }) => {
+    try {
+      let query = { userId };
+      if (filter === "favorites") query.isFavorite = true;
+      if (filter === "blocked") query.isBlocked = true;
+      
+      const contacts = await Contact.find(query).sort({ name: 1 }).limit(50);
+      
+      if (contacts.length === 0) {
+        return "No contacts found.";
+      }
+      
+      const list = contacts.map(c => {
+        let status = [];
+        if (c.isFavorite) status.push("⭐");
+        if (c.isBlocked) status.push("🚫");
+        return `• ${c.name} - ${c.phone} ${status.join(" ")}`;
+      }).join("\n");
+      
+      return `📒 Your Contacts (${contacts.length}):\n\n${list}`;
+    } catch (error) {
+      console.error("List contacts error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "list_contacts",
+    description: "List all contacts, favorites, or blocked contacts",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      filter: z.enum(["all", "favorites", "blocked"]).optional().describe("Filter contacts"),
+    }),
+  }
+);
+
+// Tool: Get user's phone info
+const getPhoneInfoTool = tool(
+  async ({ userId }) => {
+    try {
+      const user = await User.findById(userId);
+      const twilioAccount = await TwilioAccount.findOne({ userId });
+      
+      let info = [];
+      if (twilioAccount) {
+        info.push(`📱 Your Comsierge Number: ${twilioAccount.phoneNumber}`);
+      }
+      if (user?.forwardingNumber) {
+        info.push(`📲 Forwarding to: ${user.forwardingNumber}`);
+      }
+      
+      const rulesCount = await Rule.countDocuments({ userId, active: true });
+      info.push(`📋 Active Rules: ${rulesCount}`);
+      
+      const contactsCount = await Contact.countDocuments({ userId });
+      info.push(`👥 Contacts: ${contactsCount}`);
+      
+      return info.join("\n");
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "get_phone_info",
+    description: "Get user's phone numbers, forwarding setup, and stats",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+    }),
+  }
+);
+
+// Tool: Confirm action
+const confirmActionTool = tool(
+  async ({ userId, action, confirmed, actionData }) => {
+    try {
+      if (!confirmed) {
+        return "Action cancelled.";
+      }
+      
+      // Handle confirmed actions
+      if (action === "call") {
+        // Trigger actual call via Twilio
+        const twilioAccount = await TwilioAccount.findOne({ userId });
+        if (!twilioAccount) return "No phone configured.";
+        
+        // This would integrate with Twilio to make the call
+        // For now, return success message - frontend handles actual call
+        return JSON.stringify({
+          action: "execute_call",
+          ...JSON.parse(actionData)
+        });
+      }
+      
+      if (action === "send_message") {
+        // Send actual message
+        return JSON.stringify({
+          action: "execute_message",
+          ...JSON.parse(actionData)
+        });
+      }
+      
+      return "Unknown action type.";
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "confirm_action",
+    description: "Confirm and execute a pending action (call or message)",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      action: z.enum(["call", "send_message"]).describe("Action type"),
+      confirmed: z.boolean().describe("Whether user confirmed"),
+      actionData: z.string().optional().describe("JSON data for action"),
+    }),
+  }
+);
+
+// All tools for the full agent
+const fullAgentTools = [
+  // Actions
+  makeCallTool,
+  sendMessageTool,
+  confirmActionTool,
+  // Contacts
+  listContactsTool,
+  searchContactsTool,
+  updateContactTool,
+  blockContactTool,
+  unblockContactTool,
+  // Rules
+  createTransferRuleTool,
+  createAutoReplyTool,
+  markPriorityTool,
+  getRulesTool,
+  deleteRuleTool,
+  // Messages
+  searchMessagesTool,
+  searchMessagesByDateTool,
+  summarizeConversationTool,
+  // Info
+  getPhoneInfoTool,
+];
+
+const fullAgentToolMap = {
+  make_call: makeCallTool,
+  send_message: sendMessageTool,
+  confirm_action: confirmActionTool,
+  list_contacts: listContactsTool,
+  search_contacts: searchContactsTool,
+  update_contact: updateContactTool,
+  block_contact: blockContactTool,
+  unblock_contact: unblockContactTool,
+  create_transfer_rule: createTransferRuleTool,
+  create_auto_reply: createAutoReplyTool,
+  mark_priority: markPriorityTool,
+  get_rules: getRulesTool,
+  delete_rule: deleteRuleTool,
+  search_messages: searchMessagesTool,
+  search_messages_by_date: searchMessagesByDateTool,
+  summarize_conversation: summarizeConversationTool,
+  get_phone_info: getPhoneInfoTool,
+};
+
+// Full Agent LLM
+const fullAgentLLM = new ChatOpenAI({
+  modelName: "gpt-5.2",
+  temperature: 0.3,
+  openAIApiKey: process.env.OPENAI_API_KEY,
+}).bindTools(fullAgentTools);
+
+/**
+ * Full-powered Rules Agent Chat
+ * Can make calls, send messages, create rules, search everything
+ */
+export async function rulesAgentChat(userId, message, chatHistory = []) {
+  try {
+    console.log("🤖 Rules Agent Chat:", { userId, message });
+    
+    const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge - a smart SMS/call management platform.
+
+You can do ANYTHING the user asks:
+
+=== ACTIONS (Execute immediately or confirm first) ===
+1. make_call - Call someone. Ask "How would you like to call?" (VoIP/SIP/Callback)
+2. send_message - Send SMS. Show the message and ask for confirmation.
+3. confirm_action - Execute confirmed calls/messages
+
+=== CONTACTS ===
+4. list_contacts - Show all/favorites/blocked contacts
+5. search_contacts - Find a contact by name
+6. update_contact - Rename, add to favorites, add tags
+7. block_contact - Block a contact
+8. unblock_contact - Unblock a contact
+
+=== RULES (Automations) ===
+9. create_transfer_rule - Forward calls/messages to someone else
+10. create_auto_reply - Set automatic replies
+11. mark_priority - Mark contact as high/normal priority
+12. get_rules - Show all active rules
+13. delete_rule - Remove a rule
+
+=== SEARCH & INFO ===
+14. search_messages - Search message content
+15. search_messages_by_date - Find messages by date
+16. summarize_conversation - Summarize chat history
+17. get_phone_info - Show user's phone setup
+
+=== BEHAVIOR ===
+- For calls: ALWAYS ask confirmation and how they want to call (VoIP, SIP, Callback)
+- For messages: Show the message preview and ask "Reply yes to send"
+- For rules: Create immediately and confirm
+- Be conversational and helpful
+- If unsure, ask clarifying questions
+
+User ID: ${userId}`;
+
+    const messages = [
+      new SystemMessage(systemPrompt),
+      ...chatHistory.map(h => h.role === "user" ? new HumanMessage(h.text) : new SystemMessage(h.text)),
+      new HumanMessage(message)
+    ];
+
+    const response = await fullAgentLLM.invoke(messages);
+    
+    console.log("Full Agent Response:", response.content);
+    console.log("Tool calls:", response.tool_calls);
+
+    // Execute tool calls
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      const results = [];
+      
+      for (const toolCall of response.tool_calls) {
+        console.log(`Executing tool: ${toolCall.name}`, toolCall.args);
+        
+        // Auto-inject userId
+        const args = { ...toolCall.args, userId };
+        
+        const selectedTool = fullAgentToolMap[toolCall.name];
+        if (selectedTool) {
+          try {
+            const result = await selectedTool.invoke(args);
+            results.push(result);
+          } catch (toolError) {
+            console.error(`Tool ${toolCall.name} error:`, toolError);
+            results.push(`Error: ${toolError.message}`);
+          }
+        }
+      }
+      
+      // Check if any result is a JSON action needing frontend handling
+      for (const result of results) {
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.action && parsed.confirm) {
+            // Return the action for frontend to handle
+            return result;
+          }
+        } catch (e) {
+          // Not JSON, just a string response
+        }
+      }
+      
+      return results.join("\n\n");
+    }
+    
+    return response.content || "I'm ready to help! You can ask me to call someone, send a message, create rules, search your messages, and more.";
+    
+  } catch (error) {
+    console.error("Rules Agent Error:", error);
+    return `I encountered an error: ${error.message}. Please try again.`;
+  }
 }

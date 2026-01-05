@@ -16,6 +16,11 @@ export interface CallRecord {
   recordingUrl?: string;
   transcription?: string;
   createdAt: string;
+  // Voicemail fields
+  hasVoicemail?: boolean;
+  voicemailUrl?: string;
+  voicemailDuration?: number;
+  voicemailTranscript?: string;
 }
 
 const getAuthHeaders = () => {
@@ -53,6 +58,10 @@ export const fetchCalls = async (type?: string, limit = 50): Promise<CallRecord[
         recordingUrl: c.recordingUrl,
         transcription: c.transcription,
         createdAt: c.createdAt,
+        hasVoicemail: c.hasVoicemail,
+        voicemailUrl: c.voicemailUrl,
+        voicemailDuration: c.voicemailDuration,
+        voicemailTranscript: c.voicemailTranscript,
       }));
     }
     return [];

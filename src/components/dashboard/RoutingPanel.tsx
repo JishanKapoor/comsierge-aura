@@ -223,7 +223,8 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseTags, selectedCallTags, selectedMessageTags]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Save to localStorage for UI persistence
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -236,7 +237,109 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       })
     );
 
-    toast.success("Routing settings saved!");
+    // Also save to backend as routing rules
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      
+      // Map UI filter to backend mode
+      const modeMap: Record<CallFilter, string> = {
+        all: "all",
+        favorites: "favorites", 
+        contacts: "saved",
+        tagged: "tags"
+      };
+      
+      // Build the rule description
+      let ruleDesc = "Forward calls";
+      if (callFilter === "favorites") ruleDesc = "Forward calls from favorites";
+      else if (callFilter === "contacts") ruleDesc = "Forward calls from saved contacts";
+      else if (callFilter === "tagged") ruleDesc = `Forward calls from contacts tagged: ${selectedCallTags.join(", ")}`;
+      
+      // Create/update the forward rule for CALLS
+      const callRuleData = {
+        rule: ruleDesc,
+        type: "forward",
+        active: forwardCalls,
+        schedule: { mode: "always" },
+        transferDetails: {
+          mode: "calls"
+        },
+        conditions: {
+          mode: modeMap[callFilter],
+          tags: callFilter === "tagged" ? selectedCallTags : []
+        }
+      };
+      
+      // Create the message notification rule
+      const messageRuleData = {
+        rule: `Message notifications: ${messageFilter}`,
+        type: "message-notify",
+        active: forwardMessages,
+        schedule: { mode: "always" },
+        transferDetails: {
+          mode: "messages"
+        },
+        conditions: {
+          // Map message filter to priority requirement
+          // all = notify for all, important = high+medium, urgent = high only
+          priorityFilter: messageFilter,
+          notifyTags: selectedMessageTags
+        }
+      };
+      
+      // First, get existing rules and delete them
+      const existingRulesRes = await fetch("/api/rules", {
+        headers: { Authorization: token ? `Bearer ${token}` : "" }
+      });
+      
+      if (existingRulesRes.ok) {
+        const existingData = await existingRulesRes.json();
+        const rulesToDelete = existingData.data?.filter((r: any) => 
+          r.type === "forward" || r.type === "message-notify"
+        ) || [];
+        
+        // Delete old rules
+        for (const oldRule of rulesToDelete) {
+          await fetch(`/api/rules/${oldRule._id || oldRule.id}`, {
+            method: "DELETE",
+            headers: { Authorization: token ? `Bearer ${token}` : "" }
+          });
+        }
+      }
+      
+      // Create new call forwarding rule
+      const createCallRes = await fetch("/api/rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : ""
+        },
+        body: JSON.stringify(callRuleData)
+      });
+      
+      if (!createCallRes.ok) {
+        throw new Error("Failed to save call routing rule");
+      }
+      
+      // Create new message notification rule
+      const createMsgRes = await fetch("/api/rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : ""
+        },
+        body: JSON.stringify(messageRuleData)
+      });
+      
+      if (!createMsgRes.ok) {
+        throw new Error("Failed to save message routing rule");
+      }
+      
+      toast.success("Routing settings saved!");
+    } catch (error) {
+      console.error("Failed to save routing rule:", error);
+      toast.error("Settings saved locally, but failed to sync to server");
+    }
   };
 
   const toggleCallTag = (tag: string) => {
@@ -259,22 +362,27 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     <div className="space-y-4 pb-4">
       {/* Forwarding Destination */}
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-        <h3 className="font-medium text-gray-900 text-sm">Forward To</h3>
-        
+        <div className="flex items-center gap-2">
+          <ArrowRight className="w-4 h-4 text-gray-500" />
+          <h3 className="font-medium text-gray-900 text-sm">Forward To</h3>
+        </div>
+
+        <p className="text-xs text-gray-500">Choose the number that should ring when a call matches your rules.</p>
+
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-          <div className="text-center flex-1">
+          <div className="text-center flex-1 min-w-0">
             <p className="text-[10px] text-gray-500 uppercase tracking-wide">From</p>
-            <p className="text-xs font-mono text-gray-800">{phoneNumber}</p>
+            <p className="text-xs font-mono text-gray-800 truncate">{phoneNumber}</p>
           </div>
           <ArrowRight className="w-4 h-4 text-gray-400" />
-          <div className="text-center flex-1">
+          <div className="text-center flex-1 min-w-0">
             <p className="text-[10px] text-gray-500 uppercase tracking-wide">To</p>
-            <p className="text-xs font-mono text-gray-800">{forwardingNumber || "Not set"}</p>
+            <p className="text-xs font-mono text-gray-800 truncate">{forwardingNumber || "Not set"}</p>
           </div>
         </div>
 
         <div>
-          <label className="text-xs text-gray-600 block mb-1">Your personal number</label>
+          <label className="text-xs text-gray-500 block mb-1">Your personal number</label>
           <input
             ref={inputRef}
             type="tel"
@@ -284,7 +392,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             onBlur={handleForwardingBlur}
             placeholder="+1 (555) 123-4567"
             className={cn(
-              "w-full px-3 py-2 bg-white border rounded-lg text-gray-800 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900/10",
+              "w-full px-3 py-2 bg-gray-50 border rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-gray-300",
               forwardingNumberError ? "border-red-300" : "border-gray-200"
             )}
           />
@@ -339,7 +447,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             onClick={() => setForwardCalls(!forwardCalls)}
             className={cn(
               "relative w-10 h-5 rounded-full transition-colors",
-              forwardCalls ? "bg-gray-900" : "bg-gray-300"
+              forwardCalls ? "bg-indigo-500" : "bg-gray-300"
             )}
           >
             <span
@@ -354,7 +462,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         {forwardCalls && (
           <>
             <p className="text-xs text-gray-500">Which calls should ring your phone?</p>
-            
+
             <div className="space-y-1.5">
               {[
                 { id: "all" as CallFilter, label: "All calls", icon: PhoneCall, desc: "Every incoming call" },
@@ -368,43 +476,48 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                   className={cn(
                     "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
                     callFilter === opt.id
-                      ? "border-gray-900 bg-gray-50"
-                      : "border-gray-100 hover:border-gray-200"
+                      ? "border-indigo-500 bg-indigo-50"
+                      : "border-gray-200 hover:bg-gray-50"
                   )}
                 >
-                  <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center",
-                    callFilter === opt.id ? "bg-gray-900" : "bg-gray-100"
-                  )}>
-                    <opt.icon className={cn(
-                      "w-4 h-4",
-                      callFilter === opt.id ? "text-white" : "text-gray-500"
-                    )} />
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center",
+                      callFilter === opt.id ? "bg-indigo-500" : "bg-gray-100"
+                    )}
+                  >
+                    <opt.icon
+                      className={cn(
+                        "w-4 h-4",
+                        callFilter === opt.id ? "text-white" : "text-gray-500"
+                      )}
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={cn(
-                      "text-sm font-medium",
-                      callFilter === opt.id ? "text-gray-900" : "text-gray-700"
-                    )}>
+                    <p
+                      className={cn(
+                        "text-sm font-medium",
+                        callFilter === opt.id ? "text-gray-900" : "text-gray-700"
+                      )}
+                    >
                       {opt.label}
                     </p>
                     <p className="text-[11px] text-gray-500">{opt.desc}</p>
                   </div>
-                  <div className={cn(
-                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                    callFilter === opt.id ? "border-gray-900" : "border-gray-300"
-                  )}>
-                    {callFilter === opt.id && (
-                      <div className="w-2 h-2 rounded-full bg-gray-900" />
+                  <div
+                    className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                      callFilter === opt.id ? "border-indigo-500" : "border-gray-300"
                     )}
+                  >
+                    {callFilter === opt.id && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
                   </div>
                 </button>
               ))}
             </div>
 
-            {/* Tags selection */}
             {showCallTags && (
-              <div className="pt-2 border-t border-gray-100">
+              <div className="pt-2 border-t border-gray-200">
                 <p className="text-xs text-gray-600 mb-2">Forward calls from contacts tagged:</p>
                 <div className="flex flex-wrap gap-1.5">
                   {tagOptions.map((tag) => {
@@ -416,7 +529,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                         className={cn(
                           "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
                           selected
-                            ? "bg-gray-900 text-white"
+                            ? "bg-indigo-500 text-white"
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         )}
                       >
@@ -442,7 +555,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             onClick={() => setForwardMessages(!forwardMessages)}
             className={cn(
               "relative w-10 h-5 rounded-full transition-colors",
-              forwardMessages ? "bg-gray-900" : "bg-gray-300"
+              forwardMessages ? "bg-indigo-500" : "bg-gray-300"
             )}
           >
             <span
@@ -457,7 +570,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         {forwardMessages && (
           <>
             <p className="text-xs text-gray-500">Which messages should notify you?</p>
-            
+
             <div className="space-y-1.5">
               {[
                 { id: "all" as MessageFilter, label: "All messages", desc: "Every incoming message" },
@@ -470,34 +583,35 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                   className={cn(
                     "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
                     messageFilter === opt.id
-                      ? "border-gray-900 bg-gray-50"
-                      : "border-gray-100 hover:border-gray-200"
+                      ? "border-indigo-500 bg-indigo-50"
+                      : "border-gray-200 hover:bg-gray-50"
                   )}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className={cn(
-                      "text-sm font-medium",
-                      messageFilter === opt.id ? "text-gray-900" : "text-gray-700"
-                    )}>
+                    <p
+                      className={cn(
+                        "text-sm font-medium",
+                        messageFilter === opt.id ? "text-gray-900" : "text-gray-700"
+                      )}
+                    >
                       {opt.label}
                     </p>
                     <p className="text-[11px] text-gray-500">{opt.desc}</p>
                   </div>
-                  <div className={cn(
-                    "w-4 h-4 rounded-full border-2 flex items-center justify-center",
-                    messageFilter === opt.id ? "border-gray-900" : "border-gray-300"
-                  )}>
-                    {messageFilter === opt.id && (
-                      <div className="w-2 h-2 rounded-full bg-gray-900" />
+                  <div
+                    className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                      messageFilter === opt.id ? "border-indigo-500" : "border-gray-300"
                     )}
+                  >
+                    {messageFilter === opt.id && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
                   </div>
                 </button>
               ))}
             </div>
 
-            {/* Tags selection for important/urgent */}
             {showMessageTags && (
-              <div className="pt-2 border-t border-gray-100">
+              <div className="pt-2 border-t border-gray-200">
                 <p className="text-xs text-gray-600 mb-2">Always notify for messages from:</p>
                 <div className="flex flex-wrap gap-1.5">
                   {tagOptions.map((tag) => {
@@ -509,7 +623,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                         className={cn(
                           "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
                           selected
-                            ? "bg-gray-900 text-white"
+                            ? "bg-indigo-500 text-white"
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         )}
                       >
@@ -526,7 +640,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
 
       {/* Save Button */}
       <Button
-        className="w-full h-10 text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white rounded-lg"
+        className="w-full h-10 text-sm font-medium bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg"
         onClick={handleSave}
         disabled={Boolean(forwardingNumberError)}
       >

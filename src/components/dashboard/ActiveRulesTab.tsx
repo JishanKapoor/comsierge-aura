@@ -30,7 +30,7 @@ interface ActiveRulesTabProps {
   onRulesChange?: (rules: ActiveRule[]) => void;
 }
 
-type RuleType = "auto-reply" | "forward" | "block" | "priority" | "transfer" | "custom";
+type RuleType = "auto-reply" | "forward" | "block" | "priority" | "transfer" | "custom" | "message-notify";
 
 type ChatMessage =
   | { id: string; role: "user"; text: string }
@@ -43,6 +43,7 @@ const RULE_TYPE_META: Record<RuleType, { label: string; icon: typeof Zap; color:
   priority: { label: "Priority", icon: Bell, color: "text-amber-600", bgColor: "bg-amber-50" },
   transfer: { label: "Transfer", icon: Phone, color: "text-purple-600", bgColor: "bg-purple-50" },
   custom: { label: "Custom", icon: Zap, color: "text-gray-600", bgColor: "bg-gray-50" },
+  "message-notify": { label: "Message Notify", icon: Bell, color: "text-indigo-600", bgColor: "bg-indigo-50" },
 };
 
 const AI_EXAMPLES = [
@@ -370,7 +371,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
         ) : rules.length > 0 ? (
           <div>
             {rules.map((rule) => {
-              const meta = RULE_TYPE_META[rule.type || "custom"];
+              const meta = RULE_TYPE_META[rule.type as RuleType] || RULE_TYPE_META.custom;
               const Icon = meta.icon;
               const isDragging = draggedRuleId === rule.id;
 

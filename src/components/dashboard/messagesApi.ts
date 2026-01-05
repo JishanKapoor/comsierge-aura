@@ -43,6 +43,9 @@ export interface Message {
   isRead: boolean;
   isHeld?: boolean;
   isSpam?: boolean;
+  wasForwarded?: boolean;
+  forwardedTo?: string;
+  forwardedAt?: string;
   sentiment?: {
     score: SentimentType | null;
     confidence: number | null;

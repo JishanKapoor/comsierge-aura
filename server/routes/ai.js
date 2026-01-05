@@ -6,8 +6,10 @@ import {
   batchAnalyzeMessages,
   generateAutoResponse,
   shouldHoldMessage,
+  generateReplySuggestions,
+  rewriteMessage,
 } from "../services/aiService.js";
-import { chatWithAI, conversationChat } from "../services/aiAgentService.js";
+import { conversationChat, rulesAgentChat } from "../services/aiAgentService.js";
 import Contact from "../models/Contact.js";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
@@ -226,140 +228,172 @@ router.post("/auto-response", async (req, res) => {
   } catch (error) {
     console.error("Auto-response error:", error);
     res.status(500).json({
-      success: false,
-      message: "Auto-response generation failed",
+            message: "Auto-response failed",
       error: error.message,
     });
   }
 });
 
-// @route   POST /api/ai/should-hold
-// @desc    Check if a message should be held
+// @route   POST /api/ai/reply-suggestions
+// @desc    Generate AI-powered reply suggestions based on conversation
 // @access  Private
-router.post("/should-hold", async (req, res) => {
+router.post("/reply-suggestions", authMiddleware, async (req, res) => {
+  console.log("🔄 Reply suggestions endpoint called");
   try {
-    const { message, senderName, rules } = req.body;
+    const { conversationHistory, contactName } = req.body;
+    console.log("📝 Contact:", contactName, "History length:", conversationHistory?.length);
 
-    if (!message) {
+    if (!conversationHistory || !Array.isArray(conversationHistory)) {
       return res.status(400).json({
         success: false,
-        message: "Message content is required",
+        message: "Conversation history array is required",
       });
     }
 
-    const result = await shouldHoldMessage(message, senderName, rules || []);
+    console.log("🤖 Calling generateReplySuggestions...");
+    const suggestions = await generateReplySuggestions(conversationHistory, contactName);
+    console.log("✅ Suggestions result:", suggestions);
 
     res.json({
       success: true,
-      data: result,
+      data: { suggestions },
     });
   } catch (error) {
-    console.error("Hold check error:", error);
+    console.error("❌ Reply suggestions error:", error);
     res.status(500).json({
       success: false,
-      message: "Hold check failed",
+      message: "Failed to generate suggestions",
       error: error.message,
     });
   }
 });
 
-// @route   POST /api/ai/process-incoming
-// @desc    Process an incoming message (analyze + decide hold + generate response)
+// @route   POST /api/ai/rewrite
+// @desc    Rewrite/improve a draft message using AI
 // @access  Private
-router.post("/process-incoming", async (req, res) => {
+router.post("/rewrite", authMiddleware, async (req, res) => {
+  console.log("🔄 Rewrite endpoint called");
   try {
-    const { message, senderPhone, senderName, conversationHistory, rules } = req.body;
+    const { draftMessage, conversationHistory, contactName, style } = req.body;
+    console.log("📝 Draft message:", draftMessage);
 
-    if (!message) {
+    if (!draftMessage) {
       return res.status(400).json({
         success: false,
-        message: "Message content is required",
+        message: "Draft message is required",
       });
     }
 
-    // Full analysis
-    const analysis = await analyzeIncomingMessage(
-      message,
-      senderPhone || "",
-      senderName || "",
-      conversationHistory || []
+    console.log("🤖 Calling rewriteMessage...");
+    const rewritten = await rewriteMessage(
+      draftMessage,
+      conversationHistory || [],
+      contactName,
+      style || "professional"
     );
-
-    // Check hold status based on rules
-    let holdStatus = { shouldHold: analysis.shouldHold, reason: analysis.holdReason };
-    if (rules && rules.length > 0) {
-      const ruleCheck = await shouldHoldMessage(message, senderName, rules);
-      if (ruleCheck.shouldHold) {
-        holdStatus = ruleCheck;
-      }
-    }
+    console.log("✅ Rewrite result:", rewritten);
 
     res.json({
       success: true,
-      data: {
-        analysis,
-        holdStatus,
-        timestamp: new Date().toISOString(),
-      },
+      data: { rewritten },
     });
   } catch (error) {
-    console.error("Process incoming error:", error);
+    console.error("❌ Rewrite error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to process incoming message",
+      message: "Failed to rewrite message",
       error: error.message,
     });
   }
 });
 
-// AI Agent Chat Endpoint (for rules)
+// @route   POST /api/ai/chat
+// @desc    Full-powered AI agent for Rules tab - can call, message, create rules, search, etc.
+// @access  Private
 router.post("/chat", authMiddleware, async (req, res) => {
+  console.log("🤖 AI Rules Agent Chat endpoint called");
   try {
-    const { message, history } = req.body;
-    const userId = req.user.userId;
+    const { message, chatHistory } = req.body;
+    const userId = req.user._id.toString();
     
+    console.log("📝 User:", userId, "Message:", message);
+
     if (!message) {
-      return res.status(400).json({ error: "Message is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Message is required",
+      });
     }
 
-    const response = await chatWithAI(userId, message, history);
+    // Use the full-powered rules agent
+    const response = await rulesAgentChat(userId, message, chatHistory || []);
     
-    res.json({ response });
+    console.log("🤖 Agent response:", response);
+    
+    // Check if response is a JSON action (call/message confirmation)
+    let actionData = null;
+    try {
+      actionData = JSON.parse(response);
+    } catch (e) {
+      // Not JSON, just a text response
+    }
+    
+    res.json({
+      success: true,
+      response: actionData ? actionData.message : response,
+      action: actionData,
+    });
+    
   } catch (error) {
-    console.error("Error in AI chat:", error);
-    res.status(500).json({ error: "Failed to process chat request" });
+    console.error("❌ AI Chat error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to process request",
+      error: error.message,
+    });
   }
 });
 
-// AI Conversation Chat Endpoint (for inbox assistant)
+// @route   POST /api/ai/conversation-chat
+// @desc    AI agent chat for conversation actions (transfer, block, rename, search, etc.)
+// @access  Private
 router.post("/conversation-chat", authMiddleware, async (req, res) => {
+  console.log("🤖 Conversation chat endpoint called");
   try {
-    const { message, context, contactName, contactPhone } = req.body;
-    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    const { message, contactName, contactPhone, conversationContext } = req.body;
+    const userId = req.user._id.toString();
     
-    console.log("Conversation chat - userId:", userId, "contactName:", contactName);
-    
-    if (!userId) {
-      return res.status(401).json({ error: "User not authenticated" });
-    }
-    
+    console.log("📝 User:", userId, "Contact:", contactName, "Phone:", contactPhone);
+    console.log("💬 Message:", message);
+
     if (!message) {
-      return res.status(400).json({ error: "Message is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Message is required",
+      });
     }
 
-    // Use the new LangChain-powered service
     const response = await conversationChat(
-      userId.toString(),
+      userId,
       message,
-      contactName || "Unknown Contact",
-      contactPhone,
-      context
+      contactName || "Unknown",
+      contactPhone || "",
+      conversationContext || ""
     );
-    
-    res.json({ response });
+
+    console.log("✅ AI Response:", response);
+
+    res.json({
+      success: true,
+      data: { response },
+    });
   } catch (error) {
-    console.error("Error in conversation chat:", error);
-    res.status(500).json({ error: "Failed to process conversation chat" });
+    console.error("❌ Conversation chat error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to process conversation chat",
+      error: error.message,
+    });
   }
 });
 

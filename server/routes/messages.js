@@ -368,8 +368,24 @@ router.put("/:messageId", async (req, res) => {
 
     const update = {};
     if (isRead !== undefined) update.isRead = isRead;
-    if (isHeld !== undefined) update.isHeld = isHeld;
-    if (isSpam !== undefined) update.isSpam = isSpam;
+    if (isHeld !== undefined) {
+      update.isHeld = isHeld;
+      // Also update status when unholding
+      if (isHeld === false) {
+        update.status = "received";
+      }
+    }
+    if (isSpam !== undefined) {
+      update.isSpam = isSpam;
+      // Also update status when marking/unmarking spam
+      if (isSpam === false) {
+        update.status = "received";
+        update.isHeld = false;
+      } else {
+        update.status = "spam";
+        update.isHeld = true;
+      }
+    }
     if (labels !== undefined) update.labels = labels;
 
     const message = await Message.findOneAndUpdate(

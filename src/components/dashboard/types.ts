@@ -31,6 +31,9 @@ export interface Message {
   isPriority?: boolean;
   isBlocked?: boolean;
   isHeld?: boolean;
+  // Forwarding info
+  wasForwarded?: boolean;
+  forwardedTo?: string;
 }
 
 export type MailboxId =
@@ -59,6 +62,11 @@ export interface Call {
   type: "incoming" | "outgoing" | "missed";
   duration?: string;
   isBlocked?: boolean;
+  // Voicemail fields
+  hasVoicemail?: boolean;
+  voicemailUrl?: string;
+  voicemailDuration?: number;
+  voicemailTranscript?: string;
 }
 
 export interface Reminder {

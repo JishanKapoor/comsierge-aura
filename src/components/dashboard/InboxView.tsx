@@ -38,6 +38,7 @@ import {
   SlidersHorizontal,
   MailCheck,
   ShieldCheck,
+  Forward,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { languages } from "./mockData";
@@ -71,6 +72,8 @@ type ChatBubble = {
   content: string;
   timestamp: string;
   translatedContent?: string; // For storing translated text
+  wasForwarded?: boolean;
+  forwardedTo?: string;
 };
 
 type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
@@ -186,7 +189,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   }, [user]);
 
   // Helper to normalize phone numbers for comparison
-  const normalizePhone = (value: string) => value.replace(/[^\d+]/g, "").toLowerCase();
+  const normalizePhone = (value: string | undefined | null) => {
+    if (!value) return "";
+    return value.replace(/[^\d+]/g, "").toLowerCase();
+  };
 
   // Reusable function to load conversations from API
   const loadConversations = useCallback(async (showLoading = false) => {
@@ -428,14 +434,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const caret = start + emoji.length;
       el.setSelectionRange(caret, caret);
     });
-  };
-
-  const buildRewriteSuggestion = (text: string) => {
-    const cleaned = text.replace(/\s+/g, " ").trim();
-    if (!cleaned) return "";
-    const capitalized = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-    const withPunctuation = /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
-    return withPunctuation;
   };
 
   const [showContactModal, setShowContactModal] = useState(false);
@@ -721,6 +719,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             role: m.direction === 'incoming' ? 'incoming' as const : 'outgoing' as const,
             content: m.body,
             timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase(),
+            wasForwarded: m.wasForwarded || false,
+            forwardedTo: m.forwardedTo || undefined,
           }));
           
           // Only update if messages have changed
@@ -931,7 +931,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       optimisticBubbles.push({
         id: `${optimisticId}-file`,
         role: "outgoing",
-        content: `ðŸ“Ž ${pendingAttachment.name}`,
+        content: `📎 ${pendingAttachment.name}`,
         timestamp,
       });
     }
@@ -1046,6 +1046,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             role: m.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const),
             content: m.body,
             timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+            wasForwarded: m.wasForwarded || false,
+            forwardedTo: m.forwardedTo || undefined,
           }));
           setThreadsByContactId((prev) => {
             const current = prev[selectedMessage.contactId] ?? [];
@@ -1211,14 +1213,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         },
         body: JSON.stringify({
           message: text,
-          context,
+          conversationContext: context,
           contactName: selectedMessage.contactName,
           contactPhone: selectedMessage.contactPhone,
         }),
       });
 
       const data = await response.json();
-      const aiText = data.response || "I'm sorry, I couldn't process that request.";
+      const aiText = data.data?.response || data.response || "I'm sorry, I couldn't process that request.";
 
       const aiMsg: AiChatMessage = {
         id: `${selectedMessage.id}-ai-${Date.now()}`,
@@ -1915,32 +1917,79 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   };
 
   // AI actions
-  const handleAiRewrite = () => {
+  const handleAiRewrite = async () => {
     if (!newMessage.trim()) {
       toast.error("Type a message first to rewrite");
       return;
     }
-    const suggestion = buildRewriteSuggestion(newMessage);
+    
     setAiAssistMode("rewrite");
-    setAiAssistRewrite(suggestion);
+    setAiAssistRewrite("");
     setAiAssistSuggestions([]);
     setAiAssistOpen(true);
+    
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch("http://localhost:5000/api/ai/rewrite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          draftMessage: newMessage,
+          conversationHistory: activeThread.map(b => ({ direction: b.role === "incoming" ? "incoming" : "outgoing", content: b.content })),
+          contactName: selectedMessage?.contactName || "",
+          style: "professional",
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAiAssistRewrite(data.data.rewritten);
+      } else {
+        toast.error("Failed to rewrite message");
+        setAiAssistRewrite("");
+      }
+    } catch (error) {
+      console.error("AI rewrite error:", error);
+      toast.error("Failed to connect to AI service");
+      setAiAssistRewrite("");
+    }
   };
 
-  const handleAiSuggestion = () => {
-    const base = [
-      "Thank you for reaching out! I'll look into this right away.",
-      "I understand your concern. Let me help you with that.",
-      "Got it â€” I can help. Can you share one more detail?",
-      "Thanks â€” Iâ€™m on it. Iâ€™ll update you shortly.",
-      "Understood. Iâ€™ll take care of this today.",
-    ];
-
-    const picks = base.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+  const handleAiSuggestion = async () => {
     setAiAssistMode("suggest");
-    setAiAssistSuggestions(picks);
+    setAiAssistSuggestions([]);
     setAiAssistRewrite("");
     setAiAssistOpen(true);
+    
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch("http://localhost:5000/api/ai/reply-suggestions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          conversationHistory: activeThread.map(b => ({ direction: b.role === "incoming" ? "incoming" : "outgoing", content: b.content })),
+          contactName: selectedMessage?.contactName || "",
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAiAssistSuggestions(data.data.suggestions);
+      } else {
+        toast.error("Failed to generate suggestions");
+        setAiAssistSuggestions([]);
+      }
+    } catch (error) {
+      console.error("AI suggestions error:", error);
+      toast.error("Failed to connect to AI service");
+      setAiAssistSuggestions([]);
+    }
   };
 
   return (
@@ -1983,7 +2032,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-200">
           {([
             { id: "all", label: "All" },
-            { id: "unread", label: "Unread" },
             { id: "priority", label: "Priority" },
             { id: "held", label: "Held" },
             { id: "blocked", label: "Blocked" },
@@ -2428,6 +2476,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           </>
                         )}
                       </button>
+                      {/* Hold/Release toggle - show based on active filter tab */}
+                      <button
+                        onClick={handleHold}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {activeFilter === "held" ? (
+                          <>
+                            <MailCheck className="w-4 h-4 mr-2.5 text-green-500" />
+                            Release from Hold
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-4 h-4 mr-2.5 text-amber-500" />
+                            Put on Hold
+                          </>
+                        )}
+                      </button>
                       <div className="border-t border-gray-100 my-1" />
                       {selectedMessage?.isBlocked ? (
                         <button
@@ -2517,6 +2582,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                               <span className="text-[11px] font-medium text-purple-600">AI Assistant</span>
                             </div>
                           )}
+                          {/* Show forwarded indicator for incoming messages */}
+                          {bubble.wasForwarded && !isOutgoing && (
+                            <div className="flex items-center gap-1 mb-1 text-green-600">
+                              <Forward className="w-3 h-3" />
+                              <span className="text-[10px] font-medium">Forwarded to your phone</span>
+                            </div>
+                          )}
                           <p className="text-sm">{bubble.content}</p>
                           
                           {/* Show translated content if available */}
@@ -2589,7 +2661,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </div>
               )}
 
-              {/* AI assist output â€” subtle, above composer */}
+              {/* AI assist output - subtle, above composer */}
               {aiAssistOpen &&
                 aiAssistMode &&
                 ((aiAssistMode === "rewrite" && aiAssistRewrite.trim().length > 0) ||
@@ -2639,7 +2711,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             }}
                             title={s}
                           >
-                            {s.length > 30 ? s.slice(0, 30) + "â€¦" : s}
+                            {s.length > 30 ? s.slice(0, 30) + "..." : s}
                           </button>
                         ))}
                         <button
@@ -2747,29 +2819,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <div className="absolute bottom-full left-0 mb-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-20">
                       <div className="grid grid-cols-8 gap-1">
                         {[
-                          "ðŸ˜€",
-                          "ðŸ˜",
-                          "ðŸ˜‚",
-                          "ðŸ˜Š",
-                          "ðŸ˜",
-                          "ðŸ¥³",
-                          "ðŸ˜Ž",
-                          "ðŸ˜…",
-                          "ðŸ™",
-                          "ðŸ‘",
-                          "ðŸ‘Ž",
-                          "â¤ï¸",
-                          "ðŸ”¥",
-                          "ðŸŽ‰",
-                          "âœ…",
-                          "â—",
-                          "âœ¨",
-                          "ðŸ•’",
-                          "ðŸ“Ž",
-                          "ðŸš¨",
-                          "ðŸ“",
-                          "ðŸ“…",
-                          "ðŸ",
+                          "😀",
+                          "😁",
+                          "😂",
+                          "😊",
+                          "😢",
+                          "🥳",
+                          "😎",
+                          "😅",
+                          "🙏",
+                          "👍",
+                          "👎",
+                          "❤️",
+                          "🔥",
+                          "🎉",
+                          "✅",
+                          "❗",
+                          "✨",
+                          "🕒",
+                          "📎",
+                          "🚨",
+                          "📝",
+                          "📅",
+                          "😍",
+                          "💬",
                         ].map((em) => (
                           <button
                             key={em}

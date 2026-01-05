@@ -26,6 +26,8 @@ import {
   PhoneCall,
   RefreshCw,
   Trash2,
+  Voicemail,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -110,6 +112,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const [device, setDevice] = useState<Device | null>(null);
   const [showCallModeDialog, setShowCallModeDialog] = useState(false);
   const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
+
+  // Voicemail playback state
+  const [playingVoicemailId, setPlayingVoicemailId] = useState<string | null>(null);
+  const voicemailAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Audio refs for ringtone
   const ringToneRef = useRef<HTMLAudioElement | null>(null);
@@ -241,6 +247,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         type: record.type,
         duration: formatDurationForCall(record.duration),
         isBlocked: false,
+        hasVoicemail: record.hasVoicemail,
+        voicemailUrl: record.voicemailUrl,
+        voicemailDuration: record.voicemailDuration,
+        voicemailTranscript: record.voicemailTranscript,
       }));
       setCalls(formattedCalls);
     } catch (error) {
@@ -390,6 +400,78 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         return "bg-gray-100";
     }
   };
+
+  // Voicemail playback handler
+  const playVoicemail = (callId: string) => {
+    // If already playing this voicemail, stop it
+    if (playingVoicemailId === callId) {
+      if (voicemailAudioRef.current) {
+        voicemailAudioRef.current.pause();
+        voicemailAudioRef.current = null;
+      }
+      setPlayingVoicemailId(null);
+      return;
+    }
+
+    // Stop any currently playing voicemail
+    if (voicemailAudioRef.current) {
+      voicemailAudioRef.current.pause();
+    }
+
+    // Use our proxy endpoint which handles Twilio auth
+    const token = localStorage.getItem("comsierge_token");
+    const audioUrl = `/api/calls/${callId}/voicemail`;
+    
+    // Use fetch to get the audio with auth header
+    fetch(audioUrl, {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : ''
+      }
+    })
+    .then(response => {
+      if (!response.ok) throw new Error('Failed to fetch voicemail');
+      return response.blob();
+    })
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      const audio = new Audio(blobUrl);
+      voicemailAudioRef.current = audio;
+      setPlayingVoicemailId(callId);
+
+      audio.onended = () => {
+        setPlayingVoicemailId(null);
+        voicemailAudioRef.current = null;
+        URL.revokeObjectURL(blobUrl);
+      };
+
+      audio.onerror = () => {
+        toast.error("Failed to play voicemail");
+        setPlayingVoicemailId(null);
+        voicemailAudioRef.current = null;
+        URL.revokeObjectURL(blobUrl);
+      };
+
+      audio.play().catch(() => {
+        toast.error("Failed to play voicemail");
+        setPlayingVoicemailId(null);
+        voicemailAudioRef.current = null;
+        URL.revokeObjectURL(blobUrl);
+      });
+    })
+    .catch(() => {
+      toast.error("Failed to load voicemail");
+      setPlayingVoicemailId(null);
+    });
+  };
+
+  // Clean up voicemail audio on unmount
+  useEffect(() => {
+    return () => {
+      if (voicemailAudioRef.current) {
+        voicemailAudioRef.current.pause();
+      }
+    };
+  }, []);
 
   const makeCall = async (number: string, name?: string) => {
     if (!isValidUsPhoneNumber(number)) {
@@ -1097,20 +1179,51 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
             {filteredCalls.map((call) => (
               <div key={call.id} className="flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors group">
                 <div className={`w-8 h-8 rounded-full ${getCallBgClass(call.type)} flex items-center justify-center shrink-0`}>
-                  {getCallIcon(call.type)}
+                  {call.hasVoicemail ? (
+                    <Voicemail className="w-3.5 h-3.5 text-amber-500" />
+                  ) : (
+                    getCallIcon(call.type)
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-800 truncate">{call.contactName}</p>
                   <p className="text-xs text-gray-500 truncate">{call.phone}</p>
+                  {call.hasVoicemail && call.voicemailTranscript && (
+                    <p className="text-xs text-gray-400 truncate mt-0.5 italic">"{call.voicemailTranscript}"</p>
+                  )}
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
                   <p className="text-xs text-gray-500">{call.timestamp}</p>
                   <p className="text-xs text-gray-400 flex items-center gap-1 justify-end mt-0.5">
-                    <Clock className="w-3 h-3" />
-                    {call.duration || "Missed"}
+                    {call.hasVoicemail ? (
+                      <>
+                        <Voicemail className="w-3 h-3 text-amber-500" />
+                        {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-3 h-3" />
+                        {call.duration || "Missed"}
+                      </>
+                    )}
                   </p>
                 </div>
                 <div className="flex gap-0.5 shrink-0">
+                  {call.hasVoicemail && call.voicemailUrl && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`rounded h-7 w-7 ${playingVoicemailId === call.id ? 'text-amber-600 bg-amber-50' : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'}`}
+                      onClick={() => playVoicemail(call.id)}
+                      aria-label={playingVoicemailId === call.id ? "Stop voicemail" : "Play voicemail"}
+                    >
+                      {playingVoicemailId === call.id ? (
+                        <Square className="w-3.5 h-3.5" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5" />
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

@@ -21,6 +21,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, ".env") });
 
+console.log("🔑 OPENAI_API_KEY present:", !!process.env.OPENAI_API_KEY);
+console.log("🔑 MONGODB_URI present:", !!process.env.MONGODB_URI);
+
 const app = express();
 
 // Middleware
@@ -138,6 +141,9 @@ const startServer = async () => {
       console.log(`   POST /api/ai/auto-response - Generate auto-response`);
       console.log(`   POST /api/ai/should-hold - Check if should hold`);
       console.log(`   POST /api/ai/process-incoming - Full incoming processing`);
+      console.log(`   POST /api/ai/reply-suggestions - Generate reply suggestions (GPT-4o)`);
+      console.log(`   POST /api/ai/rewrite - Rewrite message (GPT-4o)`);
+      console.log(`   POST /api/ai/conversation-chat - AI Agent Chat`);
     });
   } catch (error) {
     console.error("❌ MongoDB connection error:", error.message);
@@ -152,6 +158,15 @@ mongoose.connection.on("disconnected", () => {
 
 mongoose.connection.on("error", (err) => {
   console.error("❌ MongoDB error:", err);
+});
+
+// Global error handlers
+process.on('uncaughtException', (err) => {
+  console.error('🔥 Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Unhandled Rejection:', reason);
 });
 
 startServer();

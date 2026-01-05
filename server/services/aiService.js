@@ -3,10 +3,17 @@ import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { z } from "zod";
 
-// Initialize OpenAI with GPT-5.2
+// Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
   modelName: "gpt-5.2",
   temperature: 0.2,
+  openAIApiKey: process.env.OPENAI_API_KEY,
+});
+
+// Fast model for quick classification (GPT-4o-mini)
+const fastLlm = new ChatOpenAI({
+  modelName: "gpt-4o-mini",
+  temperature: 0.1,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -209,116 +216,147 @@ const graphState = {
   },
 };
 
-// Node: Multi-Factor Spam Classification
+// Node: Fast Message Classification (INBOX / SPAM / HELD)
+// Uses GPT-4o-mini for speed with your exact logic
 async function classifySpam(state) {
   try {
     const { message, senderPhone, senderName, conversationHistory, senderContext } = state;
     
-    // Build sender trust context for the AI
-    let trustIndicators = [];
-    let trustLevel = "low";
+    // Calculate key variables
+    const isSavedContact = senderContext.isSavedContact || senderContext.isFavorite || false;
+    const userSentCount = conversationHistory ? conversationHistory.filter(m => m.direction === 'outbound').length : 0;
     
-    if (senderContext.isSavedContact) {
-      trustIndicators.push("Saved contact in user's address book");
-      trustLevel = "high";
-    }
-    if (senderContext.isFavorite) {
-      trustIndicators.push("Marked as Favorite");
-      trustLevel = "high";
-    }
-    if (senderContext.tags && senderContext.tags.length > 0) {
-      trustIndicators.push(`Tagged as: ${senderContext.tags.join(", ")}`);
-      if (["Family", "Work", "Friend", "VIP"].some(t => senderContext.tags.includes(t))) {
-        trustLevel = "high";
-      }
-    }
-    if (senderContext.hasConversationHistory) {
-      trustIndicators.push(`Has conversation history (${senderContext.messageCount} messages)`);
-      if (trustLevel !== "high") trustLevel = "medium";
-    }
-    if (senderContext.userHasReplied) {
-      trustIndicators.push("User has previously replied to this sender");
-      trustLevel = "high";
-    }
-    if (senderContext.isBlocked) {
-      trustIndicators.push("BLOCKED by user");
-      trustLevel = "low";
+    // RULE 1: SAVED CONTACT → INBOX (instant, no AI needed)
+    if (isSavedContact) {
+      console.log("   [FastClassify] Saved contact → INBOX");
+      return {
+        ...state,
+        spamAnalysis: {
+          category: "INBOX",
+          senderTrust: "high",
+          intent: "conversational",
+          behaviorPattern: "normal",
+          contentRiskLevel: "none",
+          spamProbability: 0,
+          isSpam: false,
+          isHeld: false,
+          reasoning: "Saved contact - messages from contacts in address book are always delivered to inbox.",
+        },
+      };
     }
     
-    const trustContext = trustIndicators.length > 0
-      ? `Sender Trust Indicators:\n${trustIndicators.map(t => `- ${t}`).join("\n")}\nPre-determined Trust Level: ${trustLevel.toUpperCase()}`
-      : "Sender Trust Indicators: None (unknown sender, first contact)\nPre-determined Trust Level: LOW";
+    // RULE 2: ESTABLISHED CONVERSATION (user has replied before)
+    if (userSentCount > 0) {
+      // Need AI to check for revoked consent or contextual banter
+      const historyText = conversationHistory.slice(-10).map(m => 
+        `${m.direction === 'outbound' ? 'YOU' : 'THEM'}: ${m.body || m.content || ''}`
+      ).join('\n');
+      
+      const prompt = `You are a high-speed message classifier. The user has replied to this sender before (${userSentCount} times).
 
-    // Build behavior context from conversation history
-    let behaviorContext = "";
-    if (conversationHistory && conversationHistory.length > 0) {
-      const inboundMessages = conversationHistory.filter(m => m.direction === 'inbound');
-      const outboundMessages = conversationHistory.filter(m => m.direction === 'outbound');
-      behaviorContext = `\nBehavior Context:
-- Total messages in history: ${conversationHistory.length}
-- Messages from sender: ${inboundMessages.length}
-- User replies: ${outboundMessages.length}
-- Conversation has back-and-forth: ${outboundMessages.length > 0 ? "Yes" : "No"}`;
+CONVERSATION HISTORY:
+${historyText}
+
+NEW MESSAGE: "${message}"
+
+CHECK:
+1. Did the user recently say "stop", "unsubscribe", or express disinterest, and the sender is persisting with sales/warranty/promo content?
+   - If YES → category is "SPAM"
+2. If no "stop" command, even if the new message LOOKS like spam (prank, weird link, "lol", joke), if history shows friendly/casual relationship:
+   - category is "INBOX"
+
+Respond with JSON only:
+{"category": "INBOX" | "SPAM", "reason": "brief explanation"}`;
+
+      const response = await fastLlm.invoke([
+        new SystemMessage("You classify messages. Respond with JSON only. Be FAST."),
+        new HumanMessage(prompt),
+      ]);
+      
+      let result = { category: "INBOX", reason: "Established conversation" };
+      try {
+        const text = response.content.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+      } catch (e) { /* use default */ }
+      
+      console.log(`   [FastClassify] Established convo (${userSentCount} replies) → ${result.category}: ${result.reason}`);
+      
+      return {
+        ...state,
+        spamAnalysis: {
+          category: result.category,
+          senderTrust: "medium",
+          intent: result.category === "SPAM" ? "promotional" : "conversational",
+          behaviorPattern: result.category === "SPAM" ? "scripted" : "normal",
+          contentRiskLevel: result.category === "SPAM" ? "medium" : "none",
+          spamProbability: result.category === "SPAM" ? 85 : 5,
+          isSpam: result.category === "SPAM",
+          isHeld: false, // Never hold established conversations
+          reasoning: result.reason,
+        },
+      };
     }
-
-    const spamPrompt = `Analyze this message for spam classification:
+    
+    // RULE 3: FIRST CONTACT (unknown sender, user never replied)
+    // AI decides: obvious spam → SPAM, otherwise → HELD
+    const prompt = `You are a high-speed spam classifier for FIRST-TIME messages from UNKNOWN senders.
 
 MESSAGE: "${message}"
 FROM: ${senderName || senderPhone || "Unknown"}
-PHONE: ${senderPhone || "Unknown"}
 
-${trustContext}
-${behaviorContext}
+This is the FIRST message from this number. User has NEVER replied.
 
-IMPORTANT: If sender trust is HIGH, the message is almost certainly NOT spam regardless of content.
-A trusted contact saying "this is a spam message" is having a conversation ABOUT spam, not sending spam.
+CLASSIFY:
+- If obvious unsolicited marketing (crypto, warranties, bots, scams, "you won", car insurance, phishing links) → "SPAM"
+- Otherwise (unknown intent, personal greeting, potential lead, "hey", "hello", questions) → "HELD"
 
-Classify this message following the multi-factor spam classification rules.
-Respond with JSON only.`;
+Respond with JSON only:
+{"category": "SPAM" | "HELD", "reason": "brief explanation"}`;
 
-    const response = await llm.invoke([
-      new SystemMessage(SPAM_CLASSIFICATION_PROMPT),
-      new HumanMessage(spamPrompt),
+    const response = await fastLlm.invoke([
+      new SystemMessage("You classify first-contact messages. Respond with JSON only. Be FAST."),
+      new HumanMessage(prompt),
     ]);
-
-    let analysisText = response.content;
-    const jsonMatch = analysisText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      analysisText = jsonMatch[1].trim();
-    }
     
-    // Try to extract JSON if response contains extra text
-    const jsonStartMatch = analysisText.match(/\{[\s\S]*\}/);
-    if (jsonStartMatch) {
-      analysisText = jsonStartMatch[0];
-    }
+    let result = { category: "HELD", reason: "First contact - needs review" };
+    try {
+      const text = response.content.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+    } catch (e) { /* use default */ }
     
-    const spamAnalysis = JSON.parse(analysisText);
+    console.log(`   [FastClassify] First contact → ${result.category}: ${result.reason}`);
     
-    // Override: If sender is trusted, cap spam probability
-    if (trustLevel === "high" && spamAnalysis.spamProbability > 10) {
-      spamAnalysis.spamProbability = Math.min(spamAnalysis.spamProbability, 10);
-      spamAnalysis.isSpam = false;
-      spamAnalysis.senderTrust = "high";
-      spamAnalysis.reasoning = `[Trust Override] ${spamAnalysis.reasoning} — Sender is trusted, spam probability capped.`;
-    }
-    
-    return {
-      ...state,
-      spamAnalysis,
-    };
-  } catch (error) {
-    console.error("Spam classification error:", error);
     return {
       ...state,
       spamAnalysis: {
+        category: result.category,
+        senderTrust: "low",
+        intent: result.category === "SPAM" ? "deceptive" : "conversational",
+        behaviorPattern: result.category === "SPAM" ? "scripted" : "normal",
+        contentRiskLevel: result.category === "SPAM" ? "high" : "low",
+        spamProbability: result.category === "SPAM" ? 90 : 30,
+        isSpam: result.category === "SPAM",
+        isHeld: result.category === "HELD",
+        reasoning: result.reason,
+      },
+    };
+  } catch (error) {
+    console.error("Fast classification error:", error);
+    // Default to HELD on error for safety
+    return {
+      ...state,
+      spamAnalysis: {
+        category: "HELD",
         senderTrust: "medium",
         intent: "conversational",
         behaviorPattern: "normal",
         contentRiskLevel: "none",
         spamProbability: 0,
         isSpam: false,
-        reasoning: "Classification error - defaulting to non-spam for safety",
+        isHeld: true,
+        reasoning: "Classification error - holding for review",
       },
     };
   }
@@ -642,6 +680,89 @@ Respond with JSON: { "shouldHold": boolean, "reason": string }`),
   }
 }
 
+// Generate AI reply suggestions based on conversation context
+async function generateReplySuggestions(conversationHistory, contactName) {
+  // Use gpt-4o-mini for speed - it's fast and accurate for short replies
+  const llm = new ChatOpenAI({
+    modelName: "gpt-4o-mini",
+    temperature: 0.7,
+    openAIApiKey: process.env.OPENAI_API_KEY,
+    maxTokens: 200, // Limit output for speed
+  });
+
+  try {
+    // Use last 5 messages - enough context without slowing things down
+    const historyText = conversationHistory
+      .slice(-5)
+      .map(m => `${m.direction === 'incoming' ? (contactName || 'Contact') : 'You'}: ${m.content}`)
+      .join('\n');
+
+    // Get the last incoming message to focus the response
+    const lastIncoming = conversationHistory
+      .filter(m => m.direction === 'incoming')
+      .slice(-1)[0];
+
+    const response = await llm.invoke([
+      new SystemMessage(`Generate 3 short reply suggestions for a text message conversation. Be concise and natural.
+Rules:
+- 1-2 sentences each, max 20 words
+- Match the conversation's tone (casual/formal)
+- Different approaches: 1) acknowledge/agree 2) ask/clarify 3) action/next step
+- Return ONLY a JSON array of 3 strings`),
+      new HumanMessage(`${historyText ? `Recent messages:\n${historyText}\n\n` : ''}Last message from ${contactName || 'Contact'}: "${lastIncoming?.content || 'Hello'}"`)
+    ]);
+
+    const text = response.content.trim();
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return [
+      "Got it, thanks!",
+      "Can you tell me more?",
+      "I'll take care of it."
+    ];
+  } catch (error) {
+    console.error("Reply suggestions error:", error);
+    return [
+      "Got it, thanks!",
+      "Can you tell me more?",
+      "I'll take care of it."
+    ];
+  }
+}
+
+// Rewrite/improve a draft message
+async function rewriteMessage(draftMessage, conversationHistory, contactName, style = "professional") {
+  // Use gpt-4o-mini for speed
+  const llm = new ChatOpenAI({
+    modelName: "gpt-4o-mini",
+    temperature: 0.4,
+    openAIApiKey: process.env.OPENAI_API_KEY,
+    maxTokens: 150,
+  });
+
+  try {
+    // Just use last 3 messages for context - enough to understand tone
+    const historyText = conversationHistory
+      .slice(-3)
+      .map(m => `${m.direction === 'incoming' ? (contactName || 'Contact') : 'You'}: ${m.content}`)
+      .join('\n');
+
+    const response = await llm.invoke([
+      new SystemMessage(`Improve this draft message. Keep it ${style}, fix errors, keep same meaning. Return ONLY the improved text.`),
+      new HumanMessage(`${historyText ? `Context:\n${historyText}\n\n` : ''}Draft: "${draftMessage}"`)
+    ]);
+
+    return response.content.trim().replace(/^["']|["']$/g, '');
+  } catch (error) {
+    console.error("Rewrite error:", error);
+    const cleaned = draftMessage.replace(/\s+/g, " ").trim();
+    const capitalized = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+  }
+}
+
 export {
   analyzeIncomingMessage,
   classifyMessageAsSpam,
@@ -649,6 +770,8 @@ export {
   batchAnalyzeMessages,
   generateAutoResponse,
   shouldHoldMessage,
+  generateReplySuggestions,
+  rewriteMessage,
   MessageAnalysisSchema,
   SpamClassificationSchema,
 };
