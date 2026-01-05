@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE_URL } from "@/config";
 import {
   Menu,
   Inbox,
@@ -183,7 +184,7 @@ const Dashboard = () => {
     setIsChangingPassword(true);
     try {
       const token = localStorage.getItem("comsierge_token");
-      const res = await fetch("/api/auth/change-password", {
+      const res = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

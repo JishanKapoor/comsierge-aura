@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { API_BASE_URL } from "@/config";
 import {
   Search,
   Phone,
@@ -1930,7 +1931,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     
     try {
       const token = localStorage.getItem("comsierge_token");
-      const response = await fetch("http://localhost:5000/api/ai/rewrite", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/rewrite`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1966,7 +1967,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     
     try {
       const token = localStorage.getItem("comsierge_token");
-      const response = await fetch("http://localhost:5000/api/ai/reply-suggestions", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/reply-suggestions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

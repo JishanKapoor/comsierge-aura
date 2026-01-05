@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { API_BASE_URL } from "@/config";
 import {
   Phone,
   Users,
@@ -47,8 +48,8 @@ import {
 } from "@/components/dashboard/supportStore";
 import Logo from "@/components/Logo";
 
-// API base URL - use relative path so it works with vite proxy
-const API_URL = "/api";
+// API base URL - uses env var in production, proxy in dev
+const API_URL = `${API_BASE_URL}/api`;
 
 type Tab = "phones" | "users" | "tickets";
 

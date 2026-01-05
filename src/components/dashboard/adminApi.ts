@@ -1,4 +1,5 @@
 // API-based admin store (replaces localStorage)
+import { API_BASE_URL } from "@/config";
 
 export interface TwilioAccount {
   id: string;
@@ -38,7 +39,7 @@ const getAuthHeaders = () => {
 
 export const fetchTwilioAccounts = async (): Promise<TwilioAccount[]> => {
   try {
-    const response = await fetch("/api/admin/twilio-accounts", {
+    const response = await fetch(`${API_BASE_URL}/api/admin/twilio-accounts`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -66,7 +67,7 @@ export const fetchTwilioAccounts = async (): Promise<TwilioAccount[]> => {
 
 export const addTwilioAccount = async (accountSid: string, authToken: string, friendlyName?: string): Promise<TwilioAccount | null> => {
   try {
-    const response = await fetch("/api/admin/twilio-accounts", {
+    const response = await fetch(`${API_BASE_URL}/api/admin/twilio-accounts`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ accountSid, authToken, friendlyName }),
@@ -90,7 +91,7 @@ export const addTwilioAccount = async (accountSid: string, authToken: string, fr
 
 export const removeTwilioAccount = async (id: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/admin/twilio-accounts/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/admin/twilio-accounts/${id}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
@@ -104,7 +105,7 @@ export const removeTwilioAccount = async (id: string): Promise<boolean> => {
 
 export const refreshTwilioNumbers = async (): Promise<boolean> => {
   try {
-    const response = await fetch("/api/admin/refresh-twilio-numbers", {
+    const response = await fetch(`${API_BASE_URL}/api/admin/refresh-twilio-numbers`, {
       method: "POST",
       headers: getAuthHeaders(),
     });
@@ -120,7 +121,7 @@ export const refreshTwilioNumbers = async (): Promise<boolean> => {
 
 export const fetchUsers = async (): Promise<AppUser[]> => {
   try {
-    const response = await fetch("/api/admin/users", {
+    const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -145,7 +146,7 @@ export const fetchUsers = async (): Promise<AppUser[]> => {
 
 export const assignPhoneToUser = async (userId: string, phoneNumber: string | null): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/admin/users/${userId}/assign-phone`, {
+    const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/assign-phone`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify({ phoneNumber }),
@@ -160,7 +161,7 @@ export const assignPhoneToUser = async (userId: string, phoneNumber: string | nu
 
 export const updateUserRole = async (userId: string, role: "user" | "admin"): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/admin/users/${userId}/role`, {
+    const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/role`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify({ role }),
@@ -175,7 +176,7 @@ export const updateUserRole = async (userId: string, role: "user" | "admin"): Pr
 
 export const fetchAvailablePhones = async (): Promise<{ all: string[]; assigned: string[]; available: string[] }> => {
   try {
-    const response = await fetch("/api/admin/available-phones", {
+    const response = await fetch(`${API_BASE_URL}/api/admin/available-phones`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();

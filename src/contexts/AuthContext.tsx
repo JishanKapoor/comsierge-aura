@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { toast } from "sonner";
+import { API_BASE_URL } from "@/config";
 
 export type UserRole = "user" | "admin";
 
@@ -31,8 +32,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// API base URL - use relative path so it works with vite proxy
-const API_URL = "/api";
+// API base URL - uses env var in production, proxy in dev
+const API_URL = `${API_BASE_URL}/api`;
 
 // Session cache configuration
 const SESSION_CACHE_KEY = "comsierge_session_cache";

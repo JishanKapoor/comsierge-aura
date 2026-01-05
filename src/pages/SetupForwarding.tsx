@@ -6,8 +6,9 @@ import { preloadedImages } from "@/hooks/useImagePreloader";
 import { isValidUsPhoneNumber, normalizeUsPhoneDigits } from "@/lib/validations";
 import Logo from "@/components/Logo";
 import { toast } from "sonner";
+import { API_BASE_URL } from "@/config";
 
-const API_URL = "/api";
+const API_URL = `${API_BASE_URL}/api`;
 
 const SetupForwarding = () => {
   const [imageLoaded, setImageLoaded] = useState(false);

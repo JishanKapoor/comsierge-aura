@@ -1,4 +1,5 @@
 // Support ticket store - API-based (shared between user and admin via MongoDB)
+import { API_BASE_URL } from "@/config";
 
 export interface TicketReply {
   message: string;
@@ -40,8 +41,8 @@ export function loadTickets(): SupportTicket[] {
 export async function loadTicketsAsync(status?: string): Promise<SupportTicket[]> {
   try {
     const url = status && status !== "all" 
-      ? `/api/support/tickets?status=${status}`
-      : "/api/support/tickets";
+      ? `${API_BASE_URL}/api/support/tickets?status=${status}`
+      : `${API_BASE_URL}/api/support/tickets`;
     const response = await fetch(url, {
       headers: getAuthHeaders(),
     });
@@ -68,7 +69,7 @@ export async function createTicketAsync(
   subject?: string
 ): Promise<SupportTicket | null> {
   try {
-    const response = await fetch("/api/support/tickets", {
+    const response = await fetch(`${API_BASE_URL}/api/support/tickets`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ category, message, subject }),
@@ -116,7 +117,7 @@ export async function addReplyAsync(
   message: string
 ): Promise<SupportTicket | null> {
   try {
-    const response = await fetch(`/api/support/tickets/${ticketId}/reply`, {
+    const response = await fetch(`${API_BASE_URL}/api/support/tickets/${ticketId}/reply`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ message }),
@@ -149,7 +150,7 @@ export async function updateTicketStatusAsync(
   status: SupportTicket["status"]
 ): Promise<SupportTicket | null> {
   try {
-    const response = await fetch(`/api/support/tickets/${ticketId}/status`, {
+    const response = await fetch(`${API_BASE_URL}/api/support/tickets/${ticketId}/status`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -180,7 +181,7 @@ export async function updateTicketPriorityAsync(
   priority: SupportTicket["priority"]
 ): Promise<SupportTicket | null> {
   try {
-    const response = await fetch(`/api/support/tickets/${ticketId}/priority`, {
+    const response = await fetch(`${API_BASE_URL}/api/support/tickets/${ticketId}/priority`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify({ priority }),
@@ -218,7 +219,7 @@ export async function getTicketCountsAsync(): Promise<{
   resolved: number;
 }> {
   try {
-    const response = await fetch("/api/support/tickets/counts", {
+    const response = await fetch(`${API_BASE_URL}/api/support/tickets/counts`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();

@@ -1,4 +1,5 @@
 // API-based store for rules (replaces localStorage)
+import { API_BASE_URL } from "@/config";
 
 export interface ActiveRule {
   id: string;
@@ -32,7 +33,7 @@ const getAuthHeaders = () => {
 // Fetch all rules from API
 export const fetchRules = async (): Promise<ActiveRule[]> => {
   try {
-    const response = await fetch("/api/rules", {
+    const response = await fetch(`${API_BASE_URL}/api/rules`, {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
@@ -57,7 +58,7 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
 // Create a new rule
 export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Promise<ActiveRule | null> => {
   try {
-    const response = await fetch("/api/rules", {
+    const response = await fetch(`${API_BASE_URL}/api/rules`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(rule),
@@ -84,7 +85,7 @@ export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Pr
 // Update a rule
 export const updateRule = async (id: string, updates: Partial<ActiveRule>): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/rules/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -100,7 +101,7 @@ export const updateRule = async (id: string, updates: Partial<ActiveRule>): Prom
 // Delete a rule
 export const deleteRule = async (id: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/rules/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/rules/${id}`, {
       method: "DELETE",
       headers: getAuthHeaders(),
     });
@@ -115,7 +116,7 @@ export const deleteRule = async (id: string): Promise<boolean> => {
 // Toggle rule active status
 export const toggleRule = async (id: string): Promise<boolean> => {
   try {
-    const response = await fetch(`/api/rules/${id}/toggle`, {
+    const response = await fetch(`${API_BASE_URL}/api/rules/${id}/toggle`, {
       method: "PUT",
       headers: getAuthHeaders(),
     });

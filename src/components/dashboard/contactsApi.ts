@@ -1,6 +1,7 @@
 // API-based store for contacts (replaces localStorage)
 import type { Contact } from "./types";
 import { toE164UsPhoneNumber, isValidUsPhoneNumber } from "@/lib/validations";
+import { API_BASE_URL } from "@/config";
 
 interface ApiResponse<T = any> {
   success: boolean;
@@ -59,7 +60,7 @@ export const createContact = async (contact: Omit<Contact, "id">): Promise<{ con
       return { contact: null, error: "Could not normalize phone number." };
     }
     
-    const response = await fetch("/api/contacts", {
+    const response = await fetch(`${API_BASE_URL}/api/contacts`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ ...contact, phone: normalizedPhone }),
