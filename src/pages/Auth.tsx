@@ -115,6 +115,7 @@ const Auth = () => {
                 <input
                   type="text"
                   {...loginForm.register("email")}
+                  autoComplete="username"
                   className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                     loginForm.formState.errors.email ? "border-destructive" : "border-white/10"
                   }`}
@@ -175,6 +176,7 @@ const Auth = () => {
                 <input
                   type="text"
                   {...signupForm.register("name")}
+                  autoComplete="name"
                   className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                     signupForm.formState.errors.name ? "border-destructive" : "border-white/10"
                   }`}
@@ -190,6 +192,7 @@ const Auth = () => {
                 <input
                   type="email"
                   {...signupForm.register("email")}
+                  autoComplete="email"
                   className={`w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-background/50 backdrop-blur-sm border rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm ${
                     signupForm.formState.errors.email ? "border-destructive" : "border-white/10"
                   }`}
