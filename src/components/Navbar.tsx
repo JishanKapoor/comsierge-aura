@@ -10,7 +10,7 @@ const Navbar = () => {
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
   const lastScrollY = useRef(0);
-  const scrollStopTimer = useRef<number | null>(null);
+  const rafId = useRef<number | null>(null);
   const mobileOpenRef = useRef(false);
 
   useEffect(() => {
@@ -18,39 +18,51 @@ const Navbar = () => {
   }, [mobileOpen]);
 
   useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      
-      // Add background when scrolled past threshold
-      setScrolled(currentScrollY > 50);
+    const onScroll = () => {
+      if (rafId.current != null) return;
+      rafId.current = window.requestAnimationFrame(() => {
+        rafId.current = null;
 
-      // Hide on scroll down (after scrolling 100px), show on scroll up
-      if (!mobileOpenRef.current) {
-        if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+        const currentScrollY = window.scrollY;
+        const delta = currentScrollY - lastScrollY.current;
+
+        // Add background when scrolled past threshold
+        setScrolled(currentScrollY > 50);
+
+        // If mobile menu is open, keep header visible.
+        if (mobileOpenRef.current) {
+          lastScrollY.current = currentScrollY;
+          return;
+        }
+
+        // Always show near the top.
+        if (currentScrollY < 24) {
+          setHidden(false);
+          lastScrollY.current = currentScrollY;
+          return;
+        }
+
+        // Micro1-style behavior: hide on scroll down, show on scroll up.
+        // Ignore tiny movements to avoid jitter.
+        if (delta > 8 && currentScrollY > 120) {
           setHidden(true);
-        } else if (currentScrollY < lastScrollY.current) {
+        } else if (delta < -8) {
           setHidden(false);
         }
-      }
 
-      // If the user stops scrolling, show the header again.
-      if (scrollStopTimer.current) {
-        window.clearTimeout(scrollStopTimer.current);
-      }
-      scrollStopTimer.current = window.setTimeout(() => {
-        if (!mobileOpenRef.current) {
-          setHidden(false);
-        }
-      }, 180);
-
-      lastScrollY.current = currentScrollY;
+        lastScrollY.current = currentScrollY;
+      });
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    // Initialize baseline
+    lastScrollY.current = window.scrollY;
+    setScrolled(window.scrollY > 50);
+
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (scrollStopTimer.current) {
-        window.clearTimeout(scrollStopTimer.current);
+      window.removeEventListener("scroll", onScroll);
+      if (rafId.current != null) {
+        window.cancelAnimationFrame(rafId.current);
       }
     };
   }, []);
