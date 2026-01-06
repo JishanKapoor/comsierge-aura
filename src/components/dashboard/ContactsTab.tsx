@@ -388,23 +388,21 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
 
   return (
     <div className="space-y-3">
-      {/* Actions */}
-      <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5 h-7 text-xs rounded bg-indigo-500 hover:bg-indigo-600 text-white" onClick={() => openModal()}>
+      {/* Search + Add button */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 h-8 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-gray-300"
+          />
+        </div>
+        <Button size="sm" className="gap-1.5 h-8 text-xs rounded bg-indigo-500 hover:bg-indigo-600 text-white shrink-0" onClick={() => openModal()}>
           <Plus className="w-3.5 h-3.5" /> Add
         </Button>
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search contacts..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-9 pr-3 h-8 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-gray-300"
-        />
       </div>
 
       {/* Sort & Filter */}

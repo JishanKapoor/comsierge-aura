@@ -339,14 +339,36 @@ router.put("/conversation/:contactPhone", async (req, res) => {
 // @access  Private
 router.delete("/conversation/:contactPhone", async (req, res) => {
   try {
-    const { contactPhone } = req.params;
+    const rawPhone = req.params.contactPhone;
+    const normalizedPhone = normalizePhone(rawPhone);
+    
+    // Try multiple phone formats to ensure we catch the record
+    const phoneVariations = [
+      rawPhone,
+      normalizedPhone,
+      normalizedPhone.replace(/^\+1/, ""),
+      `+1${normalizedPhone.replace(/^\+1/, "").replace(/^\+/, "")}`,
+    ].filter(p => p);
 
-    await Message.deleteMany({ userId: req.user._id, contactPhone });
-    await Conversation.findOneAndDelete({ userId: req.user._id, contactPhone });
+    console.log(`Deleting conversation for phone: ${rawPhone}, variations:`, phoneVariations);
+
+    const deleteResult = await Message.deleteMany({ 
+      userId: req.user._id, 
+      contactPhone: { $in: phoneVariations } 
+    });
+    
+    const convResult = await Conversation.findOneAndDelete({ 
+      userId: req.user._id, 
+      contactPhone: { $in: phoneVariations } 
+    });
+
+    console.log(`Deleted ${deleteResult.deletedCount} messages, conversation: ${convResult ? 'yes' : 'no'}`);
 
     res.json({
       success: true,
       message: "Conversation deleted",
+      deletedMessages: deleteResult.deletedCount,
+      deletedConversation: !!convResult,
     });
   } catch (error) {
     console.error("Delete conversation error:", error);

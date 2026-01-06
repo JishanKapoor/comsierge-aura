@@ -200,11 +200,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
   }, [user]);
 
-  // Helper to normalize phone numbers for comparison
-  const normalizePhone = (value: string | undefined | null) => {
+  // Helper to normalize phone numbers for comparison - defined outside useCallback for stability
+  const normalizePhone = useCallback((value: string | undefined | null) => {
     if (!value) return "";
     return value.replace(/[^\d+]/g, "").toLowerCase();
-  };
+  }, []);
 
   const refreshContacts = useCallback(async () => {
     const data = await fetchContacts();
@@ -220,7 +220,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       // Look up contact names from saved contacts
       const msgs: Message[] = conversations
         // Filter out recently deleted conversations to prevent flicker
-        .filter(conv => !recentlyDeletedPhones.current.has(normalizePhone(conv.contactPhone)))
+        .filter(conv => {
+          const normalized = normalizePhone(conv.contactPhone);
+          // Check multiple formats to ensure we catch deleted conversations
+          const isDeleted = recentlyDeletedPhones.current.has(normalized) ||
+                           recentlyDeletedPhones.current.has(normalized.replace(/^\+1/, "")) ||
+                           recentlyDeletedPhones.current.has(`+1${normalized.replace(/^\+1/, "")}`);
+          return !isDeleted;
+        })
         .map((conv): Message => {
         // Try to find a saved contact matching this phone
         const savedContact = contacts.find(c => normalizePhone(c.phone) === normalizePhone(conv.contactPhone));
@@ -1997,9 +2004,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const deletedThread = threadsByContactId[contactId];
     const deletedTransferPrefs = transferPrefsByConversation[conversationId];
 
-    // Add to recently deleted to prevent polling from bringing it back
+    // Add all phone variations to recently deleted to prevent polling from bringing it back
     const normalizedPhone = normalizePhone(phone);
-    recentlyDeletedPhones.current.add(normalizedPhone);
+    const phoneVariations = [
+      normalizedPhone,
+      normalizedPhone.replace(/^\+1/, ""),
+      `+1${normalizedPhone.replace(/^\+1/, "").replace(/^\+/, "")}`,
+      phone, // original format too
+    ];
+    phoneVariations.forEach(p => recentlyDeletedPhones.current.add(p));
     
     // Optimistic update - remove immediately for smooth UX
     setMessages(prev => prev.filter(m => m.id !== conversationId));
@@ -2033,14 +2046,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       
       toast.success("Conversation deleted");
       
-      // Remove from recently deleted after a delay (so server has time to process)
+      // Remove from recently deleted after a delay (keep it longer to ensure polling doesn't bring it back)
       setTimeout(() => {
-        recentlyDeletedPhones.current.delete(normalizedPhone);
-      }, 10000);
+        phoneVariations.forEach(p => recentlyDeletedPhones.current.delete(p));
+      }, 30000); // 30 seconds to be safe
     } catch (e) {
       console.error("Delete API error:", e);
       // Remove from recently deleted on error so it can come back
-      recentlyDeletedPhones.current.delete(normalizedPhone);
+      phoneVariations.forEach(p => recentlyDeletedPhones.current.delete(p));
       // Rollback on error
       setMessages(prev => [deletedMessage, ...prev]);
       if (deletedThread) {

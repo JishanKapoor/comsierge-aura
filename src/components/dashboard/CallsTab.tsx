@@ -1469,7 +1469,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`rounded h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity ${
+                    className={`rounded h-7 w-7 ${
                       call.isBlocked 
                         ? "text-red-500 hover:text-green-600 hover:bg-green-50" 
                         : "text-gray-400 hover:text-red-500 hover:bg-red-50"
@@ -1483,7 +1483,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="rounded h-7 w-7 text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="rounded h-7 w-7 text-gray-400 hover:text-red-500 hover:bg-red-50"
                     onClick={async () => {
                       const confirmed = window.confirm(`Delete this call record?`);
                       if (confirmed) {

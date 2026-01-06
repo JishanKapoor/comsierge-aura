@@ -246,115 +246,58 @@ async function classifySpam(state) {
     }
     
     // RULE 2: ESTABLISHED CONVERSATION (user has replied before)
+    // Once you've replied to someone, their messages ALWAYS go to inbox - NEVER spam
     if (userSentCount > 0) {
-      // Need AI to check for revoked consent or contextual banter
-      const historyText = conversationHistory.slice(-10).map(m => 
-        `${m.direction === 'outbound' ? 'YOU' : 'THEM'}: ${m.body || m.content || ''}`
-      ).join('\n');
-      
-      const prompt = `You are a high-speed message classifier. The user has replied to this sender before (${userSentCount} times).
-
-CONVERSATION HISTORY:
-${historyText}
-
-NEW MESSAGE: "${message}"
-
-CHECK:
-1. Did the user recently say "stop", "unsubscribe", or express disinterest, and the sender is persisting with sales/warranty/promo content?
-   - If YES → category is "SPAM"
-2. If no "stop" command, even if the new message LOOKS like spam (prank, weird link, "lol", joke), if history shows friendly/casual relationship:
-   - category is "INBOX"
-
-Respond with JSON only:
-{"category": "INBOX" | "SPAM", "reason": "brief explanation"}`;
-
-      const response = await fastLlm.invoke([
-        new SystemMessage("You classify messages. Respond with JSON only. Be FAST."),
-        new HumanMessage(prompt),
-      ]);
-      
-      let result = { category: "INBOX", reason: "Established conversation" };
-      try {
-        const text = response.content.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-      } catch (e) { /* use default */ }
-      
-      console.log(`   [FastClassify] Established convo (${userSentCount} replies) → ${result.category}: ${result.reason}`);
+      console.log(`   [FastClassify] Established conversation (${userSentCount} replies) → INBOX (always)`);
       
       return {
         ...state,
         spamAnalysis: {
-          category: result.category,
+          category: "INBOX",
           senderTrust: "medium",
-          intent: result.category === "SPAM" ? "promotional" : "conversational",
-          behaviorPattern: result.category === "SPAM" ? "scripted" : "normal",
-          contentRiskLevel: result.category === "SPAM" ? "medium" : "none",
-          spamProbability: result.category === "SPAM" ? 85 : 5,
-          isSpam: result.category === "SPAM",
-          isHeld: false, // Never hold established conversations
-          reasoning: result.reason,
+          intent: "conversational",
+          behaviorPattern: "normal",
+          contentRiskLevel: "none",
+          spamProbability: 0,
+          isSpam: false,
+          isHeld: false,
+          reasoning: `Established conversation - you've replied ${userSentCount} time(s), always inbox`,
         },
       };
     }
     
     // RULE 3: FIRST CONTACT (unknown sender, user never replied)
-    // AI decides: obvious spam → SPAM, otherwise → HELD
-    // SHORT/SIMPLE MESSAGES ARE NEVER SPAM - they go to HELD
-    const msgLower = message.toLowerCase().trim();
-    const shortGreetings = ['hey', 'hi', 'hello', 'yo', 'sup', 'hola', 'heya', 'hii', 'heyy', 'helloo', 'what\'s up', 'whats up', 'wassup', 'howdy', 'good morning', 'good afternoon', 'good evening', 'gm', 'morning'];
-    const isSimpleGreeting = shortGreetings.some(g => msgLower === g || msgLower.startsWith(g + ' ') || msgLower.startsWith(g + '!') || msgLower.startsWith(g + '?'));
-    const isShortMessage = message.length <= 20;
+    // Only OBVIOUS SPAM goes to spam. Everything else (including "hey", greetings, normal messages) → INBOX
     
-    // Simple greetings and very short messages are ALWAYS held, NEVER spam
-    if (isSimpleGreeting || (isShortMessage && !message.includes('http') && !message.includes('$') && !message.includes('won'))) {
-      console.log(`   [FastClassify] Short/greeting message → HELD (never spam for simple messages)`);
-      return {
-        ...state,
-        spamAnalysis: {
-          category: "HELD",
-          senderTrust: "low",
-          intent: "conversational",
-          behaviorPattern: "normal",
-          contentRiskLevel: "none",
-          spamProbability: 5,
-          isSpam: false,
-          isHeld: true,
-          reasoning: "Short greeting from unknown sender - held for review (never auto-spam simple messages)",
-        },
-      };
-    }
-    
-    const prompt = `You are a high-speed spam classifier for FIRST-TIME messages from UNKNOWN senders.
+    const prompt = `You are a spam classifier for FIRST-TIME messages from UNKNOWN senders.
 
 MESSAGE: "${message}"
 FROM: ${senderName || senderPhone || "Unknown"}
 
-This is the FIRST message from this number. User has NEVER replied.
+ONLY mark as SPAM if the message is OBVIOUS automated spam:
+- Financial scams (crypto, wire money, investment schemes, Nigerian prince)
+- Phishing (verify account, confirm password, click link to avoid suspension)
+- Lottery/prize claims ("You won!")
+- Unsolicited product sales (warranties, insurance, medications)
+- Mass-marketing templates with generic pitches
 
-IMPORTANT: NEVER classify simple greetings, short messages, or ambiguous messages as SPAM.
-ONLY classify as SPAM if it contains CLEAR spam indicators like:
-- Financial scams (crypto schemes, wire money, investment returns)
-- Phishing (verify account, confirm password, click suspicious link)
-- Lottery/prize claims
-- Unsolicited product sales (warranties, insurance)
-- Mass-marketing templates
+EVERYTHING ELSE goes to INBOX, including:
+- Greetings like "hey", "hi", "hello", "what's up"
+- Questions or personal messages
+- Short messages
+- Anything that could be from a real person trying to reach them
 
-CLASSIFY:
-- "SPAM" = ONLY for obvious automated scam/marketing messages
-- "HELD" = Everything else (greetings, questions, unknown intent, personal messages)
-
-When in doubt, ALWAYS choose HELD.
+Default to INBOX. Only use SPAM for obvious automated garbage.
 
 Respond with JSON only:
-{"category": "SPAM" | "HELD", "reason": "brief explanation"}`;
+{"category": "SPAM" | "INBOX", "reason": "brief explanation"}`;
 
     const response = await fastLlm.invoke([
-      new SystemMessage("You classify first-contact messages. Respond with JSON only. Be FAST."),
+      new SystemMessage("You classify first-contact messages. Respond with JSON only. Default to INBOX."),
       new HumanMessage(prompt),
     ]);
     
-    let result = { category: "HELD", reason: "First contact - needs review" };
+    let result = { category: "INBOX", reason: "First contact - allowing through" };
     try {
       const text = response.content.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -363,17 +306,20 @@ Respond with JSON only:
     
     console.log(`   [FastClassify] First contact → ${result.category}: ${result.reason}`);
     
+    // SPAM and HELD are the same thing
+    const isSpam = result.category === "SPAM";
+    
     return {
       ...state,
       spamAnalysis: {
-        category: result.category,
-        senderTrust: "low",
-        intent: result.category === "SPAM" ? "deceptive" : "conversational",
-        behaviorPattern: result.category === "SPAM" ? "scripted" : "normal",
-        contentRiskLevel: result.category === "SPAM" ? "high" : "low",
-        spamProbability: result.category === "SPAM" ? 90 : 30,
-        isSpam: result.category === "SPAM",
-        isHeld: result.category === "HELD",
+        category: isSpam ? "SPAM" : "INBOX",
+        senderTrust: isSpam ? "none" : "low",
+        intent: isSpam ? "deceptive" : "conversational",
+        behaviorPattern: isSpam ? "scripted" : "normal",
+        contentRiskLevel: isSpam ? "high" : "none",
+        spamProbability: isSpam ? 95 : 5,
+        isSpam: isSpam,
+        isHeld: isSpam, // SPAM = HELD, same thing
         reasoning: result.reason,
       },
     };
