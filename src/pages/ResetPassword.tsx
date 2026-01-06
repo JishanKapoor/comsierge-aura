@@ -65,15 +65,32 @@ const ResetPassword = () => {
         return;
       }
 
-      // Store token and user data
+      // Store token first, then fetch the authoritative user record.
+      // This prevents incorrect onboarding redirects if the reset response is missing fields.
       localStorage.setItem("comsierge_token", data.data.token);
-      localStorage.setItem("comsierge_user", JSON.stringify(data.data.user));
+
+      let resolvedUser = data.data.user;
+      try {
+        const meResponse = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${data.data.token}`,
+          },
+        });
+        const meData = await meResponse.json();
+        if (meResponse.ok && meData?.data?.user) {
+          resolvedUser = meData.data.user;
+        }
+      } catch {
+        // ignore and fall back to the reset response
+      }
+
+      localStorage.setItem("comsierge_user", JSON.stringify(resolvedUser));
 
       toast.success("Password reset successfully! Logging you in...");
 
       // Navigate based on user state
       setTimeout(() => {
-        const user = data.data.user;
+        const user = resolvedUser;
         if (user.role === "admin") {
           navigate("/admin");
         } else if (!user.phoneNumber) {
