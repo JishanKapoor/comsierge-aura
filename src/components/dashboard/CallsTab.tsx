@@ -267,8 +267,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         phone: record.contactPhone,
         timestamp: formatTimestampForCall(record.createdAt),
         type: record.type,
+        status: record.status,
         duration: formatDurationForCall(record.duration),
-        isBlocked: false,
+        isBlocked: record.status === "blocked",
         recordingUrl: record.recordingUrl,
         transcription: record.transcription,
         hasVoicemail: record.hasVoicemail,
@@ -390,8 +391,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           phone: record.contactPhone,
           timestamp: formatTimestamp(record.createdAt),
           type: record.type,
+          status: record.status,
           duration: formatDurationSec(record.duration),
-          isBlocked: false,
+          isBlocked: record.status === "blocked",
+          recordingUrl: record.recordingUrl,
+          transcription: record.transcription,
+          hasVoicemail: record.hasVoicemail,
+          voicemailUrl: record.voicemailUrl,
+          voicemailDuration: record.voicemailDuration,
+          voicemailTranscript: record.voicemailTranscript,
         };
       });
       setCalls(formattedCalls);
@@ -1268,7 +1276,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 truncate">{call.contactName}</p>
+                  <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5">
+                    {call.contactName}
+                    {call.status === "forwarded" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Forwarded</span>
+                    )}
+                    {call.status === "blocked" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded">Blocked</span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-500 truncate">{call.phone}</p>
                   {call.transcription && (
                     <p className="text-xs text-indigo-500 truncate mt-0.5 flex items-center gap-1">

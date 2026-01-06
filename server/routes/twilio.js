@@ -1229,6 +1229,7 @@ router.post("/webhook/voice", async (req, res) => {
             contactPhone: To,
             contactName: contactName,
             direction: "outgoing",
+            type: "outgoing",
             status: "completed",
             twilioCallSid: CallSid,
             startedAt: new Date()
@@ -1302,6 +1303,7 @@ router.post("/webhook/voice", async (req, res) => {
             contactPhone: From,
             contactName: callerInfo.contactName,
             direction: "incoming",
+            type: "incoming",
             status: "blocked",
             twilioCallSid: CallSid
           });
@@ -1393,6 +1395,7 @@ router.post("/webhook/voice", async (req, res) => {
             contactPhone: From,
             contactName: callerInfo.contactName,
             direction: "incoming",
+            type: "incoming",
             status: "forwarded",
             twilioCallSid: CallSid,
             forwardedTo: forwardingNumber,
@@ -1416,6 +1419,7 @@ router.post("/webhook/voice", async (req, res) => {
             contactPhone: From,
             contactName: callerInfo.contactName,
             direction: "incoming",
+            type: "missed",
             status: "missed",
             twilioCallSid: CallSid,
             reason: !forwardingNumber ? "no_forwarding_number" : "no_matching_rule"
@@ -1473,11 +1477,13 @@ router.post("/webhook/forward-status", async (req, res) => {
     };
     
     const finalStatus = statusMap[DialCallStatus] || "missed";
+    const finalType = (DialCallStatus === "completed" || DialCallStatus === "answered") ? "incoming" : "missed";
     
     await CallRecord.findOneAndUpdate(
       { twilioCallSid: CallSid },
       { 
         status: finalStatus,
+        type: finalType,
         duration: parseInt(DialCallDuration) || 0
       }
     );

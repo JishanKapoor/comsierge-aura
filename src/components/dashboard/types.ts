@@ -60,6 +60,7 @@ export interface Call {
   phone: string;
   timestamp: string;
   type: "incoming" | "outgoing" | "missed";
+  status?: "initiated" | "ringing" | "in-progress" | "completed" | "busy" | "failed" | "no-answer" | "canceled" | "missed" | "forwarded" | "blocked";
   duration?: string;
   isBlocked?: boolean;
   // Recording & Transcript fields
