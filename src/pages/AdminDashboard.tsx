@@ -363,6 +363,7 @@ const AdminDashboard = () => {
           accountSid: newAccountSid.trim(),
           authToken: newAuthToken.trim(),
           friendlyName: data.data.account?.friendlyName,
+          phoneNumber: newPhoneNumber.trim(), // Only add this specific number
         }),
       });
 

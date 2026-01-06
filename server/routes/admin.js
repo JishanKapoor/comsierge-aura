@@ -28,11 +28,11 @@ router.get("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res)
 });
 
 // @route   POST /api/admin/twilio-accounts
-// @desc    Add a new Twilio account
+// @desc    Add a new Twilio account (or add a single phone to existing account)
 // @access  Private (admin)
 router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken, friendlyName } = req.body;
+    const { accountSid, authToken, friendlyName, phoneNumber } = req.body;
 
     if (!accountSid || !authToken) {
       return res.status(400).json({
@@ -54,37 +54,46 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
       });
     }
 
-    // Fetch phone numbers
-    const numbers = await client.incomingPhoneNumbers.list();
-    const phoneNumbers = numbers.map(n => n.phoneNumber);
+    // If a specific phone number was provided, only add that one
+    // Otherwise, this is just creating/updating the account without adding numbers
+    let phoneNumbers = [];
+    if (phoneNumber) {
+      // Verify this phone number belongs to the account
+      const numbers = await client.incomingPhoneNumbers.list({ phoneNumber });
+      if (numbers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone number not found in this Twilio account",
+        });
+      }
 
-    // Auto-configure webhooks for these numbers
-    const webhookBase = process.env.WEBHOOK_BASE_URL;
-    if (webhookBase) {
-      console.log(`Configuring webhooks for ${numbers.length} numbers to ${webhookBase}...`);
-      for (const number of numbers) {
+      // Configure webhook for this specific number
+      const webhookBase = process.env.WEBHOOK_BASE_URL;
+      if (webhookBase) {
         try {
-          await client.incomingPhoneNumbers(number.sid).update({
+          await client.incomingPhoneNumbers(numbers[0].sid).update({
             voiceUrl: `${webhookBase}/api/twilio/webhook/voice`,
             voiceMethod: "POST",
             smsUrl: `${webhookBase}/api/twilio/webhook/sms`,
             smsMethod: "POST",
           });
-          console.log(`✅ Configured webhooks for ${number.phoneNumber}`);
+          console.log(`✅ Configured webhooks for ${phoneNumber}`);
         } catch (err) {
-          console.error(`❌ Failed to configure webhooks for ${number.phoneNumber}:`, err.message);
+          console.error(`❌ Failed to configure webhooks for ${phoneNumber}:`, err.message);
         }
       }
-    } else {
-      console.warn("⚠️ WEBHOOK_BASE_URL not set. Skipping webhook auto-configuration.");
+
+      phoneNumbers = [phoneNumber];
     }
 
     // Check if account already exists
     let account = await TwilioAccount.findOne({ accountSid });
     if (account) {
-      // Update existing
+      // Update existing - merge phone numbers (don't replace)
       account.authToken = authToken;
-      account.phoneNumbers = phoneNumbers;
+      if (phoneNumber && !account.phoneNumbers.includes(phoneNumber)) {
+        account.phoneNumbers.push(phoneNumber);
+      }
       account.friendlyName = friendlyName || accountInfo.friendlyName;
       await account.save();
     } else {
@@ -99,7 +108,7 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
 
     res.status(201).json({
       success: true,
-      message: "Twilio account added",
+      message: phoneNumber ? "Phone number added" : "Twilio account added",
       data: {
         ...account.toObject(),
         authToken: undefined, // Don't return auth token
