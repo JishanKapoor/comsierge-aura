@@ -1151,6 +1151,7 @@ router.post("/webhook/voice", async (req, res) => {
       // Determine Caller ID (Twilio Number)
       // Priority: customCallerId from request > user's assigned phone > any available Twilio number
       let callerId = req.body.customCallerId;
+      console.log(`   customCallerId from request: ${callerId || "not provided"}`);
       
       if (!callerId) {
         // Extract email/identity from client:xxx format
@@ -1158,30 +1159,46 @@ router.post("/webhook/voice", async (req, res) => {
         console.log(`   Looking up callerId for identity: ${identity}`);
         
         // Try to find user by email (the identity is usually the email)
-        const user = await User.findOne({ email: identity });
-        if (user?.phoneNumber) {
-          callerId = user.phoneNumber;
-          console.log(`   Found user's phone: ${callerId}`);
+        try {
+          const user = await User.findOne({ email: identity });
+          console.log(`   User lookup result: ${user ? `found (phone: ${user.phoneNumber})` : "not found"}`);
+          if (user?.phoneNumber) {
+            callerId = user.phoneNumber;
+            console.log(`   ✅ Found user's phone: ${callerId}`);
+          }
+        } catch (e) {
+          console.error(`   ❌ User lookup error: ${e.message}`);
         }
       }
       
       // Last resort: get first available Twilio number
       if (!callerId) {
-        const account = await TwilioAccount.findOne({ phoneNumbers: { $exists: true, $ne: [] } });
-        if (account?.phoneNumbers?.length > 0) {
-          callerId = account.phoneNumbers[0];
-          console.log(`   Using first available Twilio number: ${callerId}`);
+        console.log("   Looking for any available Twilio number...");
+        try {
+          const accounts = await TwilioAccount.find({});
+          console.log(`   Found ${accounts.length} Twilio accounts`);
+          for (const acc of accounts) {
+            console.log(`   Account ${acc.accountSid}: ${acc.phoneNumbers?.length || 0} phone numbers`);
+            if (acc.phoneNumbers && acc.phoneNumbers.length > 0) {
+              callerId = acc.phoneNumbers[0];
+              console.log(`   ✅ Using Twilio number: ${callerId}`);
+              break;
+            }
+          }
+        } catch (e) {
+          console.error(`   ❌ TwilioAccount lookup error: ${e.message}`);
         }
       }
       
       if (!callerId) {
-        console.error("   ❌ No callerId available for outgoing call");
+        console.error("   ❌ No callerId available for outgoing call - check Twilio accounts in DB");
         response.say("We're sorry, an application error has occurred. Goodbye.");
         response.hangup();
         res.type("text/xml");
         return res.send(response.toString());
       }
 
+      console.log(`   📞 Dialing with callerId: ${callerId}, To: ${To}`);
       const dial = response.dial({
         callerId: callerId,
         answerOnBridge: true
