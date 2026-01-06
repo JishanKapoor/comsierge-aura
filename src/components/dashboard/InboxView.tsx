@@ -167,9 +167,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [activeCall, setActiveCall] = useState<any>(null);
   const [callStatus, setCallStatus] = useState<"connecting" | "ringing" | "connected" | "ended" | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isOnHold, setIsOnHold] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [callingContact, setCallingContact] = useState<{ number: string; name?: string } | null>(null);
+  const [browserCallSid, setBrowserCallSid] = useState<string | null>(null);
 
   // Track recently deleted phone numbers to prevent them from reappearing during polling
   const recentlyDeletedPhones = useRef<Set<string>>(new Set());
@@ -1565,13 +1567,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
       call.on("disconnect", () => {
         console.log("Call disconnected");
+        const finalDuration = callDuration;
         setIsCallingLoading(false);
         setCallStatus("ended");
         setActiveCall(null);
         setIsMuted(false);
+        setIsOnHold(false);
         if (callTimerRef.current) {
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
+        }
+        // Save call to history
+        if (callingContact) {
+          saveBrowserCallRecord(callingContact.number, callingContact.name, "completed", finalDuration);
         }
         // Clear call UI after a moment
         setTimeout(() => {
@@ -1587,9 +1595,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setCallStatus(null);
         setActiveCall(null);
         setCallingContact(null);
+        setIsOnHold(false);
         if (callTimerRef.current) {
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
+        }
+        // Save cancelled call to history
+        if (callingContact) {
+          saveBrowserCallRecord(callingContact.number, callingContact.name, "cancelled", 0);
         }
       });
 
@@ -1627,6 +1640,49 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       activeCall.mute(newMuteState);
       setIsMuted(newMuteState);
       toast.info(newMuteState ? "Muted" : "Unmuted");
+    }
+  };
+
+  const handleToggleHold = async () => {
+    if (!activeCall) return;
+    // Twilio browser SDK doesn't have native hold, but we can mute both directions
+    // For true hold, we'd need to use the REST API to update the call
+    const newHoldState = !isOnHold;
+    setIsOnHold(newHoldState);
+    // Mute when on hold
+    activeCall.mute(newHoldState);
+    toast.info(newHoldState ? "Call on hold" : "Call resumed");
+  };
+
+  const handleAddPerson = () => {
+    toast.info("Conference calling coming soon!", {
+      description: "This feature will allow you to add more people to the call."
+    });
+  };
+
+  // Save browser call to call history
+  const saveBrowserCallRecord = async (contactPhone: string, contactName: string | undefined, status: string, duration: number) => {
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      await fetch(`${API_BASE_URL}/api/calls`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          contactPhone,
+          contactName: contactName || contactPhone,
+          direction: "outgoing",
+          type: "outgoing",
+          status,
+          duration,
+          fromNumber: twilioNumber,
+          toNumber: contactPhone,
+        }),
+      });
+    } catch (e) {
+      console.error("Failed to save call record:", e);
     }
   };
 
@@ -3991,48 +4047,82 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
             {/* Call Controls */}
             {(callStatus === "ringing" || callStatus === "connected") && (
-              <div className="flex items-center justify-center gap-4">
-                {/* Mute Button */}
-                <button
-                  onClick={handleToggleMute}
-                  className={cn(
-                    "w-14 h-14 rounded-full flex items-center justify-center transition-all",
-                    isMuted 
-                      ? "bg-red-500 hover:bg-red-600" 
-                      : "bg-gray-700 hover:bg-gray-600"
-                  )}
-                  title={isMuted ? "Unmute" : "Mute"}
-                >
-                  {isMuted ? (
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                  )}
-                </button>
+              <div className="space-y-4">
+                {/* Main controls row */}
+                <div className="flex items-center justify-center gap-3">
+                  {/* Mute Button */}
+                  <button
+                    onClick={handleToggleMute}
+                    className={cn(
+                      "w-12 h-12 rounded-full flex flex-col items-center justify-center transition-all text-xs",
+                      isMuted 
+                        ? "bg-red-500 hover:bg-red-600" 
+                        : "bg-gray-700 hover:bg-gray-600"
+                    )}
+                    title={isMuted ? "Unmute" : "Mute"}
+                  >
+                    {isMuted ? (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    )}
+                  </button>
 
-                {/* Hangup Button */}
-                <button
-                  onClick={handleHangup}
-                  className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
-                  title="End Call"
-                >
-                  <Phone className="w-6 h-6 rotate-[135deg]" />
-                </button>
+                  {/* Hold Button */}
+                  <button
+                    onClick={handleToggleHold}
+                    className={cn(
+                      "w-12 h-12 rounded-full flex flex-col items-center justify-center transition-all text-xs",
+                      isOnHold 
+                        ? "bg-amber-500 hover:bg-amber-600" 
+                        : "bg-gray-700 hover:bg-gray-600"
+                    )}
+                    title={isOnHold ? "Resume" : "Hold"}
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+
+                  {/* Add Person Button */}
+                  <button
+                    onClick={handleAddPerson}
+                    className="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 flex flex-col items-center justify-center transition-all text-xs"
+                    title="Add Person"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                  </button>
+
+                  {/* Hangup Button */}
+                  <button
+                    onClick={handleHangup}
+                    className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
+                    title="End Call"
+                  >
+                    <Phone className="w-5 h-5 rotate-[135deg]" />
+                  </button>
+                </div>
+
+                {/* Labels */}
+                <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
+                  <span className="w-12 text-center">{isMuted ? "Unmute" : "Mute"}</span>
+                  <span className="w-12 text-center">{isOnHold ? "Resume" : "Hold"}</span>
+                  <span className="w-12 text-center">Add</span>
+                  <span className="w-12 text-center">End</span>
+                </div>
               </div>
             )}
 
             {/* Close button for ended state */}
             {callStatus === "ended" && (
               <div className="flex justify-center mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                <button
+                  className="px-6 py-2.5 bg-white text-gray-900 font-medium rounded-full hover:bg-gray-100 transition-all"
                   onClick={() => {
                     setCallStatus(null);
                     setCallingContact(null);
@@ -4040,7 +4130,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   }}
                 >
                   Close
-                </Button>
+                </button>
               </div>
             )}
           </div>
