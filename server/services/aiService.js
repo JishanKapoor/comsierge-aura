@@ -300,6 +300,31 @@ Respond with JSON only:
     
     // RULE 3: FIRST CONTACT (unknown sender, user never replied)
     // AI decides: obvious spam → SPAM, otherwise → HELD
+    // SHORT/SIMPLE MESSAGES ARE NEVER SPAM - they go to HELD
+    const msgLower = message.toLowerCase().trim();
+    const shortGreetings = ['hey', 'hi', 'hello', 'yo', 'sup', 'hola', 'heya', 'hii', 'heyy', 'helloo', 'what\'s up', 'whats up', 'wassup', 'howdy', 'good morning', 'good afternoon', 'good evening', 'gm', 'morning'];
+    const isSimpleGreeting = shortGreetings.some(g => msgLower === g || msgLower.startsWith(g + ' ') || msgLower.startsWith(g + '!') || msgLower.startsWith(g + '?'));
+    const isShortMessage = message.length <= 20;
+    
+    // Simple greetings and very short messages are ALWAYS held, NEVER spam
+    if (isSimpleGreeting || (isShortMessage && !message.includes('http') && !message.includes('$') && !message.includes('won'))) {
+      console.log(`   [FastClassify] Short/greeting message → HELD (never spam for simple messages)`);
+      return {
+        ...state,
+        spamAnalysis: {
+          category: "HELD",
+          senderTrust: "low",
+          intent: "conversational",
+          behaviorPattern: "normal",
+          contentRiskLevel: "none",
+          spamProbability: 5,
+          isSpam: false,
+          isHeld: true,
+          reasoning: "Short greeting from unknown sender - held for review (never auto-spam simple messages)",
+        },
+      };
+    }
+    
     const prompt = `You are a high-speed spam classifier for FIRST-TIME messages from UNKNOWN senders.
 
 MESSAGE: "${message}"
@@ -307,9 +332,19 @@ FROM: ${senderName || senderPhone || "Unknown"}
 
 This is the FIRST message from this number. User has NEVER replied.
 
+IMPORTANT: NEVER classify simple greetings, short messages, or ambiguous messages as SPAM.
+ONLY classify as SPAM if it contains CLEAR spam indicators like:
+- Financial scams (crypto schemes, wire money, investment returns)
+- Phishing (verify account, confirm password, click suspicious link)
+- Lottery/prize claims
+- Unsolicited product sales (warranties, insurance)
+- Mass-marketing templates
+
 CLASSIFY:
-- If obvious unsolicited marketing (crypto, warranties, bots, scams, "you won", car insurance, phishing links) → "SPAM"
-- Otherwise (unknown intent, personal greeting, potential lead, "hey", "hello", questions) → "HELD"
+- "SPAM" = ONLY for obvious automated scam/marketing messages
+- "HELD" = Everything else (greetings, questions, unknown intent, personal messages)
+
+When in doubt, ALWAYS choose HELD.
 
 Respond with JSON only:
 {"category": "SPAM" | "HELD", "reason": "brief explanation"}`;

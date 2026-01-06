@@ -2481,11 +2481,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               };
 
               return (
-                <button
+                <div
                   key={msg.id}
-                  onClick={() => handleSelectConversation(msg.id)}
+                  onClick={(e) => {
+                    // Only select conversation if clicking the row itself, not a nested button
+                    if ((e.target as HTMLElement).closest('button')) return;
+                    handleSelectConversation(msg.id);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSelectConversation(msg.id)}
                   className={cn(
-                    "w-full text-left px-4 py-3 border-b border-gray-100 transition-colors",
+                    "w-full text-left px-4 py-3 border-b border-gray-100 transition-colors cursor-pointer",
                     isSelected ? "bg-gray-100" : "hover:bg-gray-50"
                   )}
                 >
@@ -2571,7 +2578,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     </p>
                   </div>
                 </div>
-              </button>
+              </div>
               );
             })
           )}
