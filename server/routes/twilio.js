@@ -162,6 +162,17 @@ router.get("/config", authMiddleware, async (req, res) => {
 
 // Resolve Twilio credentials - checks DB first, then env vars
 async function resolveTwilioConfig(body = {}, userPhone = null) {
+  // Normalize phone number helper
+  const normalizePhone = (value) => {
+    if (!value) return "";
+    const cleaned = String(value).replace(/[^\d+]/g, "");
+    if (cleaned.startsWith("+")) return cleaned;
+    const digits = String(value).replace(/\D/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return cleaned;
+  };
+
   // First try env vars (simplest case)
   let accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
   let authToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
@@ -170,11 +181,34 @@ async function resolveTwilioConfig(body = {}, userPhone = null) {
   // If we have a user phone, try to find the Twilio account that owns it
   if (userPhone) {
     try {
-      const account = await TwilioAccount.findOne({ phoneNumbers: userPhone });
+      const normalizedUserPhone = normalizePhone(userPhone);
+      // Try exact match first
+      let account = await TwilioAccount.findOne({ phoneNumbers: userPhone });
+      
+      // If no match, try normalized version
+      if (!account && normalizedUserPhone && normalizedUserPhone !== userPhone) {
+        account = await TwilioAccount.findOne({ phoneNumbers: normalizedUserPhone });
+      }
+      
+      // If still no match, search all accounts and compare normalized
+      if (!account) {
+        const allAccounts = await TwilioAccount.find({});
+        for (const acc of allAccounts) {
+          const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizePhone(p));
+          if (normalizedPhones.includes(normalizedUserPhone)) {
+            account = acc;
+            break;
+          }
+        }
+      }
+      
       if (account) {
         accountSid = account.accountSid;
         authToken = account.authToken;
         fromNumber = userPhone;
+        console.log(`✅ Found Twilio account for phone ${userPhone}: ${account.accountSid.slice(0, 8)}...`);
+      } else {
+        console.log(`⚠️ No Twilio account found for phone ${userPhone}`);
       }
     } catch (e) {
       console.error("Error fetching Twilio account from DB:", e.message);
@@ -1518,12 +1552,14 @@ router.post("/webhook/status", async (req, res) => {
 // @access  Private (user)
 router.post("/token", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken, phoneNumber } = await resolveTwilioConfig(req.body);
+    // Get user's assigned phone number to find the right Twilio account
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body, userPhoneNumber);
     
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found",
+        message: "Twilio credentials not found. Make sure your phone number is linked to a Twilio account.",
       });
     }
 
