@@ -170,7 +170,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [isOnHold, setIsOnHold] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const callDurationRef = useRef(0); // Track actual duration for saving
   const [callingContact, setCallingContact] = useState<{ number: string; name?: string } | null>(null);
+  const callingContactRef = useRef<{ number: string; name?: string } | null>(null); // Ref for closure access
   const [browserCallSid, setBrowserCallSid] = useState<string | null>(null);
   
   // Add person to call state
@@ -1448,6 +1450,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         })
       );
 
+      // Also update conversations list to reflect the new name
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (normalizePhone(c.contactPhone) !== oldPhoneNorm) return c;
+          return {
+            ...c,
+            contactName: fullName,
+            contactPhone: selectedSavedContact ? phone : c.contactPhone,
+          };
+        })
+      );
+
       toast.success(selectedSavedContact ? "Contact updated" : "Contact saved");
       setShowContactModal(false);
     } catch (error) {
@@ -1545,10 +1559,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         return;
       }
       
-      // Set calling contact info for UI
+      // Set calling contact info for UI and ref for closure access
       setCallingContact({ number, name });
+      callingContactRef.current = { number, name };
       setCallStatus("connecting");
       setCallDuration(0);
+      callDurationRef.current = 0;
       
       console.log("🔵 Browser call - calling device.connect with params:", { To: number, customCallerId: fromNumber });
       const call = await newDevice.connect({
@@ -1567,13 +1583,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setCallStatus("connected");
         // Start call duration timer
         callTimerRef.current = setInterval(() => {
+          callDurationRef.current += 1;
           setCallDuration(d => d + 1);
         }, 1000);
       });
 
       call.on("disconnect", () => {
-        console.log("Call disconnected");
-        const finalDuration = callDuration;
+        console.log("Call disconnected, duration:", callDurationRef.current);
+        const finalDuration = callDurationRef.current;
+        const contact = callingContactRef.current;
         setIsCallingLoading(false);
         setCallStatus("ended");
         setActiveCall(null);
@@ -1583,32 +1601,36 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
         }
-        // Save call to history
-        if (callingContact) {
-          saveBrowserCallRecord(callingContact.number, callingContact.name, "completed", finalDuration);
+        // Save call to history using ref values
+        if (contact) {
+          saveBrowserCallRecord(contact.number, contact.name, "completed", finalDuration);
         }
         // Clear call UI after a moment
         setTimeout(() => {
           setCallStatus(null);
           setCallingContact(null);
+          callingContactRef.current = null;
           setCallDuration(0);
+          callDurationRef.current = 0;
         }, 2000);
       });
       
       call.on("cancel", () => {
         console.log("Call cancelled");
+        const contact = callingContactRef.current;
         setIsCallingLoading(false);
         setCallStatus(null);
         setActiveCall(null);
         setCallingContact(null);
+        callingContactRef.current = null;
         setIsOnHold(false);
         if (callTimerRef.current) {
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
         }
         // Save cancelled call to history
-        if (callingContact) {
-          saveBrowserCallRecord(callingContact.number, callingContact.name, "cancelled", 0);
+        if (contact) {
+          saveBrowserCallRecord(contact.number, contact.name, "no-answer", 0);
         }
       });
 
@@ -1651,13 +1673,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const handleToggleHold = async () => {
     if (!activeCall) return;
-    // Twilio browser SDK doesn't have native hold, but we can mute both directions
-    // For true hold, we'd need to use the REST API to update the call
+    
     const newHoldState = !isOnHold;
     setIsOnHold(newHoldState);
-    // Mute when on hold
+    
+    // Mute our mic when on hold
     activeCall.mute(newHoldState);
-    toast.info(newHoldState ? "Call on hold" : "Call resumed");
+    
+    // For true hold with music, we'd need server-side implementation
+    // This mutes your microphone so the other party can't hear you
+    toast.info(newHoldState ? "Microphone muted (on hold)" : "Microphone unmuted", {
+      description: newHoldState ? "The other party cannot hear you" : "Call resumed"
+    });
   };
 
   const handleAddPerson = () => {
@@ -1691,7 +1718,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
       const data = await response.json();
       if (data.success) {
-        toast.success(`Adding ${addPersonNumber} to the call...`);
+        toast.success(`Calling ${addPersonNumber}...`, {
+          description: "They will be called from your Twilio number"
+        });
         setConferenceParticipants(prev => [...prev, addPersonNumber]);
         setShowAddPersonDialog(false);
       } else {

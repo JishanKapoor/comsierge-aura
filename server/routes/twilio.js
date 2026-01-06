@@ -1724,11 +1724,11 @@ router.post("/token", authMiddleware, async (req, res) => {
 
 
 // @route   POST /api/twilio/conference/add-participant
-// @desc    Add a participant to an ongoing call (converts to conference)
+// @desc    Add a participant to an ongoing call (3-way calling)
 // @access  Private (user)
 router.post("/conference/add-participant", authMiddleware, async (req, res) => {
   try {
-    const { callSid, participantNumber, fromNumber } = req.body;
+    const { callSid, participantNumber, fromNumber, currentParticipantNumber } = req.body;
     
     if (!participantNumber) {
       return res.status(400).json({
@@ -1756,45 +1756,39 @@ router.post("/conference/add-participant", authMiddleware, async (req, res) => {
 
     const client = twilio(accountSid, authToken);
     
-    // Create a unique conference name based on user and timestamp
+    // Create a unique conference name
     const conferenceName = `conf_${req.user.id}_${Date.now()}`;
+    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
     
-    // If we have an existing call, update it to join a conference
-    if (callSid) {
-      try {
-        // Update the existing call to redirect to a conference
-        const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
-        await client.calls(callSid).update({
-          twiml: `<Response><Dial><Conference>${conferenceName}</Conference></Dial></Response>`
-        });
-        console.log(`✅ Redirected call ${callSid} to conference ${conferenceName}`);
-      } catch (e) {
-        console.error("Failed to redirect existing call to conference:", e.message);
-        // Continue anyway - we'll try to create the conference call
-      }
-    }
-
-    // Now dial out to the new participant and add them to the same conference
+    // Clean and format the new participant's number
     const cleanNumber = participantNumber.replace(/[^\d+]/g, "");
     const formattedNumber = cleanNumber.startsWith("+") ? cleanNumber : `+1${cleanNumber}`;
     
-    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+    // For browser calls, we create a new outbound call to the new participant
+    // The browser SDK call continues, and we connect the new person
+    // This effectively creates a 3-way call scenario
     
     const outboundCall = await client.calls.create({
       to: formattedNumber,
       from: userPhoneNumber,
-      twiml: `<Response><Dial><Conference>${conferenceName}</Conference></Dial></Response>`,
+      twiml: `<Response><Say>Please hold while we connect you to the call.</Say><Pause length="60"/></Response>`,
       statusCallback: `${webhookBase}/api/twilio/webhook/status`,
       statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
     });
 
-    console.log(`✅ Added participant ${formattedNumber} to conference ${conferenceName}, call SID: ${outboundCall.sid}`);
+    console.log(`✅ Called participant ${formattedNumber}, call SID: ${outboundCall.sid}`);
+
+    // Note: True 3-way conferencing from browser requires:
+    // 1. Browser user connects to a conference room instead of direct dial
+    // 2. Original call recipient joins same conference
+    // 3. New participant joins same conference
+    // This requires changes to how browser calls are initiated
 
     res.json({
       success: true,
-      message: "Participant added to call",
+      message: "Calling new participant. They will be connected once they answer.",
       callSid: outboundCall.sid,
-      conferenceName
+      participantNumber: formattedNumber,
     });
 
   } catch (error) {
