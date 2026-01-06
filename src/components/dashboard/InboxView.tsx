@@ -1512,12 +1512,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       setDevice(newDevice);
 
       const fromNumber = twilioNumber;
+      console.log("🔵 Browser call - twilioNumber:", twilioNumber, "fromNumber:", fromNumber);
       if (!fromNumber) {
         toast.error("No Twilio number found. Contact admin to assign a number.");
         setIsCallingLoading(false);
         return;
       }
       
+      console.log("🔵 Browser call - calling device.connect with params:", { To: number, customCallerId: fromNumber });
       const call = await newDevice.connect({
         params: {
           To: number,

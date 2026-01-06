@@ -1134,15 +1134,17 @@ router.post("/webhook/sms", async (req, res) => {
 // @desc    Handle incoming voice calls AND outgoing browser calls
 // @access  Public (Twilio webhook)
 router.post("/webhook/voice", async (req, res) => {
+  console.log("📞 Voice Webhook ENTRY");
+  const response = new twilio.twiml.VoiceResponse();
+  
   try {
-    const { From, To, CallSid, CallStatus } = req.body;
+    const { From, To, CallSid, CallStatus, AccountSid } = req.body;
     
     console.log("📞 Voice Webhook - Full body:", JSON.stringify(req.body, null, 2));
     console.log(`   From: ${From}`);
     console.log(`   To: ${To}`);
     console.log(`   CallSid: ${CallSid}`);
-
-    const response = new twilio.twiml.VoiceResponse();
+    console.log(`   AccountSid: ${AccountSid}`);
 
     // Case 1: Outgoing Call from Browser (From is client:identity)
     if (From && From.startsWith("client:")) {
@@ -1399,7 +1401,8 @@ router.post("/webhook/voice", async (req, res) => {
 
   } catch (error) {
     console.error("Voice webhook error:", error);
-    const response = new twilio.twiml.VoiceResponse();
+    console.error("Voice webhook error stack:", error.stack);
+    // response already defined at top of function
     response.say("Sorry, an error occurred.");
     res.type("text/xml");
     res.send(response.toString());
