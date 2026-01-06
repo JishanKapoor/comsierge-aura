@@ -1208,6 +1208,39 @@ router.post("/webhook/voice", async (req, res) => {
       const protocol = host?.includes('localhost') ? 'http' : 'https';
       const recordingCallbackUrl = `${protocol}://${host}/api/twilio/webhook/recording-status`;
       
+      // Create call record for outgoing browser call
+      try {
+        const identity = From.replace("client:", "");
+        const user = await User.findOne({ email: identity });
+        
+        if (user) {
+          // Look up contact name
+          let contactName = null;
+          const normalizedTo = To.replace(/[^\d+]/g, "");
+          let contact = await Contact.findOne({ userId: user._id, phone: normalizedTo });
+          if (!contact) {
+            const altTo = normalizedTo.startsWith("+") ? normalizedTo.substring(1) : "+" + normalizedTo;
+            contact = await Contact.findOne({ userId: user._id, phone: altTo });
+          }
+          contactName = contact?.name || null;
+          
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: To,
+            contactName: contactName,
+            direction: "outgoing",
+            status: "completed",
+            twilioCallSid: CallSid,
+            startedAt: new Date()
+          });
+          console.log(`   ✅ Created outgoing call record for user ${user.email}, CallSid: ${CallSid}`);
+        } else {
+          console.log(`   ⚠️ Could not create call record - user not found for identity: ${identity}`);
+        }
+      } catch (recordErr) {
+        console.error(`   ❌ Failed to create call record:`, recordErr.message);
+      }
+      
       const dial = response.dial({
         callerId: callerId,
         answerOnBridge: true,

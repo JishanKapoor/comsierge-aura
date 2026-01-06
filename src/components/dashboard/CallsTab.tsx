@@ -1378,292 +1378,79 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         )}
       </div>
 
-      {/* Active Call Modal - Full Featured */}
+      {/* Active Call Modal - Simplified */}
       {activeCall && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-sm font-medium text-gray-800 flex items-center gap-2">
-                  {activeCall.status === "ringing" ? (
-                    <span className="flex items-center gap-1 text-green-600 animate-pulse">
-                      <PhoneCall className="w-3.5 h-3.5" /> Ringing...
-                    </span>
-                  ) : activeCall.isOnHold ? (
-                    <span className="flex items-center gap-1 text-amber-600">
-                      <Pause className="w-3.5 h-3.5" /> On Hold
-                    </span>
-                  ) : activeCall.conferenceName ? (
-                    <span className="flex items-center gap-1 text-indigo-600">
-                      <Users className="w-3.5 h-3.5" /> Conference Call
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-green-600">
-                      <Phone className="w-3.5 h-3.5" /> In call
-                    </span>
-                  )}
-                  {activeCall.isRecording && (
-                    <span className="flex items-center gap-1 text-red-500 animate-pulse">
-                      <CircleDot className="w-3 h-3" /> Recording
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {activeCall.name ? `${activeCall.name} • ${activeCall.number}` : activeCall.number}
-                </p>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl shadow-2xl w-full max-w-xs p-6 text-white">
+            {/* Contact Info */}
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl font-semibold">
+                  {(activeCall.name || activeCall.number)?.[0]?.toUpperCase() || "?"}
+                </span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100"
-                onClick={hangUp}
-                aria-label="Hang up"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              <h3 className="text-lg font-semibold truncate">
+                {activeCall.name || activeCall.number}
+              </h3>
+              {activeCall.name && (
+                <p className="text-sm text-gray-400">{activeCall.number}</p>
+              )}
             </div>
 
-            {/* Call Info & Timer */}
-            <div className="text-center py-4">
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3 ${
-                activeCall.status === "ringing" ? "bg-green-100 animate-pulse" : "bg-gray-100"
-              }`}>
-                {activeCall.status === "ringing" ? (
-                  <PhoneCall className="w-6 h-6 text-green-600 animate-bounce" />
-                ) : activeCall.conferenceName ? (
-                  <Users className="w-6 h-6 text-indigo-600" />
-                ) : (
-                  <Phone className="w-6 h-6 text-gray-600" />
-                )}
-              </div>
-              <p className="text-xs text-gray-500">
-                {activeCall.status === "ringing" ? "Ringing" : "Duration"}
-              </p>
-              <p className="text-2xl font-semibold text-gray-800">
-                {activeCall.status === "ringing" 
-                  ? formatDuration(callNowMs - activeCall.startedAt)
-                  : formatDuration(callNowMs - activeCall.startedAt)
-                }
-              </p>
-              
-              {/* Speaker status indicator */}
-              {activeCall.isSpeakerOn && activeCall.status === "connected" && (
-                <div className="mt-2 flex items-center justify-center gap-1 text-indigo-600">
-                  <Volume2 className="w-4 h-4" />
-                  <span className="text-xs font-medium">Speaker On</span>
+            {/* Call Status */}
+            <div className="text-center mb-6">
+              {activeCall.status === "ringing" && (
+                <div className="flex items-center justify-center gap-2">
+                  <Phone className="w-4 h-4 animate-pulse" />
+                  <span className="text-sm text-gray-300">Ringing...</span>
                 </div>
               )}
-              
-              {/* Conference Participants */}
-              {activeCall.participants && activeCall.participants.length > 0 && (
-                <div className="mt-3 text-xs text-gray-500">
-                  <p className="font-medium mb-1">Participants ({activeCall.participants.length + 1}):</p>
-                  <div className="flex flex-wrap gap-1 justify-center">
-                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">You</span>
-                    {activeCall.participants.map((p, i) => (
-                      <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded">
-                        {p.name || p.number}
-                      </span>
-                    ))}
-                  </div>
+              {activeCall.status === "connected" && (
+                <div className="text-center">
+                  <span className="text-2xl font-mono text-green-400">{formatDuration(callNowMs - activeCall.startedAt)}</span>
+                  <p className="text-xs text-gray-400 mt-1">Connected</p>
                 </div>
               )}
             </div>
 
-            {/* Main Control Buttons - 4 columns (only show when connected) */}
-            {activeCall.status === "connected" && (
-              <>
-                <div className="grid grid-cols-4 gap-2 mb-3">
-                  {/* Mute */}
+            {/* Call Controls - Just Mute and Hangup */}
+            {(activeCall.status === "ringing" || activeCall.status === "connected") && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-center gap-6">
+                  {/* Mute Button */}
                   <button
                     onClick={toggleMute}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      activeCall.isMuted ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    className={`w-14 h-14 rounded-full flex flex-col items-center justify-center transition-all ${
+                      activeCall.isMuted 
+                        ? "bg-red-500 hover:bg-red-600" 
+                        : "bg-gray-700 hover:bg-gray-600"
                     }`}
+                    title={activeCall.isMuted ? "Unmute" : "Mute"}
                   >
-                    {activeCall.isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                    <span className="text-xs">{activeCall.isMuted ? "Unmute" : "Mute"}</span>
+                    {activeCall.isMuted ? (
+                      <MicOff className="w-6 h-6" />
+                    ) : (
+                      <Mic className="w-6 h-6" />
+                    )}
                   </button>
 
-                  {/* Speaker */}
+                  {/* Hangup Button */}
                   <button
-                    onClick={toggleSpeaker}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      activeCall.isSpeakerOn ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
+                    onClick={hangUp}
+                    className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
+                    title="End Call"
                   >
-                    {activeCall.isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-                    <span className="text-xs">{activeCall.isSpeakerOn ? "Speaker" : "Earpiece"}</span>
-                  </button>
-
-                  {/* Hold */}
-                  <button
-                    onClick={toggleHold}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      activeCall.isOnHold ? "bg-amber-100 text-amber-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {activeCall.isOnHold ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
-                    <span className="text-xs">{activeCall.isOnHold ? "Resume" : "Hold"}</span>
-                  </button>
-
-                  {/* Record */}
-                  <button
-                    onClick={toggleRecording}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      activeCall.isRecording ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <CircleDot className="w-5 h-5" />
-                    <span className="text-xs">{activeCall.isRecording ? "Stop" : "Record"}</span>
+                    <Phone className="w-6 h-6 rotate-[135deg]" />
                   </button>
                 </div>
 
-                {/* Secondary Controls - 3 columns */}
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {/* Keypad */}
-                  <button
-                    onClick={() => { setShowKeypad(v => !v); setShowTransferCall(false); setShowAddParticipant(false); }}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      showKeypad ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <Grid3X3 className="w-5 h-5" />
-                    <span className="text-xs">Keypad</span>
-                  </button>
-
-                  {/* Add Participant */}
-                  <button
-                    onClick={() => { setShowAddParticipant(v => !v); setShowTransferCall(false); setShowKeypad(false); }}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      showAddParticipant ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <UserPlus className="w-5 h-5" />
-                    <span className="text-xs">Add</span>
-                  </button>
-
-                  {/* Transfer */}
-                  <button
-                    onClick={() => { setShowTransferCall(v => !v); setShowKeypad(false); setShowAddParticipant(false); }}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
-                      showTransferCall ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <ArrowRightLeft className="w-5 h-5" />
-                    <span className="text-xs">Transfer</span>
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Ringing state - show cancel only */}
-            {activeCall.status === "ringing" && (
-              <div className="text-center py-4">
-                <p className="text-xs text-gray-500 mb-4">Waiting for answer...</p>
-              </div>
-            )}
-
-            {/* Keypad Panel */}
-            {showKeypad && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                <div className="grid grid-cols-3 gap-2">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => (
-                    <button
-                      key={digit}
-                      onClick={() => sendDTMF(digit)}
-                      className="h-11 rounded-lg bg-white border border-gray-200 text-gray-800 font-medium text-lg hover:bg-gray-100 transition-colors"
-                    >
-                      {digit}
-                    </button>
-                  ))}
+                {/* Labels */}
+                <div className="flex items-center justify-center gap-6 text-[10px] text-gray-400">
+                  <span className="w-14 text-center">{activeCall.isMuted ? "Unmute" : "Mute"}</span>
+                  <span className="w-14 text-center">End</span>
                 </div>
               </div>
             )}
-
-            {/* Add Participant Panel */}
-            {showAddParticipant && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
-                <p className="text-xs font-medium text-gray-600">Add participant to call:</p>
-                <input
-                  type="text"
-                  value={addParticipantNumber}
-                  onChange={(e) => setAddParticipantNumber(e.target.value)}
-                  placeholder="Phone number (10 digits)"
-                  className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded focus:outline-none focus:border-indigo-300 text-gray-700 placeholder:text-gray-400"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 rounded h-8 text-xs border-gray-200"
-                    onClick={() => setShowAddParticipant(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="flex-1 rounded h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
-                    onClick={addParticipant}
-                    disabled={!addParticipantNumber.trim()}
-                  >
-                    <UserPlus className="w-3.5 h-3.5 mr-1" /> Add
-                  </Button>
-                </div>
-                {/* Quick add from contacts */}
-                <div className="pt-2 border-t border-gray-200">
-                  <p className="text-xs text-gray-500 mb-2">Quick add:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {contacts.slice(0, 4).map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => setAddParticipantNumber(c.phone)}
-                        className="px-2 py-1 text-xs bg-white border border-gray-200 rounded hover:bg-gray-100"
-                      >
-                        {c.name.split(" ")[0]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Transfer Panel */}
-            {showTransferCall && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-3 space-y-2">
-                <p className="text-xs font-medium text-gray-600">Transfer call to:</p>
-                <input
-                  type="text"
-                  value={transferCallTo}
-                  onChange={(e) => setTransferCallTo(e.target.value)}
-                  placeholder="Phone number (10 digits)"
-                  className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded focus:outline-none focus:border-indigo-300 text-gray-700 placeholder:text-gray-400"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 rounded h-8 text-xs border-gray-200"
-                    onClick={() => setShowTransferCall(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="flex-1 rounded h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
-                    onClick={submitTransferCall}
-                    disabled={!transferCallTo.trim()}
-                  >
-                    <ArrowRightLeft className="w-3.5 h-3.5 mr-1" /> Transfer
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Hang Up Button */}
-            <Button
-              className="w-full rounded h-10 text-sm bg-red-500 hover:bg-red-600 text-white font-medium"
-              onClick={hangUp}
-            >
-              <PhoneOff className="w-4 h-4 mr-2" /> End Call
-            </Button>
           </div>
         </div>
       )}
