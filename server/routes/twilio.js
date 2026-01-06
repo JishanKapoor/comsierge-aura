@@ -1202,9 +1202,19 @@ router.post("/webhook/voice", async (req, res) => {
       }
 
       console.log(`   📞 Dialing with callerId: ${callerId}, To: ${To}`);
+      
+      // Get the base URL for recording callback
+      const host = req.get('host');
+      const protocol = host?.includes('localhost') ? 'http' : 'https';
+      const recordingCallbackUrl = `${protocol}://${host}/api/twilio/webhook/recording-status`;
+      
       const dial = response.dial({
         callerId: callerId,
-        answerOnBridge: true
+        answerOnBridge: true,
+        record: "record-from-answer-dual", // Record both legs separately for better transcription
+        recordingStatusCallback: recordingCallbackUrl,
+        recordingStatusCallbackMethod: "POST",
+        recordingStatusCallbackEvent: "completed"
       });
 
       // Check if destination is a phone number or client
@@ -1459,6 +1469,162 @@ router.post("/webhook/forward-status", async (req, res) => {
     res.send(response.toString());
   }
 });
+
+// @route   POST /api/twilio/webhook/recording-status
+// @desc    Handle call recording completion and trigger AI transcription
+// @access  Public (Twilio webhook)
+router.post("/webhook/recording-status", async (req, res) => {
+  try {
+    const { 
+      CallSid, 
+      RecordingSid, 
+      RecordingUrl, 
+      RecordingStatus, 
+      RecordingDuration,
+      RecordingChannels,
+      AccountSid
+    } = req.body;
+    
+    console.log("🎙️ Recording Status Callback:", { 
+      CallSid, 
+      RecordingSid, 
+      RecordingStatus,
+      RecordingDuration,
+      RecordingUrl: RecordingUrl ? `${RecordingUrl.substring(0, 50)}...` : null
+    });
+    
+    if (RecordingStatus !== "completed") {
+      console.log(`   Recording status is ${RecordingStatus}, skipping transcription`);
+      return res.status(200).send("OK");
+    }
+    
+    // Find the call record by CallSid
+    let callRecord = await CallRecord.findOne({ twilioCallSid: CallSid });
+    
+    // If not found, try to find by other means or create one
+    if (!callRecord) {
+      console.log(`   No call record found for CallSid ${CallSid}, will update later if found`);
+    }
+    
+    // Save recording URL immediately
+    if (callRecord) {
+      callRecord.recordingUrl = RecordingUrl;
+      callRecord.recordingSid = RecordingSid;
+      await callRecord.save();
+      console.log(`   ✅ Recording URL saved to call record`);
+    }
+    
+    // Start transcription in background (don't block the webhook response)
+    transcribeRecording(CallSid, RecordingUrl, RecordingSid, AccountSid).catch(err => {
+      console.error("Transcription error:", err);
+    });
+    
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Recording status webhook error:", error);
+    res.status(200).send("OK"); // Always return 200 to Twilio
+  }
+});
+
+// Transcribe recording using OpenAI Whisper
+async function transcribeRecording(callSid, recordingUrl, recordingSid, accountSid) {
+  try {
+    console.log(`🎤 Starting transcription for call ${callSid}`);
+    
+    // Get Twilio credentials for this account
+    let authToken = process.env.TWILIO_AUTH_TOKEN;
+    let accSid = accountSid || process.env.TWILIO_ACCOUNT_SID;
+    
+    // Try to find account in DB
+    if (accountSid) {
+      const account = await TwilioAccount.findOne({ accountSid });
+      if (account) {
+        authToken = account.authToken;
+        accSid = account.accountSid;
+      }
+    }
+    
+    if (!authToken || !accSid) {
+      console.error("   ❌ No Twilio credentials for transcription");
+      return;
+    }
+    
+    // Fetch the recording from Twilio (need auth)
+    const recordingUrlWithFormat = `${recordingUrl}.mp3`;
+    console.log(`   Fetching recording from: ${recordingUrlWithFormat}`);
+    
+    const response = await fetch(recordingUrlWithFormat, {
+      headers: {
+        "Authorization": "Basic " + Buffer.from(`${accSid}:${authToken}`).toString("base64")
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`   ❌ Failed to fetch recording: ${response.status} ${response.statusText}`);
+      return;
+    }
+    
+    const audioBuffer = await response.arrayBuffer();
+    console.log(`   ✅ Recording fetched, size: ${audioBuffer.byteLength} bytes`);
+    
+    // Use OpenAI Whisper for transcription
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (!openaiApiKey) {
+      console.error("   ❌ No OpenAI API key for transcription");
+      return;
+    }
+    
+    // Create form data for OpenAI
+    const FormData = (await import("form-data")).default;
+    const formData = new FormData();
+    formData.append("file", Buffer.from(audioBuffer), {
+      filename: "recording.mp3",
+      contentType: "audio/mpeg"
+    });
+    formData.append("model", "whisper-1");
+    formData.append("response_format", "verbose_json"); // Get timestamps
+    formData.append("language", "en");
+    
+    console.log(`   Sending to OpenAI Whisper...`);
+    const whisperResponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openaiApiKey}`,
+        ...formData.getHeaders()
+      },
+      body: formData
+    });
+    
+    if (!whisperResponse.ok) {
+      const errorText = await whisperResponse.text();
+      console.error(`   ❌ Whisper API error: ${whisperResponse.status}`, errorText);
+      return;
+    }
+    
+    const transcriptionResult = await whisperResponse.json();
+    console.log(`   ✅ Transcription complete: ${transcriptionResult.text?.substring(0, 100)}...`);
+    
+    // Update call record with transcription
+    const updated = await CallRecord.findOneAndUpdate(
+      { twilioCallSid: callSid },
+      { 
+        transcription: transcriptionResult.text,
+        transcriptionSegments: transcriptionResult.segments || [],
+        transcriptionLanguage: transcriptionResult.language || "en"
+      },
+      { new: true }
+    );
+    
+    if (updated) {
+      console.log(`   ✅ Transcription saved to call record ${updated._id}`);
+    } else {
+      console.log(`   ⚠️ Could not find call record to save transcription`);
+    }
+    
+  } catch (error) {
+    console.error("Transcription error:", error);
+  }
+}
 
 // @route   POST /api/twilio/webhook/voicemail
 // @desc    Handle voicemail recording

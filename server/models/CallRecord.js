@@ -70,7 +70,19 @@ const callRecordSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    recordingSid: {
+      type: String,
+      default: null,
+    },
     transcription: {
+      type: String,
+      default: null,
+    },
+    transcriptionSegments: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+    },
+    transcriptionLanguage: {
       type: String,
       default: null,
     },

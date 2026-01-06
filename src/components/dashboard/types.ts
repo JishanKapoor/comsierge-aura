@@ -62,6 +62,9 @@ export interface Call {
   type: "incoming" | "outgoing" | "missed";
   duration?: string;
   isBlocked?: boolean;
+  // Recording & Transcript fields
+  recordingUrl?: string;
+  transcription?: string;
   // Voicemail fields
   hasVoicemail?: boolean;
   voicemailUrl?: string;
