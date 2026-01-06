@@ -41,10 +41,10 @@ const SelectNumber = () => {
 
   // Redirect if user already has a phone number
   useEffect(() => {
-    if (user?.phoneNumber) {
+    if (user?.phoneNumber && !isConfirmed) {
       navigate("/dashboard");
     }
-  }, [user, navigate]);
+  }, [user, navigate, isConfirmed]);
 
   // Preload background image
   useEffect(() => {
@@ -133,10 +133,13 @@ const SelectNumber = () => {
         throw new Error(data.message || "Failed to assign phone number");
       }
 
+      // Update state to show success screen immediately to prevent
+      // the useEffect from redirecting to dashboard prematurely
+      setIsConfirmed(true);
+
       // Refresh user data to get the updated phone number
       await refreshUser();
       
-      setIsConfirmed(true);
       toast.success("Number assigned successfully!");
     } catch (error) {
       console.error("Failed to assign number:", error);
