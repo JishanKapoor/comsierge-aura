@@ -1137,7 +1137,7 @@ router.post("/webhook/voice", async (req, res) => {
   try {
     const { From, To, CallSid, CallStatus } = req.body;
     
-    console.log("📞 Voice Webhook:");
+    console.log("📞 Voice Webhook - Full body:", JSON.stringify(req.body, null, 2));
     console.log(`   From: ${From}`);
     console.log(`   To: ${To}`);
     console.log(`   CallSid: ${CallSid}`);
@@ -1150,7 +1150,8 @@ router.post("/webhook/voice", async (req, res) => {
       
       // Determine Caller ID (Twilio Number)
       // Priority: customCallerId from request > user's assigned phone > any available Twilio number
-      let callerId = req.body.customCallerId;
+      // Note: Twilio sends custom params with same case as provided in device.connect()
+      let callerId = req.body.customCallerId || req.body.CustomCallerId;
       console.log(`   customCallerId from request: ${callerId || "not provided"}`);
       
       if (!callerId) {
