@@ -467,20 +467,39 @@ const AdminDashboard = () => {
   };
 
   const handleDeletePhoneFromAccount = (accountId: string, phone: string) => {
+    const account = twilioAccounts.find((acc) => acc.id === accountId);
+    if (!account) {
+      toast.error("Account not found");
+      return;
+    }
+
     showConfirm(
       "Remove Phone Number",
       `Are you sure you want to remove ${phone}? This will also unassign it from any user.`,
       "Remove",
       async () => {
         try {
-          // Find user with this phone and unassign via backend
-          const userWithPhone = appUsers.find((u) => u.assignedPhone === phone);
-          if (userWithPhone) {
-            await fetch(`${API_URL}/auth/users/${userWithPhone.id}/phone`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ phoneNumber: null }),
-            });
+          const token = localStorage.getItem("comsierge_token");
+          if (!token) {
+            toast.error("Please log in again");
+            hideConfirm();
+            return;
+          }
+
+          // Call backend to remove phone from TwilioAccount in MongoDB
+          const response = await fetch(
+            `${API_URL}/admin/twilio-accounts/${encodeURIComponent(account.accountSid)}/phones/${encodeURIComponent(phone)}`,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          const data = await response.json();
+          if (!response.ok || !data.success) {
+            throw new Error(data.message || "Failed to remove phone number");
           }
           
           // Update local accounts state
@@ -501,10 +520,10 @@ const AdminDashboard = () => {
           );
           setAppUsers(updatedUsers);
           
-          toast.success("Phone number removed and unassigned");
-        } catch (error) {
+          toast.success(data.accountDeleted ? "Phone removed. Account deleted (no remaining numbers)." : "Phone number removed");
+        } catch (error: any) {
           console.error("Delete phone error:", error);
-          toast.error("Failed to fully remove phone number");
+          toast.error(error.message || "Failed to remove phone number");
         }
         hideConfirm();
       }

@@ -149,6 +149,61 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
   }
 });
 
+// @route   DELETE /api/admin/twilio-accounts/:accountSid/phones/:phone
+// @desc    Remove a single phone number from a Twilio account
+// @access  Private (admin)
+router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { accountSid, phone } = req.params;
+    const decodedPhone = decodeURIComponent(phone);
+
+    const account = await TwilioAccount.findOne({ accountSid });
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Twilio account not found",
+      });
+    }
+
+    if (!account.phoneNumbers.includes(decodedPhone)) {
+      return res.status(404).json({
+        success: false,
+        message: "Phone number not found in this account",
+      });
+    }
+
+    // Remove phone from account
+    account.phoneNumbers = account.phoneNumbers.filter((p) => p !== decodedPhone);
+    await account.save();
+
+    // Unassign from any user who has this phone
+    await User.updateMany({ phoneNumber: decodedPhone }, { phoneNumber: null });
+
+    // If account has no more phones, optionally delete it
+    if (account.phoneNumbers.length === 0) {
+      await TwilioAccount.findByIdAndDelete(id);
+      return res.json({
+        success: true,
+        message: "Phone number removed. Account deleted (no remaining numbers).",
+        accountDeleted: true,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Phone number removed",
+      data: { remainingPhones: account.phoneNumbers },
+    });
+  } catch (error) {
+    console.error("Delete phone from account error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 // @route   GET /api/admin/users
 // @desc    Get all users (admin only)
 // @access  Private (admin)
