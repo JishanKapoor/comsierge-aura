@@ -533,6 +533,40 @@ router.put("/me/phone", async (req, res) => {
   }
 });
 
+// @route   DELETE /api/auth/me/phone
+// @desc    Unassign the phone number from the current user
+router.delete("/me/phone", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    user.phoneNumber = null;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Phone number unassigned",
+      data: {
+        user: {
+          id: user._id,
+          phoneNumber: null,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Unassign phone from current user error:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
 // @route   PUT /api/auth/me/forwarding
 // @desc    Update forwarding number for the current user
 router.put("/me/forwarding", async (req, res) => {

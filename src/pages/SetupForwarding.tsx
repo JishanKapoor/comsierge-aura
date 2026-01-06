@@ -298,13 +298,29 @@ const SetupForwarding = () => {
         {/* Back link */}
         {!isConfirmed && (
           <div className="mt-6 text-center">
-            <Link
-              to="/select-number"
-              className="text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors duration-300 inline-flex items-center gap-2"
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem("comsierge_token");
+                  if (token) {
+                    await fetch(`${API_URL}/auth/me/phone`, {
+                      method: "DELETE",
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    await refreshUser();
+                  }
+                  navigate("/select-number", { replace: true });
+                } catch (error) {
+                  console.error("Failed to reset number:", error);
+                  // Navigate anyway if it fails
+                  navigate("/select-number", { replace: true });
+                }
+              }}
+              className="text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors duration-300 inline-flex items-center gap-2 bg-transparent border-0 cursor-pointer"
             >
               <ArrowLeft className="w-3 h-3 sm:w-4 sm:h-4" />
               Back to number selection
-            </Link>
+            </button>
           </div>
         )}
       </div>
