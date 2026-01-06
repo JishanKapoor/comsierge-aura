@@ -158,6 +158,40 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
   }
 });
 
+// @route   DELETE /api/admin/twilio-accounts/by-sid/:accountSid
+// @desc    Remove a Twilio account by Account SID
+// @access  Private (admin)
+router.delete("/twilio-accounts/by-sid/:accountSid", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { accountSid } = req.params;
+    const account = await TwilioAccount.findOneAndDelete({ accountSid });
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Twilio account not found",
+      });
+    }
+
+    await User.updateMany(
+      { phoneNumber: { $in: account.phoneNumbers } },
+      { phoneNumber: null }
+    );
+
+    res.json({
+      success: true,
+      message: "Twilio account removed",
+    });
+  } catch (error) {
+    console.error("Delete Twilio account by SID error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 // @route   DELETE /api/admin/twilio-accounts/:accountSid/phones/:phone
 // @desc    Remove a single phone number from a Twilio account
 // @access  Private (admin)
@@ -190,7 +224,7 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
 
     // If account has no more phones, optionally delete it
     if (account.phoneNumbers.length === 0) {
-      await TwilioAccount.findByIdAndDelete(id);
+      await TwilioAccount.findByIdAndDelete(account._id);
       return res.json({
         success: true,
         message: "Phone number removed. Account deleted (no remaining numbers).",

@@ -210,6 +210,47 @@ const AdminDashboard = () => {
       setIsLoadingUsers(false);
     }
   }, []);
+  // Fetch Twilio accounts from backend (source of truth)
+  const fetchTwilioAccounts = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      if (!token) {
+        // Fall back to local storage (legacy)
+        setTwilioAccounts(loadTwilioAccounts());
+        return;
+      }
+
+      const resp = await fetch(`${API_URL}/admin/twilio-accounts`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        setTwilioAccounts(loadTwilioAccounts());
+        return;
+      }
+
+      const local = loadTwilioAccounts();
+      const mapped: TwilioAccount[] = (data.data || []).map((acc: any) => {
+        const localMatch = local.find((l) => l.accountSid === acc.accountSid);
+        return {
+          id: acc._id || acc.id || acc.accountSid,
+          accountSid: acc.accountSid,
+          authToken: localMatch?.authToken || "",
+          phoneNumbers: acc.phoneNumbers || [],
+        };
+      });
+
+      setTwilioAccounts(mapped);
+      // Keep legacy localStorage in sync so the rest of this page stays consistent
+      saveTwilioAccounts(mapped);
+    } catch (error) {
+      console.error("Failed to fetch Twilio accounts:", error);
+      setTwilioAccounts(loadTwilioAccounts());
+    }
+  }, []);
 
   // Fetch tickets from backend
   const fetchTickets = useCallback(async () => {
@@ -232,7 +273,7 @@ const AdminDashboard = () => {
 
   // Manual refresh function
   const handleRefresh = useCallback(async () => {
-    setTwilioAccounts(loadTwilioAccounts());
+    await fetchTwilioAccounts();
     fetchUsers();
     await fetchTickets();
     toast.success("Data refreshed");
@@ -240,7 +281,7 @@ const AdminDashboard = () => {
 
   // Load data on mount and refresh periodically
   useEffect(() => {
-    setTwilioAccounts(loadTwilioAccounts());
+    fetchTwilioAccounts();
     fetchUsers();
     // Load tickets from API
     fetchTickets();
@@ -257,7 +298,7 @@ const AdminDashboard = () => {
     // Also refresh when tab becomes visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        setTwilioAccounts(loadTwilioAccounts());
+        fetchTwilioAccounts();
         fetchUsers();
         fetchTickets();
       }
@@ -376,31 +417,11 @@ const AdminDashboard = () => {
         return;
       }
 
-      // Use server-returned phoneNumbers as the source of truth
-      const serverPhoneNumbers: string[] = syncData.data?.phoneNumbers || [];
 
-      // Now add to local storage
-      if (existingAccount) {
-        const updatedAccounts = twilioAccounts.map((acc) =>
-          acc.accountSid === newAccountSid.trim()
-            ? { ...acc, phoneNumbers: Array.from(new Set([...(acc.phoneNumbers || []), ...serverPhoneNumbers, newPhoneNumber.trim()])) }
-            : acc
-        );
-        setTwilioAccounts(updatedAccounts);
-        saveTwilioAccounts(updatedAccounts);
-        toast.success("Twilio numbers synced to server");
-      } else {
-        const newAccount: TwilioAccount = {
-          id: `twilio-${Date.now()}`,
-          accountSid: newAccountSid.trim(),
-          authToken: newAuthToken.trim(),
-          phoneNumbers: Array.from(new Set([newPhoneNumber.trim(), ...serverPhoneNumbers])),
-        };
-        const updatedAccounts = [...twilioAccounts, newAccount];
-        setTwilioAccounts(updatedAccounts);
-        saveTwilioAccounts(updatedAccounts);
-        toast.success("Twilio numbers synced to server");
-      }
+      toast.success("Phone number added");
+
+      // Refresh accounts from server so UI matches DB
+      await fetchTwilioAccounts();
 
       // Clear form after brief delay to show success
       setTimeout(() => {
@@ -431,6 +452,9 @@ const AdminDashboard = () => {
       "Delete",
       async () => {
         try {
+          const token = localStorage.getItem("comsierge_token");
+          if (!token) throw new Error("Missing session token");
+
           // Unassign all phone numbers from users via backend
           const usersWithThesePhones = appUsers.filter((u) => 
             u.assignedPhone && phonesToUnassign.includes(u.assignedPhone)
@@ -442,6 +466,26 @@ const AdminDashboard = () => {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ phoneNumber: null }),
             });
+          }
+
+          // Delete account in backend (DB)
+          const deleteResp = await fetch(`${API_URL}/admin/twilio-accounts/${accountId}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!deleteResp.ok) {
+            // Fallback if local ID isn't a Mongo _id
+            if (account?.accountSid) {
+              await fetch(`${API_URL}/admin/twilio-accounts/by-sid/${encodeURIComponent(account.accountSid)}`, {
+                method: "DELETE",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+            }
           }
           
           // Update local state - remove account and unassign phones from users
@@ -456,7 +500,10 @@ const AdminDashboard = () => {
               : user
           );
           setAppUsers(updatedUsers);
-          
+
+          // Refresh accounts from server so UI matches DB
+          await fetchTwilioAccounts();
+
           toast.success("Twilio account deleted and phones unassigned");
         } catch (error) {
           console.error("Delete account error:", error);
@@ -522,6 +569,9 @@ const AdminDashboard = () => {
           setAppUsers(updatedUsers);
           
           toast.success(data.accountDeleted ? "Phone removed. Account deleted (no remaining numbers)." : "Phone number removed");
+
+          // Refresh accounts from server so UI matches DB
+          await fetchTwilioAccounts();
         } catch (error: any) {
           console.error("Delete phone error:", error);
           toast.error(error.message || "Failed to remove phone number");
@@ -759,7 +809,7 @@ const AdminDashboard = () => {
                       {twilioAccounts.map((account) => (
                         <tr key={account.id} className="hover:bg-gray-50">
                           <td className="px-5 py-3 text-sm text-gray-700 font-mono">{account.accountSid}</td>
-                          <td className="px-5 py-3 text-sm text-gray-500 font-mono">{maskAuthToken(account.authToken)}</td>
+                          <td className="px-5 py-3 text-sm text-gray-500 font-mono">{maskAuthToken(account.authToken || "")}</td>
                           <td className="px-5 py-3">
                             <div className="flex flex-wrap gap-1.5">
                               {account.phoneNumbers.map((phone) => {
