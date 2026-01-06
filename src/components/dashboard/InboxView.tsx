@@ -172,6 +172,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [callingContact, setCallingContact] = useState<{ number: string; name?: string } | null>(null);
   const [browserCallSid, setBrowserCallSid] = useState<string | null>(null);
+  
+  // Add person to call state
+  const [showAddPersonDialog, setShowAddPersonDialog] = useState(false);
+  const [addPersonNumber, setAddPersonNumber] = useState("");
+  const [isAddingPerson, setIsAddingPerson] = useState(false);
+  const [conferenceParticipants, setConferenceParticipants] = useState<string[]>([]);
 
   // Track recently deleted phone numbers to prevent them from reappearing during polling
   const recentlyDeletedPhones = useRef<Set<string>>(new Set());
@@ -1655,9 +1661,48 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   };
 
   const handleAddPerson = () => {
-    toast.info("Conference calling coming soon!", {
-      description: "This feature will allow you to add more people to the call."
-    });
+    setAddPersonNumber("");
+    setShowAddPersonDialog(true);
+  };
+
+  const confirmAddPerson = async () => {
+    if (!addPersonNumber || !activeCall) {
+      toast.error("Please enter a phone number");
+      return;
+    }
+
+    setIsAddingPerson(true);
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const callSid = activeCall.parameters?.CallSid;
+      
+      const response = await fetch(`${API_BASE_URL}/api/twilio/conference/add-participant`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          callSid,
+          participantNumber: addPersonNumber,
+          fromNumber: twilioNumber,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`Adding ${addPersonNumber} to the call...`);
+        setConferenceParticipants(prev => [...prev, addPersonNumber]);
+        setShowAddPersonDialog(false);
+      } else {
+        toast.error(data.message || "Failed to add participant");
+      }
+    } catch (error: any) {
+      console.error("Add person error:", error);
+      toast.error("Failed to add participant: " + error.message);
+    } finally {
+      setIsAddingPerson(false);
+    }
   };
 
   // Save browser call to call history
@@ -4133,6 +4178,77 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </button>
               </div>
             )}
+
+            {/* Conference participants */}
+            {conferenceParticipants.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-700">
+                <p className="text-xs text-gray-400 mb-2">In this call:</p>
+                <div className="space-y-1">
+                  {conferenceParticipants.map((p, i) => (
+                    <div key={i} className="text-xs text-gray-300 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      {p}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Person to Call Dialog */}
+      {showAddPersonDialog && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-900">Add Person to Call</h3>
+              <button 
+                className="p-1 rounded hover:bg-gray-100"
+                onClick={() => setShowAddPersonDialog(false)}
+              >
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            
+            <p className="text-xs text-gray-500 mb-4">
+              Enter the phone number of the person you want to add to this call.
+            </p>
+
+            <input
+              type="tel"
+              placeholder="+1 (555) 123-4567"
+              value={addPersonNumber}
+              onChange={(e) => setAddPersonNumber(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
+              autoFocus
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddPersonDialog(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAddPerson}
+                disabled={isAddingPerson || !addPersonNumber}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isAddingPerson ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Add to Call
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1723,6 +1723,89 @@ router.post("/token", authMiddleware, async (req, res) => {
 });
 
 
+// @route   POST /api/twilio/conference/add-participant
+// @desc    Add a participant to an ongoing call (converts to conference)
+// @access  Private (user)
+router.post("/conference/add-participant", authMiddleware, async (req, res) => {
+  try {
+    const { callSid, participantNumber, fromNumber } = req.body;
+    
+    if (!participantNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "participantNumber is required"
+      });
+    }
+
+    // Get user's phone number for caller ID
+    const userPhoneNumber = fromNumber || req.user?.phoneNumber;
+    if (!userPhoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "No phone number assigned to make outbound calls"
+      });
+    }
+
+    const { accountSid, authToken } = await resolveTwilioConfig({}, userPhoneNumber);
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found"
+      });
+    }
+
+    const client = twilio(accountSid, authToken);
+    
+    // Create a unique conference name based on user and timestamp
+    const conferenceName = `conf_${req.user.id}_${Date.now()}`;
+    
+    // If we have an existing call, update it to join a conference
+    if (callSid) {
+      try {
+        // Update the existing call to redirect to a conference
+        const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+        await client.calls(callSid).update({
+          twiml: `<Response><Dial><Conference>${conferenceName}</Conference></Dial></Response>`
+        });
+        console.log(`✅ Redirected call ${callSid} to conference ${conferenceName}`);
+      } catch (e) {
+        console.error("Failed to redirect existing call to conference:", e.message);
+        // Continue anyway - we'll try to create the conference call
+      }
+    }
+
+    // Now dial out to the new participant and add them to the same conference
+    const cleanNumber = participantNumber.replace(/[^\d+]/g, "");
+    const formattedNumber = cleanNumber.startsWith("+") ? cleanNumber : `+1${cleanNumber}`;
+    
+    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+    
+    const outboundCall = await client.calls.create({
+      to: formattedNumber,
+      from: userPhoneNumber,
+      twiml: `<Response><Dial><Conference>${conferenceName}</Conference></Dial></Response>`,
+      statusCallback: `${webhookBase}/api/twilio/webhook/status`,
+      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+    });
+
+    console.log(`✅ Added participant ${formattedNumber} to conference ${conferenceName}, call SID: ${outboundCall.sid}`);
+
+    res.json({
+      success: true,
+      message: "Participant added to call",
+      callSid: outboundCall.sid,
+      conferenceName
+    });
+
+  } catch (error) {
+    console.error("Add participant error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add participant: " + error.message
+    });
+  }
+});
+
 
 // @route   POST /api/twilio/make-call
 // @desc    Initiate an outbound call using user's assigned phone number
