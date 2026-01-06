@@ -1,14 +1,27 @@
+import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setImageLoaded(true);
+    img.src = heroImage;
+  }, []);
+
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 bg-background">
       <div className="absolute inset-0 z-0">
-        <div 
-          className="w-full h-full bg-cover bg-center"
-          style={{ backgroundImage: `url(${heroImage})` }}
+        <img
+          src={heroImage}
+          alt="New York City"
+          className={`w-full h-full object-cover object-center transition-opacity duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
         />
         <div
           className="absolute inset-0"
@@ -26,7 +39,7 @@ const HeroSection = () => {
         />
       </div>
 
-      <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto">
+      <div className={`relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto transition-opacity duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}>
         <h1 className="hero-headline text-foreground animate-fade-in">
           The AI layer between
           <br />

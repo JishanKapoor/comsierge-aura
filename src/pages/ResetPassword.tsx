@@ -100,7 +100,7 @@ const ResetPassword = () => {
         } else {
           navigate("/dashboard");
         }
-      }, 500);
+      }, 1200);
     } catch (error) {
       console.error("Reset password error:", error);
       toast.error("Unable to connect to server. Please try again.");

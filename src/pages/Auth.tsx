@@ -16,11 +16,13 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [resendCooldown, setResendCooldown] = useState(0);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const hasRedirectedRef = useRef(false);
   
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -117,29 +119,37 @@ const Auth = () => {
   });
 
   const navigateToUser = (user: { role: string; phoneNumber?: string | null; forwardingNumber?: string | null }) => {
-    if (user.role === "admin") {
-      navigate("/admin");
-    } else if (!user.phoneNumber) {
-      navigate("/select-number");
-    } else if (!user.forwardingNumber) {
-      navigate("/setup-forwarding");
-    } else {
-      navigate("/dashboard");
-    }
+    if (hasRedirectedRef.current) return;
+    hasRedirectedRef.current = true;
+    setIsRedirecting(true);
+
+    const nextPath =
+      user.role === "admin"
+        ? "/admin"
+        : !user.phoneNumber
+          ? "/select-number"
+          : !user.forwardingNumber
+            ? "/setup-forwarding"
+            : "/dashboard";
+
+    // Allow the UI to animate out before navigating.
+    setTimeout(() => {
+      navigate(nextPath, { replace: true });
+    }, 450);
   };
 
   // If user becomes authenticated (e.g., after Google sign-in), redirect out of /auth.
   useEffect(() => {
-    if (!isLoading && user) {
+    if (!isLoading && user && view !== "verify") {
       navigateToUser(user);
     }
-  }, [user, isLoading]);
+  }, [user, isLoading, view]);
 
   const handleLoginSubmit = async (data: LoginFormData) => {
     const result = await login(data.email, data.password);
     
     if (result.requiresVerification && result.email) {
-      setVerificationEmail(result.email);
+      setVerificationEmail((result.email || data.email).trim().toLowerCase());
       setView("verify");
       setResendCooldown(60);
       return;
@@ -161,7 +171,7 @@ const Auth = () => {
     if (result.success) {
       // Check if OTP verification is required
       if (result.requiresVerification && result.email) {
-        setVerificationEmail(result.email);
+        setVerificationEmail((result.email || data.email).trim().toLowerCase());
         setView("verify");
         setResendCooldown(60);
         return;
@@ -243,12 +253,13 @@ const Auth = () => {
       loginForm.reset();
       signupForm.reset();
       setOtp(["", "", "", "", "", ""]);
-      setTimeout(() => setIsTransitioning(false), 50);
-    }, 150);
+      setVerificationEmail("");
+      setTimeout(() => setIsTransitioning(false), 100);
+    }, 250);
   };
 
   const renderVerificationView = () => (
-    <div className={`w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+    <div className={`w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-500 ${(isTransitioning || isRedirecting) ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
       <div className="flex justify-center mb-4">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
           <Mail className="w-8 h-8 text-primary" />
@@ -524,7 +535,7 @@ const Auth = () => {
         </div>
 
         {view === "verify" ? renderVerificationView() : (
-          <div className={`w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-300 ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
+          <div className={`w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all duration-500 ${(isTransitioning || isRedirecting) ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`}>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center">
               {view === "login" ? "Welcome back" : "Get started"}
             </h1>
