@@ -1620,21 +1620,28 @@ router.post("/token", authMiddleware, async (req, res) => {
     // We need a TwiML App to handle the outgoing call from the browser
     const appName = "Comsierge Browser Calling";
     let appSid = "";
+    const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
+    const voiceWebhookUrl = `${webhookBase}/api/twilio/webhook/voice`;
     
     try {
       const apps = await client.applications.list({ friendlyName: appName });
       if (apps.length > 0) {
         appSid = apps[0].sid;
+        // ALWAYS update the voiceUrl to ensure it points to current server
+        console.log(`📱 Updating TwiML App ${appSid} voiceUrl to: ${voiceWebhookUrl}`);
+        await client.applications(appSid).update({
+          voiceUrl: voiceWebhookUrl,
+          voiceMethod: "POST",
+        });
       } else {
         // Create new app
-        const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
         const newApp = await client.applications.create({
           friendlyName: appName,
-          voiceUrl: `${webhookBase}/api/twilio/webhook/voice`,
+          voiceUrl: voiceWebhookUrl,
           voiceMethod: "POST",
         });
         appSid = newApp.sid;
-        console.log(`✅ Created new TwiML App: ${appSid}`);
+        console.log(`✅ Created new TwiML App: ${appSid} with voiceUrl: ${voiceWebhookUrl}`);
       }
     } catch (e) {
       console.error("Failed to manage TwiML App:", e);
