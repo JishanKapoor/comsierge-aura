@@ -259,24 +259,44 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         }
       };
       
+      // Build a set of blocked phone numbers from contacts
+      const blockedPhones = new Set<string>();
+      contacts.forEach(c => {
+        if (c.isBlocked) {
+          const normalizedPhone = c.phone?.replace(/[^\d+]/g, "");
+          blockedPhones.add(normalizedPhone);
+          blockedPhones.add(normalizedPhone.replace("+1", ""));
+          if (!normalizedPhone.startsWith("+1")) {
+            blockedPhones.add("+1" + normalizedPhone);
+          }
+        }
+      });
+      
       // Convert CallRecord to Call type for display
-      const formattedCalls: Call[] = callRecords.map((record) => ({
-        id: record.id,
-        contactId: `phone:${record.contactPhone}`,
-        contactName: record.contactName || record.contactPhone,
-        phone: record.contactPhone,
-        timestamp: formatTimestampForCall(record.createdAt),
-        type: record.type,
-        status: record.status,
-        duration: formatDurationForCall(record.duration),
-        isBlocked: record.status === "blocked",
-        recordingUrl: record.recordingUrl,
-        transcription: record.transcription,
-        hasVoicemail: record.hasVoicemail,
-        voicemailUrl: record.voicemailUrl,
-        voicemailDuration: record.voicemailDuration,
-        voicemailTranscript: record.voicemailTranscript,
-      }));
+      const formattedCalls: Call[] = callRecords.map((record) => {
+        const normalizedPhone = record.contactPhone?.replace(/[^\d+]/g, "") || "";
+        const isBlockedContact = blockedPhones.has(normalizedPhone) || 
+                                  blockedPhones.has(normalizedPhone.replace("+1", "")) ||
+                                  blockedPhones.has("+1" + normalizedPhone.replace("+1", ""));
+        
+        return {
+          id: record.id,
+          contactId: `phone:${record.contactPhone}`,
+          contactName: record.contactName || record.contactPhone,
+          phone: record.contactPhone,
+          timestamp: formatTimestampForCall(record.createdAt),
+          type: record.type,
+          status: record.status,
+          duration: formatDurationForCall(record.duration),
+          isBlocked: record.status === "blocked" || isBlockedContact,
+          recordingUrl: record.recordingUrl,
+          transcription: record.transcription,
+          hasVoicemail: record.hasVoicemail,
+          voicemailUrl: record.voicemailUrl,
+          voicemailDuration: record.voicemailDuration,
+          voicemailTranscript: record.voicemailTranscript,
+        };
+      });
       setCalls(formattedCalls);
     } catch (error) {
       console.error("Error loading calls:", error);
@@ -287,7 +307,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     } finally {
       if (showLoading) setIsLoadingCalls(false);
     }
-  }, [filter]);
+  }, [filter, contacts]);
 
   // Track if this is the initial load
   const hasInitiallyLoaded = useRef(false);
@@ -356,6 +376,20 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     setIsLoadingCalls(true);
     try {
       const callRecords = await fetchCalls(filter === "all" ? undefined : filter);
+      
+      // Build a set of blocked phone numbers from contacts
+      const blockedPhones = new Set<string>();
+      contacts.forEach(c => {
+        if (c.isBlocked) {
+          const normalizedPhone = c.phone?.replace(/[^\d+]/g, "");
+          blockedPhones.add(normalizedPhone);
+          blockedPhones.add(normalizedPhone.replace("+1", ""));
+          if (!normalizedPhone.startsWith("+1")) {
+            blockedPhones.add("+1" + normalizedPhone);
+          }
+        }
+      });
+      
       const formattedCalls: Call[] = callRecords.map((record) => {
         const formatDurationSec = (seconds: number): string | undefined => {
           if (!seconds || seconds <= 0) return undefined;
@@ -384,6 +418,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           }
         };
         
+        const normalizedPhone = record.contactPhone?.replace(/[^\d+]/g, "") || "";
+        const isBlockedContact = blockedPhones.has(normalizedPhone) || 
+                                  blockedPhones.has(normalizedPhone.replace("+1", "")) ||
+                                  blockedPhones.has("+1" + normalizedPhone.replace("+1", ""));
+        
         return {
           id: record.id,
           contactId: `phone:${record.contactPhone}`,
@@ -393,7 +432,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           type: record.type,
           status: record.status,
           duration: formatDurationSec(record.duration),
-          isBlocked: record.status === "blocked",
+          isBlocked: record.status === "blocked" || isBlockedContact,
           recordingUrl: record.recordingUrl,
           transcription: record.transcription,
           hasVoicemail: record.hasVoicemail,
@@ -433,6 +472,76 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     }
   };
 
+  // Block/unblock a phone number
+  const toggleBlockNumber = async (phone: string, currentlyBlocked: boolean) => {
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      
+      // First check if contact exists
+      const contactsRes = await fetch(`${API_BASE_URL}/api/contacts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const contactsData = await contactsRes.json();
+      
+      // Find contact by phone
+      const normalizedPhone = phone.replace(/[^\d+]/g, "");
+      const contact = contactsData.data?.find((c: any) => {
+        const contactPhone = c.phone?.replace(/[^\d+]/g, "");
+        return contactPhone === normalizedPhone || 
+               contactPhone === normalizedPhone.replace("+1", "") ||
+               "+1" + contactPhone === normalizedPhone;
+      });
+      
+      if (contact) {
+        // Update existing contact
+        const res = await fetch(`${API_BASE_URL}/api/contacts/${contact._id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ isBlocked: !currentlyBlocked }),
+        });
+        
+        if (res.ok) {
+          toast.success(currentlyBlocked ? "Number unblocked" : "Number blocked");
+          // Update local state
+          setCalls(prev => prev.map(c => 
+            c.phone === phone ? { ...c, isBlocked: !currentlyBlocked } : c
+          ));
+        } else {
+          toast.error("Failed to update block status");
+        }
+      } else {
+        // Create new contact and block it
+        const res = await fetch(`${API_BASE_URL}/api/contacts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ 
+            phone: phone,
+            name: phone,
+            isBlocked: true,
+          }),
+        });
+        
+        if (res.ok) {
+          toast.success("Number blocked");
+          setCalls(prev => prev.map(c => 
+            c.phone === phone ? { ...c, isBlocked: true } : c
+          ));
+        } else {
+          toast.error("Failed to block number");
+        }
+      }
+    } catch (error) {
+      console.error("Block/unblock error:", error);
+      toast.error("Failed to update block status");
+    }
+  };
+
   // Voicemail playback handler
   const playVoicemail = (callId: string) => {
     // If already playing this voicemail, stop it
@@ -452,7 +561,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
     // Use our proxy endpoint which handles Twilio auth
     const token = localStorage.getItem("comsierge_token");
-    const audioUrl = `/api/calls/${callId}/voicemail`;
+    const audioUrl = `${API_BASE_URL}/api/calls/${callId}/voicemail`;
     
     // Use fetch to get the audio with auth header
     fetch(audioUrl, {
@@ -1356,6 +1465,21 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   >
                     <Phone className="w-3.5 h-3.5" />
                   </Button>
+                  {/* Block/Unblock Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`rounded h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity ${
+                      call.isBlocked 
+                        ? "text-red-500 hover:text-green-600 hover:bg-green-50" 
+                        : "text-gray-400 hover:text-red-500 hover:bg-red-50"
+                    }`}
+                    onClick={() => toggleBlockNumber(call.phone, call.isBlocked || false)}
+                    aria-label={call.isBlocked ? "Unblock" : "Block"}
+                    title={call.isBlocked ? "Unblock this number" : "Block this number"}
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1376,17 +1500,6 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
-                  {call.isBlocked && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded h-7 w-7 text-gray-400 hover:bg-gray-100"
-                      onClick={() => toast("Blocked", { description: "This number is blocked" })}
-                      aria-label="Blocked"
-                    >
-                      <Ban className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
                 </div>
               </div>
             ))}
@@ -1429,14 +1542,14 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
               )}
             </div>
 
-            {/* Call Controls - Just Mute and Hangup */}
+            {/* Call Controls */}
             {(activeCall.status === "ringing" || activeCall.status === "connected") && (
               <div className="space-y-4">
-                <div className="flex items-center justify-center gap-6">
+                <div className="flex items-center justify-center gap-4">
                   {/* Mute Button */}
                   <button
                     onClick={toggleMute}
-                    className={`w-14 h-14 rounded-full flex flex-col items-center justify-center transition-all ${
+                    className={`w-12 h-12 rounded-full flex flex-col items-center justify-center transition-all ${
                       activeCall.isMuted 
                         ? "bg-red-500 hover:bg-red-600" 
                         : "bg-gray-700 hover:bg-gray-600"
@@ -1444,27 +1557,73 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                     title={activeCall.isMuted ? "Unmute" : "Mute"}
                   >
                     {activeCall.isMuted ? (
-                      <MicOff className="w-6 h-6" />
+                      <MicOff className="w-5 h-5" />
                     ) : (
-                      <Mic className="w-6 h-6" />
+                      <Mic className="w-5 h-5" />
                     )}
                   </button>
+
+                  {/* Transfer Button - only when connected */}
+                  {activeCall.status === "connected" && (
+                    <button
+                      onClick={() => setShowTransferCall(!showTransferCall)}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                        showTransferCall 
+                          ? "bg-indigo-500 hover:bg-indigo-600" 
+                          : "bg-gray-700 hover:bg-gray-600"
+                      }`}
+                      title="Transfer Call"
+                    >
+                      <ArrowRightLeft className="w-5 h-5" />
+                    </button>
+                  )}
 
                   {/* Hangup Button */}
                   <button
                     onClick={hangUp}
-                    className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
+                    className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
                     title="End Call"
                   >
-                    <Phone className="w-6 h-6 rotate-[135deg]" />
+                    <Phone className="w-5 h-5 rotate-[135deg]" />
                   </button>
                 </div>
 
                 {/* Labels */}
-                <div className="flex items-center justify-center gap-6 text-[10px] text-gray-400">
-                  <span className="w-14 text-center">{activeCall.isMuted ? "Unmute" : "Mute"}</span>
-                  <span className="w-14 text-center">End</span>
+                <div className="flex items-center justify-center gap-4 text-[10px] text-gray-400">
+                  <span className="w-12 text-center">{activeCall.isMuted ? "Unmute" : "Mute"}</span>
+                  {activeCall.status === "connected" && <span className="w-12 text-center">Transfer</span>}
+                  <span className="w-12 text-center">End</span>
                 </div>
+
+                {/* Transfer Panel */}
+                {showTransferCall && activeCall.status === "connected" && (
+                  <div className="mt-4 p-3 bg-gray-800 rounded-xl space-y-3">
+                    <p className="text-xs text-gray-400">Transfer call to:</p>
+                    <input
+                      type="tel"
+                      value={transferCallTo}
+                      onChange={(e) => setTransferCallTo(e.target.value)}
+                      placeholder="Phone number (10 digits)"
+                      className="w-full h-9 px-3 text-sm bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-indigo-400 text-white placeholder:text-gray-500"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowTransferCall(false)}
+                        className="flex-1 h-8 text-xs bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitTransferCall}
+                        disabled={!transferCallTo.trim()}
+                        className="flex-1 h-8 text-xs bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-600 disabled:text-gray-400 rounded-lg transition-colors flex items-center justify-center gap-1"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                        Transfer
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
