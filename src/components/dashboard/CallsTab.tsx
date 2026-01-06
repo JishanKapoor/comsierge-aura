@@ -30,6 +30,11 @@ import {
   Voicemail,
   Square,
   FileText,
+  Sparkles,
+  Send,
+  MessageSquare,
+  Copy,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -120,7 +125,19 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const voicemailAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Transcript viewing state
-  const [viewingTranscript, setViewingTranscript] = useState<{ id: string; contactName: string; transcription: string; timestamp: string } | null>(null);
+  const [viewingTranscript, setViewingTranscript] = useState<{ 
+    id: string; 
+    contactName: string; 
+    transcription: string; 
+    timestamp: string;
+    phone?: string;
+  } | null>(null);
+  
+  // AI Chat about transcript state
+  const [transcriptAiMessages, setTranscriptAiMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [transcriptAiInput, setTranscriptAiInput] = useState("");
+  const [isTranscriptAiLoading, setIsTranscriptAiLoading] = useState(false);
+  const transcriptAiChatRef = useRef<HTMLDivElement>(null);
 
   // Audio refs for ringtone
   const ringToneRef = useRef<HTMLAudioElement | null>(null);
@@ -479,6 +496,64 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       }
     };
   }, []);
+
+  // Ask AI about transcript
+  const askAiAboutTranscript = async (question: string) => {
+    if (!viewingTranscript || !question.trim()) return;
+    
+    const userMessage = question.trim();
+    setTranscriptAiMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    setTranscriptAiInput("");
+    setIsTranscriptAiLoading(true);
+    
+    // Scroll to bottom
+    setTimeout(() => {
+      transcriptAiChatRef.current?.scrollTo({ top: transcriptAiChatRef.current.scrollHeight, behavior: "smooth" });
+    }, 100);
+    
+    try {
+      const token = localStorage.getItem("comsierge_token");
+      const response = await fetch(`${API_BASE_URL}/api/ai/analyze-transcript`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          transcript: viewingTranscript.transcription,
+          contactName: viewingTranscript.contactName,
+          question: userMessage,
+          conversationHistory: transcriptAiMessages,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setTranscriptAiMessages(prev => [...prev, { role: "assistant", content: data.response }]);
+      } else {
+        toast.error(data.message || "Failed to get AI response");
+        setTranscriptAiMessages(prev => [...prev, { role: "assistant", content: "Sorry, I couldn't analyze that. Please try again." }]);
+      }
+    } catch (error) {
+      console.error("AI transcript analysis error:", error);
+      toast.error("Failed to connect to AI");
+      setTranscriptAiMessages(prev => [...prev, { role: "assistant", content: "Sorry, there was an error. Please try again." }]);
+    } finally {
+      setIsTranscriptAiLoading(false);
+      setTimeout(() => {
+        transcriptAiChatRef.current?.scrollTo({ top: transcriptAiChatRef.current.scrollHeight, behavior: "smooth" });
+      }, 100);
+    }
+  };
+
+  // Quick AI prompts for transcript analysis
+  const quickTranscriptPrompts = [
+    { label: "Summarize", prompt: "Give me a brief summary of this call" },
+    { label: "Action Items", prompt: "What are the action items or follow-ups from this call?" },
+    { label: "Key Points", prompt: "What are the key points discussed?" },
+    { label: "Sentiment", prompt: "What was the tone and sentiment of this conversation?" },
+  ];
 
   const makeCall = async (number: string, name?: string) => {
     if (!isValidUsPhoneNumber(number)) {
@@ -1232,10 +1307,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                         id: call.id,
                         contactName: call.contactName,
                         transcription: call.transcription!,
-                        timestamp: call.timestamp
+                        timestamp: call.timestamp,
+                        phone: call.phone
                       })}
                       aria-label="View transcript"
-                      title="View AI transcript"
+                      title="View AI transcript & Ask AI"
                     >
                       <FileText className="w-3.5 h-3.5" />
                     </Button>
@@ -1592,52 +1668,170 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         </div>
       )}
 
-      {/* Transcript Viewer Modal */}
+      {/* Transcript Viewer Modal with AI Chat */}
       {viewingTranscript && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-lg p-5 max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4 shrink-0">
-              <div>
-                <h3 className="text-sm font-medium text-gray-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-indigo-500" />
-                  Call Transcript
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {viewingTranscript.contactName} • {viewingTranscript.timestamp}
-                </p>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-gradient-to-r from-indigo-50 to-purple-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">Call Transcript</h3>
+                  <p className="text-xs text-gray-500">
+                    {viewingTranscript.contactName} • {viewingTranscript.timestamp}
+                  </p>
+                </div>
               </div>
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100" 
-                onClick={() => setViewingTranscript(null)}
+                className="rounded-full h-8 w-8 text-gray-500 hover:bg-white/80" 
+                onClick={() => {
+                  setViewingTranscript(null);
+                  setTranscriptAiMessages([]);
+                  setTranscriptAiInput("");
+                }}
               >
                 <X className="w-4 h-4" />
               </Button>
             </div>
             
-            <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {viewingTranscript.transcription}
-              </p>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between shrink-0">
-              <p className="text-xs text-gray-400 flex items-center gap-1">
-                <Mic className="w-3 h-3" />
-                AI-generated transcript
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs h-7"
-                onClick={() => {
-                  navigator.clipboard.writeText(viewingTranscript.transcription);
-                  toast.success("Transcript copied to clipboard");
-                }}
-              >
-                Copy
-              </Button>
+            {/* Two-column layout on desktop, stacked on mobile */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+              {/* Transcript Column */}
+              <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-gray-100 max-h-[40vh] md:max-h-none">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between shrink-0">
+                  <span className="text-xs font-medium text-gray-600 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5" />
+                    Transcript
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-6 px-2 text-gray-500 hover:text-gray-700"
+                    onClick={() => {
+                      navigator.clipboard.writeText(viewingTranscript.transcription);
+                      toast.success("Copied!");
+                    }}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {viewingTranscript.transcription}
+                  </p>
+                </div>
+              </div>
+              
+              {/* AI Chat Column */}
+              <div className="flex-1 flex flex-col bg-gray-50 min-h-[300px] md:min-h-0">
+                <div className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center gap-2 shrink-0">
+                  <Sparkles className="w-4 h-4 text-white" />
+                  <span className="text-xs font-medium text-white">Ask AI about this call</span>
+                </div>
+                
+                {/* Quick prompts */}
+                {transcriptAiMessages.length === 0 && (
+                  <div className="p-3 border-b border-gray-200 bg-white">
+                    <p className="text-xs text-gray-500 mb-2">Quick actions:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {quickTranscriptPrompts.map((item) => (
+                        <button
+                          key={item.label}
+                          onClick={() => askAiAboutTranscript(item.prompt)}
+                          className="px-2.5 py-1 text-xs bg-indigo-50 text-indigo-700 rounded-full hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                        >
+                          <ChevronRight className="w-3 h-3" />
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Chat messages */}
+                <div 
+                  ref={transcriptAiChatRef}
+                  className="flex-1 overflow-y-auto p-3 space-y-3"
+                >
+                  {transcriptAiMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mb-3">
+                        <MessageSquare className="w-6 h-6 text-indigo-500" />
+                      </div>
+                      <p className="text-sm text-gray-600 font-medium">Ask me anything about this call</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        I can summarize, find action items, or answer questions
+                      </p>
+                    </div>
+                  ) : (
+                    transcriptAiMessages.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
+                            msg.role === "user"
+                              ? "bg-indigo-500 text-white rounded-br-sm"
+                              : "bg-white border border-gray-200 text-gray-700 rounded-bl-sm shadow-sm"
+                          }`}
+                        >
+                          {msg.role === "assistant" && (
+                            <div className="flex items-center gap-1.5 mb-1.5 text-indigo-500">
+                              <Sparkles className="w-3 h-3" />
+                              <span className="text-xs font-medium">AI</span>
+                            </div>
+                          )}
+                          <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {isTranscriptAiLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white border border-gray-200 px-3 py-2 rounded-xl rounded-bl-sm shadow-sm">
+                        <div className="flex items-center gap-2 text-indigo-500">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span className="text-xs">Analyzing...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Chat input */}
+                <div className="p-3 bg-white border-t border-gray-200 shrink-0">
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      askAiAboutTranscript(transcriptAiInput);
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={transcriptAiInput}
+                      onChange={(e) => setTranscriptAiInput(e.target.value)}
+                      placeholder="Ask about this call..."
+                      className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      disabled={isTranscriptAiLoading}
+                    />
+                    <Button
+                      type="submit"
+                      disabled={!transcriptAiInput.trim() || isTranscriptAiLoading}
+                      className="px-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </form>
+                </div>
+              </div>
             </div>
           </div>
         </div>

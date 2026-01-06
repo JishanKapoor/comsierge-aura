@@ -397,4 +397,73 @@ router.post("/conversation-chat", authMiddleware, async (req, res) => {
   }
 });
 
+// @route   POST /api/ai/analyze-transcript
+// @desc    Ask AI questions about a call transcript
+// @access  Private
+router.post("/analyze-transcript", authMiddleware, async (req, res) => {
+  try {
+    const { transcript, contactName, question, conversationHistory } = req.body;
+
+    if (!transcript || !question) {
+      return res.status(400).json({
+        success: false,
+        message: "Transcript and question are required",
+      });
+    }
+
+    console.log("🎙️ Analyzing transcript for:", contactName);
+    console.log("   Question:", question);
+
+    // Build the conversation context from history
+    const historyContext = conversationHistory && conversationHistory.length > 0
+      ? conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
+      : '';
+
+    const systemPrompt = `You are an AI assistant helping analyze a phone call transcript. You have access to the full transcript of a call with "${contactName || 'a contact'}".
+
+Be helpful, concise, and accurate. When summarizing or extracting information:
+- Be specific and quote relevant parts when useful
+- If asked about action items, be clear about who needs to do what
+- For sentiment analysis, explain your reasoning
+- If something isn't clear from the transcript, say so
+
+Here is the call transcript:
+---
+${transcript}
+---
+
+${historyContext ? `Previous conversation:\n${historyContext}\n` : ''}`;
+
+    // Use OpenAI to analyze
+    const { ChatOpenAI } = await import("@langchain/openai");
+    const { HumanMessage, SystemMessage } = await import("@langchain/core/messages");
+
+    const llm = new ChatOpenAI({
+      modelName: "gpt-4o-mini",
+      temperature: 0.3,
+      openAIApiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const response = await llm.invoke([
+      new SystemMessage(systemPrompt),
+      new HumanMessage(question),
+    ]);
+
+    const aiResponse = response.content;
+    console.log("   AI Response:", aiResponse.substring(0, 100) + "...");
+
+    res.json({
+      success: true,
+      response: aiResponse,
+    });
+  } catch (error) {
+    console.error("❌ Transcript analysis error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to analyze transcript",
+      error: error.message,
+    });
+  }
+});
+
 export default router;
