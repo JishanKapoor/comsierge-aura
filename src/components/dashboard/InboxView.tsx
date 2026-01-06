@@ -167,19 +167,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [activeCall, setActiveCall] = useState<any>(null);
   const [callStatus, setCallStatus] = useState<"connecting" | "ringing" | "connected" | "ended" | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-  const [isOnHold, setIsOnHold] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const callDurationRef = useRef(0); // Track actual duration for saving
   const [callingContact, setCallingContact] = useState<{ number: string; name?: string } | null>(null);
   const callingContactRef = useRef<{ number: string; name?: string } | null>(null); // Ref for closure access
   const [browserCallSid, setBrowserCallSid] = useState<string | null>(null);
-  
-  // Add person to call state
-  const [showAddPersonDialog, setShowAddPersonDialog] = useState(false);
-  const [addPersonNumber, setAddPersonNumber] = useState("");
-  const [isAddingPerson, setIsAddingPerson] = useState(false);
-  const [conferenceParticipants, setConferenceParticipants] = useState<string[]>([]);
 
   // Track recently deleted phone numbers to prevent them from reappearing during polling
   const recentlyDeletedPhones = useRef<Set<string>>(new Set());
@@ -1596,7 +1589,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setCallStatus("ended");
         setActiveCall(null);
         setIsMuted(false);
-        setIsOnHold(false);
         if (callTimerRef.current) {
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
@@ -1623,7 +1615,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setActiveCall(null);
         setCallingContact(null);
         callingContactRef.current = null;
-        setIsOnHold(false);
         if (callTimerRef.current) {
           clearInterval(callTimerRef.current);
           callTimerRef.current = null;
@@ -1668,69 +1659,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       activeCall.mute(newMuteState);
       setIsMuted(newMuteState);
       toast.info(newMuteState ? "Muted" : "Unmuted");
-    }
-  };
-
-  const handleToggleHold = async () => {
-    if (!activeCall) return;
-    
-    const newHoldState = !isOnHold;
-    setIsOnHold(newHoldState);
-    
-    // Mute our mic when on hold
-    activeCall.mute(newHoldState);
-    
-    // For true hold with music, we'd need server-side implementation
-    // This mutes your microphone so the other party can't hear you
-    toast.info(newHoldState ? "Microphone muted (on hold)" : "Microphone unmuted", {
-      description: newHoldState ? "The other party cannot hear you" : "Call resumed"
-    });
-  };
-
-  const handleAddPerson = () => {
-    setAddPersonNumber("");
-    setShowAddPersonDialog(true);
-  };
-
-  const confirmAddPerson = async () => {
-    if (!addPersonNumber || !activeCall) {
-      toast.error("Please enter a phone number");
-      return;
-    }
-
-    setIsAddingPerson(true);
-    try {
-      const token = localStorage.getItem("comsierge_token");
-      const callSid = activeCall.parameters?.CallSid;
-      
-      const response = await fetch(`${API_BASE_URL}/api/twilio/conference/add-participant`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          callSid,
-          participantNumber: addPersonNumber,
-          fromNumber: twilioNumber,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        toast.success(`Calling ${addPersonNumber}...`, {
-          description: "They will be called from your Twilio number"
-        });
-        setConferenceParticipants(prev => [...prev, addPersonNumber]);
-        setShowAddPersonDialog(false);
-      } else {
-        toast.error(data.message || "Failed to add participant");
-      }
-    } catch (error: any) {
-      console.error("Add person error:", error);
-      toast.error("Failed to add participant: " + error.message);
-    } finally {
-      setIsAddingPerson(false);
     }
   };
 
@@ -4130,12 +4058,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             {(callStatus === "ringing" || callStatus === "connected") && (
               <div className="space-y-4">
                 {/* Main controls row */}
-                <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center justify-center gap-6">
                   {/* Mute Button */}
                   <button
                     onClick={handleToggleMute}
                     className={cn(
-                      "w-12 h-12 rounded-full flex flex-col items-center justify-center transition-all text-xs",
+                      "w-14 h-14 rounded-full flex flex-col items-center justify-center transition-all",
                       isMuted 
                         ? "bg-red-500 hover:bg-red-600" 
                         : "bg-gray-700 hover:bg-gray-600"
@@ -4143,58 +4071,31 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     title={isMuted ? "Unmute" : "Mute"}
                   >
                     {isMuted ? (
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                       </svg>
                     ) : (
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                       </svg>
                     )}
                   </button>
 
-                  {/* Hold Button */}
-                  <button
-                    onClick={handleToggleHold}
-                    className={cn(
-                      "w-12 h-12 rounded-full flex flex-col items-center justify-center transition-all text-xs",
-                      isOnHold 
-                        ? "bg-amber-500 hover:bg-amber-600" 
-                        : "bg-gray-700 hover:bg-gray-600"
-                    )}
-                    title={isOnHold ? "Resume" : "Hold"}
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </button>
-
-                  {/* Add Person Button */}
-                  <button
-                    onClick={handleAddPerson}
-                    className="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 flex flex-col items-center justify-center transition-all text-xs"
-                    title="Add Person"
-                  >
-                    <UserPlus className="w-5 h-5" />
-                  </button>
-
                   {/* Hangup Button */}
                   <button
                     onClick={handleHangup}
-                    className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
+                    className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
                     title="End Call"
                   >
-                    <Phone className="w-5 h-5 rotate-[135deg]" />
+                    <Phone className="w-6 h-6 rotate-[135deg]" />
                   </button>
                 </div>
 
                 {/* Labels */}
-                <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
-                  <span className="w-12 text-center">{isMuted ? "Unmute" : "Mute"}</span>
-                  <span className="w-12 text-center">{isOnHold ? "Resume" : "Hold"}</span>
-                  <span className="w-12 text-center">Add</span>
-                  <span className="w-12 text-center">End</span>
+                <div className="flex items-center justify-center gap-6 text-[10px] text-gray-400">
+                  <span className="w-14 text-center">{isMuted ? "Unmute" : "Mute"}</span>
+                  <span className="w-14 text-center">End</span>
                 </div>
               </div>
             )}
@@ -4214,77 +4115,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </button>
               </div>
             )}
-
-            {/* Conference participants */}
-            {conferenceParticipants.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-700">
-                <p className="text-xs text-gray-400 mb-2">In this call:</p>
-                <div className="space-y-1">
-                  {conferenceParticipants.map((p, i) => (
-                    <div key={i} className="text-xs text-gray-300 flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      {p}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Add Person to Call Dialog */}
-      {showAddPersonDialog && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900">Add Person to Call</h3>
-              <button 
-                className="p-1 rounded hover:bg-gray-100"
-                onClick={() => setShowAddPersonDialog(false)}
-              >
-                <X className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            
-            <p className="text-xs text-gray-500 mb-4">
-              Enter the phone number of the person you want to add to this call.
-            </p>
-
-            <input
-              type="tel"
-              placeholder="+1 (555) 123-4567"
-              value={addPersonNumber}
-              onChange={(e) => setAddPersonNumber(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
-              autoFocus
-            />
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowAddPersonDialog(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmAddPerson}
-                disabled={isAddingPerson || !addPersonNumber}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {isAddingPerson ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Adding...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-4 h-4" />
-                    Add to Call
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}
