@@ -720,8 +720,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   }, [selectedContactPhone, isLoadingMessages]);
 
   const selectedMessage = useMemo(() => {
-    const byId = selectedMessageId ? filteredMessages.find((m) => m.id === selectedMessageId) : undefined;
-    return byId ?? filteredMessages[0] ?? null;
+    // Only return a selected message if explicitly selected by ID - don't auto-select first
+    if (!selectedMessageId) return null;
+    return filteredMessages.find((m) => m.id === selectedMessageId) ?? null;
   }, [filteredMessages, selectedMessageId]);
 
   const selectedSavedContact = useMemo(() => {
