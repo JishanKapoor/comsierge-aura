@@ -24,7 +24,6 @@ const Navbar = () => {
         rafId.current = null;
 
         const currentScrollY = window.scrollY;
-        const delta = currentScrollY - lastScrollY.current;
 
         // Add background when scrolled past threshold
         setScrolled(currentScrollY > 50);
@@ -43,10 +42,10 @@ const Navbar = () => {
         }
 
         // Micro1-style behavior: hide on scroll down, show on scroll up.
-        // Ignore tiny movements to avoid jitter.
-        if (delta > 8 && currentScrollY > 120) {
+        // Use direction-based detection so it still works with slow/trackpad scrolling.
+        if (currentScrollY > lastScrollY.current && currentScrollY > 120) {
           setHidden(true);
-        } else if (delta < -8) {
+        } else if (currentScrollY < lastScrollY.current) {
           setHidden(false);
         }
 
