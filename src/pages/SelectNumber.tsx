@@ -49,8 +49,12 @@ const SelectNumber = () => {
   // Preload background image
   useEffect(() => {
     const img = new Image();
-    img.onload = () => setImageLoaded(true);
     img.src = preloadedImages.heroNyc;
+    if (img.complete) {
+      setImageLoaded(true);
+    } else {
+      img.onload = () => setImageLoaded(true);
+    }
   }, []);
 
   // Load available phone numbers from backend

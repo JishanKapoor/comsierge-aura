@@ -43,8 +43,12 @@ const SetupForwarding = () => {
   // Preload background image
   useEffect(() => {
     const img = new Image();
-    img.onload = () => setImageLoaded(true);
     img.src = preloadedImages.heroNyc;
+    if (img.complete) {
+      setImageLoaded(true);
+    } else {
+      img.onload = () => setImageLoaded(true);
+    }
   }, []);
 
   // Format phone number as user types
