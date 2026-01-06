@@ -2363,9 +2363,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       {/* Chat View */}
       <section
         className={cn(
-          "flex-1 flex flex-col min-h-0 bg-white overflow-hidden",
-          isMobile && mobilePane === "list" ? "hidden" : "flex"
+          "flex-1 flex flex-col bg-white overflow-hidden",
+          isMobile && mobilePane === "list" ? "hidden" : "flex",
+          isMobile && "h-[100dvh] max-h-[100dvh]"
         )}
+        style={isMobile ? { minHeight: 0, height: '100dvh' } : { minHeight: 0 }}
       >
         {selectedMessage ? (
           <>
@@ -2574,8 +2576,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             {/* Messages area */}
             <div
               ref={chatScrollRef}
-              className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-50"
-              style={{ WebkitOverflowScrolling: "touch" }}
+              className={cn(
+                "flex-1 overflow-y-auto p-4 bg-gray-50",
+                isMobile && "pb-20"
+              )}
+              style={{ WebkitOverflowScrolling: "touch", minHeight: 0 }}
               onScroll={(e) => {
                 const target = e.currentTarget;
                 const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
@@ -2684,7 +2689,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
             {/* Message input */}
             <div 
-              className="p-3 border-t border-gray-200 bg-white shrink-0"
+              className={cn(
+                "p-3 border-t border-gray-200 bg-white shrink-0",
+                isMobile && "fixed bottom-0 left-0 right-0 z-40"
+              )}
               style={{ 
                 paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0.75rem))',
                 marginBottom: 'env(safe-area-inset-bottom, 0px)'

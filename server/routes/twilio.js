@@ -1149,9 +1149,37 @@ router.post("/webhook/voice", async (req, res) => {
       console.log("   ➡️ Outgoing Browser Call");
       
       // Determine Caller ID (Twilio Number)
+      // Priority: customCallerId from request > user's assigned phone > any available Twilio number
       let callerId = req.body.customCallerId;
+      
       if (!callerId) {
-         callerId = process.env.TWILIO_PHONE_NUMBER;
+        // Extract email/identity from client:xxx format
+        const identity = From.replace("client:", "");
+        console.log(`   Looking up callerId for identity: ${identity}`);
+        
+        // Try to find user by email (the identity is usually the email)
+        const user = await User.findOne({ email: identity });
+        if (user?.phoneNumber) {
+          callerId = user.phoneNumber;
+          console.log(`   Found user's phone: ${callerId}`);
+        }
+      }
+      
+      // Last resort: get first available Twilio number
+      if (!callerId) {
+        const account = await TwilioAccount.findOne({ phoneNumbers: { $exists: true, $ne: [] } });
+        if (account?.phoneNumbers?.length > 0) {
+          callerId = account.phoneNumbers[0];
+          console.log(`   Using first available Twilio number: ${callerId}`);
+        }
+      }
+      
+      if (!callerId) {
+        console.error("   ❌ No callerId available for outgoing call");
+        response.say("We're sorry, an application error has occurred. Goodbye.");
+        response.hangup();
+        res.type("text/xml");
+        return res.send(response.toString());
       }
 
       const dial = response.dial({
