@@ -341,8 +341,17 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // Admin accounts should not be blocked by OTP email verification.
+    // If an admin somehow isn't verified (legacy data), auto-verify on successful login.
+    if (user.role === "admin" && !user.isEmailVerified) {
+      user.isEmailVerified = true;
+      user.emailVerificationOTP = null;
+      user.emailVerificationExpires = null;
+      await user.save();
+    }
+
     // Check if email is verified (only for email auth, not Google)
-    if (!user.isEmailVerified && user.authProvider === "email") {
+    if (user.role !== "admin" && !user.isEmailVerified && user.authProvider === "email") {
       // Generate new OTP and send
       const otp = generateOTP();
       user.emailVerificationOTP = otp;
