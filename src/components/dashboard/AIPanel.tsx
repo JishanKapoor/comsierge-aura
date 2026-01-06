@@ -74,7 +74,7 @@ const AIPanel = ({ isOpen, onClose }: AIPanelProps) => {
       } else if (lowerInput.includes("auto-reply") || lowerInput.includes("rule") || lowerInput.includes("create")) {
         response = `I can create an auto-reply rule for you. What should I:\n\n1. **Trigger on**: Keywords, sender, or time?\n2. **Reply with**: What message?\n3. **Apply to**: All messages or specific contacts?\n\nExample: "Auto-reply 'On vacation until Jan 2' to all non-priority messages"`;
       } else if (lowerInput.includes("family")) {
-        response = `**Family Messages Today:**\n\n• **Mom**: "Don't forget dinner tonight!" (2:30pm)\n  → Waiting for your response\n\n• **Giuseppe**: "Hey, can we meet tomorrow?" (11:30am)\n  → Suggested reply: "Sure! What time works?"\n\n*2 family members reached out today*`;
+        response = `**Family Messages Today:**\n\n• **Mom**: "Don't forget dinner tonight!" (2:30pm)\n  -> Waiting for your response\n\n• **Giuseppe**: "Hey, can we meet tomorrow?" (11:30am)\n  -> Suggested reply: "Sure! What time works?"\n\n*2 family members reached out today*`;
       } else {
         response = `I can help you with:\n\n• **Search**: "Show urgent messages from tenants"\n• **Summarize**: "What did family say about dinner?"\n• **Automate**: "Create auto-reply for delivery"\n• **Filter**: "Find messages about appointments"\n\nTry asking something specific!`;
       }

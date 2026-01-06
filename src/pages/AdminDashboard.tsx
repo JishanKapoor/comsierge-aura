@@ -915,7 +915,7 @@ const AdminDashboard = () => {
                       >
                         <Phone className="w-3.5 h-3.5" />
                         {phone}
-                        <span className="text-indigo-400">→</span>
+                        <span className="text-indigo-400">-&gt;</span>
                         <span className="font-medium">{user}</span>
                       </span>
                     ))}

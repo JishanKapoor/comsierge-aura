@@ -96,7 +96,7 @@ const FeaturesSection = () => {
               <div className="mt-8 flex items-center gap-2 text-accent opacity-0 group-hover:opacity-100 transition-opacity duration-500">
                 <span className="text-sm font-medium">Learn more</span>
                 <span className="group-hover:translate-x-1 transition-transform">
-                  →
+                  -&gt;
                 </span>
               </div>
             </div>

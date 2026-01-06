@@ -22,6 +22,16 @@ async function saveMessageToDB(msgData) {
   console.log("📝 saveMessageToDB called with:", JSON.stringify(msgData, null, 2));
   
   try {
+    // Twilio will sometimes retry webhooks; also clients can retry sends.
+    // If we already stored this Twilio message SID for this user, skip creating a duplicate.
+    if (msgData?.userId && msgData?.twilioSid) {
+      const existing = await Message.findOne({ userId: msgData.userId, twilioSid: msgData.twilioSid });
+      if (existing) {
+        console.log("ℹ️ Duplicate twilioSid detected; returning existing message:", msgData.twilioSid);
+        return existing;
+      }
+    }
+
     // Ensure contactId is populated if possible
     if (!msgData.contactId && msgData.userId && msgData.contactPhone) {
       try {

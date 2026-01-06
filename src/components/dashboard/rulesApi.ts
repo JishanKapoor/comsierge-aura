@@ -147,7 +147,7 @@ export const formatSchedule = (schedule?: ActiveRule["schedule"]): string => {
     const start = new Date(schedule.startTime);
     const end = new Date(schedule.endTime);
     const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    return `${formatDate(start)} → ${formatDate(end)}`;
+    return `${formatDate(start)} -> ${formatDate(end)}`;
   }
   return "Always active";
 };

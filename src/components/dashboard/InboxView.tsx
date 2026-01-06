@@ -195,6 +195,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     return value.replace(/[^\d+]/g, "").toLowerCase();
   };
 
+  const refreshContacts = useCallback(async () => {
+    const data = await fetchContacts();
+    setContacts(data);
+  }, []);
+
   // Reusable function to load conversations from API
   const loadConversations = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingMessages(true);
@@ -208,8 +213,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         .map((conv): Message => {
         // Try to find a saved contact matching this phone
         const savedContact = contacts.find(c => normalizePhone(c.phone) === normalizePhone(conv.contactPhone));
-        const displayName = savedContact?.name || 
-          ((conv.contactName && conv.contactName !== "Unknown") ? conv.contactName : conv.contactPhone);
+        const serverName = (conv.contactName && conv.contactName !== "Unknown") ? conv.contactName : "";
+        const displayName = serverName || savedContact?.name || conv.contactPhone;
         
         const status: Message["status"] = conv.isBlocked ? "blocked" : conv.isHeld ? "held" : conv.isPriority ? "priority" : "normal";
         
@@ -232,14 +237,34 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           isHeld: conv.isHeld || false,
         };
       });
+
+      // Dedupe conversations by phone number (server can have historical formatting variants)
+      const dedupedMsgs: Message[] = [];
+      const phonesInApi = new Set<string>();
+      for (const m of msgs) {
+        const key = normalizePhone(m.contactPhone);
+        if (!key || phonesInApi.has(key)) continue;
+        phonesInApi.add(key);
+        dedupedMsgs.push(m);
+      }
       
       setMessages(prev => {
         // Preserve any local "new" conversations that haven't been saved to DB yet
-        const localNewConversations = prev.filter(m => m.id.startsWith("new-"));
-        
-        // If we have local conversations, we need to make sure we don't duplicate if they somehow appeared in the list (unlikely with new- prefix)
-        // Also ensure we don't have duplicates in msgs
-        return [...localNewConversations, ...msgs];
+        const localNewConversations = prev
+          .filter(m => m.id.startsWith("new-"))
+          // If API has the conversation now, don't show the local placeholder too
+          .filter(m => !phonesInApi.has(normalizePhone(m.contactPhone)));
+
+        const localDeduped: Message[] = [];
+        const localPhones = new Set<string>();
+        for (const m of localNewConversations) {
+          const key = normalizePhone(m.contactPhone);
+          if (!key || localPhones.has(key)) continue;
+          localPhones.add(key);
+          localDeduped.push(m);
+        }
+
+        return [...localDeduped, ...dedupedMsgs];
       });
     } catch (error) {
       // Don't wipe the inbox list on transient errors; keep last known state.
@@ -486,12 +511,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Fetch contacts from API on mount
   useEffect(() => {
-    const loadContactsData = async () => {
-      const data = await fetchContacts();
-      setContacts(data);
-    };
-    loadContactsData();
-  }, []);
+    refreshContacts();
+  }, [refreshContacts]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.transferPrefs, JSON.stringify(transferPrefsByConversation));
@@ -712,10 +733,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       
       try {
         const messages = await fetchThread(selectedMessage.contactPhone);
+
+        const seen = new Set<string>();
+        const dedupedMessages = messages.filter((m) => {
+          const key = m.twilioSid || m.id;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         
-        if (messages.length > 0) {
+        if (dedupedMessages.length > 0) {
           // Convert API messages to ChatBubble format
-          const bubbles: ChatBubble[] = messages.map((m) => ({
+          const bubbles: ChatBubble[] = dedupedMessages.map((m) => ({
             id: m.id,
             role: m.direction === 'incoming' ? 'incoming' as const : 'outgoing' as const,
             content: m.body,
@@ -1042,7 +1071,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         // Refresh thread immediately from API (replaces optimistic local id with real Mongo _id)
         try {
           const latest = await fetchThread(selectedMessage.contactPhone);
-          const bubbles: ChatBubble[] = latest.map((m) => ({
+          const seen = new Set<string>();
+          const dedupedLatest = latest.filter((m) => {
+            const key = m.twilioSid || m.id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+
+          const bubbles: ChatBubble[] = dedupedLatest.map((m) => ({
             id: m.id,
             role: m.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const),
             content: m.body,
@@ -1222,6 +1259,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
       const data = await response.json();
       const aiText = data.data?.response || data.response || "I'm sorry, I couldn't process that request.";
+
+      const shouldRefreshNames =
+        /(save\s+contact\s+as|rename\s+contact)/i.test(text) ||
+        /contact\s+renamed/i.test(aiText);
+
+      if (shouldRefreshNames) {
+        await refreshContacts();
+        await loadConversations(false);
+      }
 
       const aiMsg: AiChatMessage = {
         id: `${selectedMessage.id}-ai-${Date.now()}`,
@@ -1690,7 +1736,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       scheduleDesc = ` from ${formatDate(start)} to ${formatDate(end)}`;
     }
     
-    toast.success(`Transfer rule created! ${transferDescription} â†’ ${contactName}${scheduleDesc}`);
+    toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}${scheduleDesc}`);
 
     // Remember last used transfer settings per conversation
     if (selectedMessage) {
@@ -3366,7 +3412,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      toast.success(`Translation settings saved! Incoming â†’ ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing â†’ ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
+                      toast.success(`Translation settings saved! Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
                       setShowTranslateModal(false);
                     }}
                     className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
