@@ -1623,16 +1623,27 @@ router.post("/token", authMiddleware, async (req, res) => {
     const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
     const voiceWebhookUrl = `${webhookBase}/api/twilio/webhook/voice`;
     
+    console.log(`🔧 Token endpoint - Using Twilio account: ${accountSid?.slice(0, 10)}...`);
+    console.log(`🔧 Token endpoint - Target voiceWebhookUrl: ${voiceWebhookUrl}`);
+    
     try {
       const apps = await client.applications.list({ friendlyName: appName });
+      console.log(`🔧 Found ${apps.length} existing TwiML apps with name "${appName}"`);
+      
       if (apps.length > 0) {
         appSid = apps[0].sid;
+        console.log(`🔧 Existing app SID: ${appSid}, current voiceUrl: ${apps[0].voiceUrl}`);
+        
         // ALWAYS update the voiceUrl to ensure it points to current server
         console.log(`📱 Updating TwiML App ${appSid} voiceUrl to: ${voiceWebhookUrl}`);
         await client.applications(appSid).update({
           voiceUrl: voiceWebhookUrl,
           voiceMethod: "POST",
         });
+        
+        // Verify the update worked
+        const updatedApp = await client.applications(appSid).fetch();
+        console.log(`✅ TwiML App updated. New voiceUrl: ${updatedApp.voiceUrl}`);
       } else {
         // Create new app
         const newApp = await client.applications.create({
@@ -1645,7 +1656,8 @@ router.post("/token", authMiddleware, async (req, res) => {
       }
     } catch (e) {
       console.error("Failed to manage TwiML App:", e);
-      return res.status(500).json({ success: false, message: "Failed to setup calling app" });
+      console.error("TwiML App error details:", e.message);
+      return res.status(500).json({ success: false, message: "Failed to setup calling app: " + e.message });
     }
 
     // 2. Generate Access Token
