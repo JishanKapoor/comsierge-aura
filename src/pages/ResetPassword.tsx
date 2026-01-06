@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Loader2, KeyRound } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "@/config";
@@ -106,83 +106,87 @@ const ResetPassword = () => {
           className="w-full h-full object-cover brightness-125"
           loading="eager"
           decoding="async"
+          fetchPriority="high"
         />
+        <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/50" />
       </div>
 
-      {/* Left gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] from-5% via-[#0a0a0a]/95 via-30% to-transparent z-10"></div>
-      {/* Bottom gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] from-0% via-[#0a0a0a]/50 via-20% to-transparent z-10"></div>
+      {/* Fallback background color while loading */}
+      {!imageLoaded && (
+        <div className="absolute inset-0 z-0 bg-background" />
+      )}
 
       {/* Content */}
-      <div className="relative z-20 container min-h-screen flex flex-col items-start justify-center py-12 px-4 md:pl-16">
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         {/* Logo */}
-        <Link
-          to="/"
-          className="absolute top-6 left-4 md:left-8 flex items-center gap-2 md:gap-3"
-        >
-          <Logo size={36} />
-          <span className="font-medium text-white text-base md:text-lg tracking-tight">
-            Comsierge
-          </span>
-        </Link>
+        <div className="w-full max-w-md mb-6 sm:mb-8 flex justify-center">
+          <Link to="/" className="text-xl sm:text-2xl">
+            <Logo />
+          </Link>
+        </div>
 
-        {/* Form Card */}
-        <div className="w-full max-w-md bg-[#111111]/90 backdrop-blur-xl rounded-2xl p-8 border border-white/[0.08] shadow-2xl">
-          <h1 className="text-2xl md:text-3xl font-medium text-white mb-2">
-            Reset Password
+        {/* Card */}
+        <div className="w-full max-w-md bg-card/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl">
+          <div className="flex justify-center mb-6">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary/10 flex items-center justify-center">
+              <KeyRound className="w-6 h-6 sm:w-7 sm:h-7 text-primary" />
+            </div>
+          </div>
+
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-light text-foreground text-center">
+            Reset your password
           </h1>
-          <p className="text-white/60 mb-8">
-            Enter your new password below.
+          <p className="mt-2 text-xs sm:text-sm text-muted-foreground text-center">
+            Enter your new password below
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Password */}
+          <form onSubmit={handleSubmit} className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
+            {/* New Password */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2">
-                New Password
+              <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">
+                New password
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter new password"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-colors pr-12"
+                  placeholder="Min 6 characters"
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm"
                   autoComplete="new-password"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2">
-                Confirm Password
+              <label className="block text-xs sm:text-sm text-muted-foreground mb-1.5">
+                Confirm password
               </label>
               <div className="relative">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-colors pr-12"
+                  placeholder="••••••••"
+                  className="w-full px-3 sm:px-4 py-2.5 sm:py-3 pr-10 bg-background/50 backdrop-blur-sm border border-white/10 rounded-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-white/30 transition-colors duration-300 text-sm"
                   autoComplete="new-password"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/60 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -191,30 +195,37 @@ const ResetPassword = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3.5 bg-white text-black font-medium rounded-lg hover:bg-white/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-4 pill-button justify-center py-2.5 sm:py-3 disabled:opacity-50"
             >
               {isLoading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Resetting...
-                </>
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                "Reset Password"
+                <>
+                  <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-background flex items-center justify-center">
+                    <ArrowRight className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-foreground" />
+                  </span>
+                  <span className="text-sm">Reset password</span>
+                </>
               )}
             </button>
           </form>
 
           {/* Back to Login */}
-          <p className="text-center text-white/50 mt-6">
+          <p className="mt-5 sm:mt-6 text-xs sm:text-sm text-muted-foreground text-center">
             Remember your password?{" "}
             <Link
               to="/auth"
-              className="text-white hover:text-white/80 transition-colors font-medium"
+              className="text-foreground hover:underline transition-all duration-200"
             >
               Sign in
             </Link>
           </p>
         </div>
+
+        <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors duration-300 mt-6">
+          <ArrowLeft className="w-4 h-4" />
+          <span className="text-sm">Back to home</span>
+        </Link>
       </div>
     </div>
   );
