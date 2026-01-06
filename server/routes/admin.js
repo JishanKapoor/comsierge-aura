@@ -6,6 +6,16 @@ import { authMiddleware, adminMiddleware } from "./auth.js";
 
 const router = express.Router();
 
+const normalizeToE164ish = (value) => {
+  if (!value) return "";
+  const cleaned = String(value).replace(/[^\d+]/g, "");
+  if (cleaned.startsWith("+")) return cleaned;
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return cleaned;
+};
+
 // @route   GET /api/admin/twilio-accounts
 // @desc    Get all Twilio accounts (admin only)
 // @access  Private (admin)
@@ -54,36 +64,46 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
       });
     }
 
-    // If a specific phone number was provided, only add that one
-    // Otherwise, this is just creating/updating the account without adding numbers
-    let phoneNumbers = [];
-    if (phoneNumber) {
-      // Verify this phone number belongs to the account
-      const numbers = await client.incomingPhoneNumbers.list({ phoneNumber });
-      if (numbers.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Phone number not found in this Twilio account",
+    // Only add the specific phone number provided (never auto-import all numbers)
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "phoneNumber is required. This endpoint only adds one specific number and will not import all numbers automatically.",
+      });
+    }
+
+    const normalizedPhone = normalizeToE164ish(phoneNumber);
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid phoneNumber",
+      });
+    }
+
+    // Verify this phone number belongs to the account (do an exact match)
+    const allIncoming = await client.incomingPhoneNumbers.list();
+    const match = allIncoming.find((n) => normalizeToE164ish(n.phoneNumber) === normalizedPhone);
+    if (!match) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number not found in this Twilio account",
+      });
+    }
+
+    // Configure webhook for this specific number
+    const webhookBase = process.env.WEBHOOK_BASE_URL;
+    if (webhookBase) {
+      try {
+        await client.incomingPhoneNumbers(match.sid).update({
+          voiceUrl: `${webhookBase}/api/twilio/webhook/voice`,
+          voiceMethod: "POST",
+          smsUrl: `${webhookBase}/api/twilio/webhook/sms`,
+          smsMethod: "POST",
         });
+        console.log(`✅ Configured webhooks for ${normalizedPhone}`);
+      } catch (err) {
+        console.error(`❌ Failed to configure webhooks for ${normalizedPhone}:`, err.message);
       }
-
-      // Configure webhook for this specific number
-      const webhookBase = process.env.WEBHOOK_BASE_URL;
-      if (webhookBase) {
-        try {
-          await client.incomingPhoneNumbers(numbers[0].sid).update({
-            voiceUrl: `${webhookBase}/api/twilio/webhook/voice`,
-            voiceMethod: "POST",
-            smsUrl: `${webhookBase}/api/twilio/webhook/sms`,
-            smsMethod: "POST",
-          });
-          console.log(`✅ Configured webhooks for ${phoneNumber}`);
-        } catch (err) {
-          console.error(`❌ Failed to configure webhooks for ${phoneNumber}:`, err.message);
-        }
-      }
-
-      phoneNumbers = [phoneNumber];
     }
 
     // Check if account already exists
@@ -91,8 +111,9 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
     if (account) {
       // Update existing - merge phone numbers (don't replace)
       account.authToken = authToken;
-      if (phoneNumber && !account.phoneNumbers.includes(phoneNumber)) {
-        account.phoneNumbers.push(phoneNumber);
+      const existingNorm = new Set(account.phoneNumbers.map((p) => normalizeToE164ish(p)));
+      if (!existingNorm.has(normalizedPhone)) {
+        account.phoneNumbers.push(normalizedPhone);
       }
       account.friendlyName = friendlyName || accountInfo.friendlyName;
       await account.save();
@@ -101,14 +122,14 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
       account = await TwilioAccount.create({
         accountSid,
         authToken,
-        phoneNumbers,
+        phoneNumbers: [normalizedPhone],
         friendlyName: friendlyName || accountInfo.friendlyName,
       });
     }
 
     res.status(201).json({
       success: true,
-      message: phoneNumber ? "Phone number added" : "Twilio account added",
+      message: "Phone number added",
       data: {
         ...account.toObject(),
         authToken: undefined, // Don't return auth token
@@ -199,6 +220,7 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
   try {
     const { accountSid, phone } = req.params;
     const decodedPhone = decodeURIComponent(phone);
+    const targetNorm = normalizeToE164ish(decodedPhone);
 
     const account = await TwilioAccount.findOne({ accountSid });
     if (!account) {
@@ -208,7 +230,8 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
       });
     }
 
-    if (!account.phoneNumbers.includes(decodedPhone)) {
+    const existingNorm = new Set(account.phoneNumbers.map((p) => normalizeToE164ish(p)));
+    if (!existingNorm.has(targetNorm)) {
       return res.status(404).json({
         success: false,
         message: "Phone number not found in this account",
@@ -216,11 +239,12 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
     }
 
     // Remove phone from account
-    account.phoneNumbers = account.phoneNumbers.filter((p) => p !== decodedPhone);
+    const removedPhones = account.phoneNumbers.filter((p) => normalizeToE164ish(p) === targetNorm);
+    account.phoneNumbers = account.phoneNumbers.filter((p) => normalizeToE164ish(p) !== targetNorm);
     await account.save();
 
     // Unassign from any user who has this phone
-    await User.updateMany({ phoneNumber: decodedPhone }, { phoneNumber: null });
+    await User.updateMany({ phoneNumber: { $in: [decodedPhone, targetNorm, ...removedPhones] } }, { phoneNumber: null });
 
     // If account has no more phones, optionally delete it
     if (account.phoneNumbers.length === 0) {
@@ -442,6 +466,15 @@ router.get("/available-phones", authMiddleware, adminMiddleware, async (req, res
 // @access  Private (admin)
 router.post("/refresh-twilio-numbers", authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // This endpoint imports ALL numbers from Twilio into Mongo.
+    // Require explicit confirmation so it can't be triggered accidentally.
+    if (req.body?.confirm !== "IMPORT_ALL") {
+      return res.status(400).json({
+        success: false,
+        message: "Refusing to import all numbers. To proceed, send JSON body { confirm: \"IMPORT_ALL\" }.",
+      });
+    }
+
     const accounts = await TwilioAccount.find();
     const results = [];
 
