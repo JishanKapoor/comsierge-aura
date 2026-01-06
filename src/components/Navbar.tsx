@@ -10,6 +10,7 @@ const Navbar = () => {
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
   const lastScrollY = useRef(0);
+  const upScrollAccumulated = useRef(0);
   const rafId = useRef<number | null>(null);
   const mobileOpenRef = useRef(false);
 
@@ -37,6 +38,7 @@ const Navbar = () => {
         // Always show near the top.
         if (currentScrollY < 24) {
           setHidden(false);
+          upScrollAccumulated.current = 0;
           lastScrollY.current = currentScrollY;
           return;
         }
@@ -45,8 +47,15 @@ const Navbar = () => {
         // Use direction-based detection so it still works with slow/trackpad scrolling.
         if (currentScrollY > lastScrollY.current && currentScrollY > 120) {
           setHidden(true);
+          upScrollAccumulated.current = 0;
         } else if (currentScrollY < lastScrollY.current) {
-          setHidden(false);
+          // Avoid jitter where tiny upward movements (trackpads/inertia) instantly re-show.
+          // Accumulate upward scroll so slow scrolling still works.
+          upScrollAccumulated.current += lastScrollY.current - currentScrollY;
+          if (upScrollAccumulated.current > 12) {
+            setHidden(false);
+            upScrollAccumulated.current = 0;
+          }
         }
 
         lastScrollY.current = currentScrollY;
@@ -55,6 +64,7 @@ const Navbar = () => {
 
     // Initialize baseline
     lastScrollY.current = window.scrollY;
+    upScrollAccumulated.current = 0;
     setScrolled(window.scrollY > 50);
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -86,7 +96,7 @@ const Navbar = () => {
       {/* Fixed container that handles the hide/show animation */}
       <div
         className={[
-          "fixed top-0 left-0 right-0 z-50",
+          "fixed top-0 left-0 right-0 z-50 pt-3 sm:pt-4",
           "transition-transform duration-500 ease-out will-change-transform",
           hidden && !isAuthPage && !mobileOpen ? "-translate-y-full" : "translate-y-0",
         ].join(" ")}
@@ -94,7 +104,7 @@ const Navbar = () => {
         {/* Inner nav with padding and conditional styling */}
         <nav
           className={[
-            "mx-4 sm:mx-6 mt-3 sm:mt-4 px-4 sm:px-6",
+            "mx-4 sm:mx-6 px-4 sm:px-6",
             "transition-all duration-300 ease-out",
             scrolled && !isAuthPage
               ? "py-2.5 sm:py-3 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-full shadow-lg shadow-black/20"
