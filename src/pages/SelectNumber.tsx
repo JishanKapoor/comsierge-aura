@@ -16,6 +16,7 @@ const SelectNumber = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingNumbers, setIsFetchingNumbers] = useState(true);
   const [isConfirmed, setIsConfirmed] = useState(false);
+  const isConfirmedRef = useRef(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -41,7 +42,11 @@ const SelectNumber = () => {
 
   // Redirect if user already has a phone number
   useEffect(() => {
-    if (user?.phoneNumber && !isConfirmed) {
+    // If the user already has a phone number when loading this page,
+    // and we are not in the middle of a confirmation flow, redirect to dashboard.
+    // We use a ref to track if a confirmation just happened, which is safer than state
+    // inside a useEffect that depends on 'user'.
+    if (user?.phoneNumber && !isConfirmedRef.current && !isConfirmed) {
       navigate("/dashboard");
     }
   }, [user, navigate, isConfirmed]);
@@ -133,12 +138,15 @@ const SelectNumber = () => {
         throw new Error(data.message || "Failed to assign phone number");
       }
 
+      // Update ref immediately to block the auto-redirect in useEffect
+      isConfirmedRef.current = true;
+
       // Update state to show success screen immediately to prevent
       // the useEffect from redirecting to dashboard prematurely
       setIsConfirmed(true);
 
-      // Refresh user data to get the updated phone number
-      await refreshUser();
+      // DON'T refresh user here - that would trigger Dashboard's redirect logic
+      // We'll refresh when user clicks "Continue"
       
       toast.success("Number assigned successfully!");
     } catch (error) {
@@ -149,7 +157,9 @@ const SelectNumber = () => {
     }
   };
 
-  const handleContinueToDashboard = () => {
+  const handleContinueToDashboard = async () => {
+    // Refresh user data now before navigating
+    await refreshUser();
     navigate("/setup-forwarding");
   };
 

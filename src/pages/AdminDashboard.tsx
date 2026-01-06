@@ -463,51 +463,42 @@ const AdminDashboard = () => {
           for (const user of usersWithThesePhones) {
             await fetch(`${API_URL}/auth/users/${user.id}/phone`, {
               method: "PUT",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
               body: JSON.stringify({ phoneNumber: null }),
             });
           }
 
-          // Delete account in backend (DB)
-          const deleteResp = await fetch(`${API_URL}/admin/twilio-accounts/${accountId}`, {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (!deleteResp.ok) {
-            // Fallback if local ID isn't a Mongo _id
-            if (account?.accountSid) {
-              await fetch(`${API_URL}/admin/twilio-accounts/by-sid/${encodeURIComponent(account.accountSid)}`, {
-                method: "DELETE",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              });
-            }
+          // Delete account in backend (DB) by SID (reliable)
+          if (!account?.accountSid) {
+            throw new Error("Missing Account SID for deletion");
           }
-          
-          // Update local state - remove account and unassign phones from users
-          const updatedAccounts = twilioAccounts.filter((acc) => acc.id !== accountId);
-          setTwilioAccounts(updatedAccounts);
-          saveTwilioAccounts(updatedAccounts);
-          
-          // Update local user state
-          const updatedUsers = appUsers.map((user) =>
-            user.assignedPhone && phonesToUnassign.includes(user.assignedPhone)
-              ? { ...user, assignedPhone: null }
-              : user
+
+          const deleteResp = await fetch(
+            `${API_URL}/admin/twilio-accounts/by-sid/${encodeURIComponent(account.accountSid)}`,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
           );
-          setAppUsers(updatedUsers);
 
-          // Refresh accounts from server so UI matches DB
+          const deleteData = await deleteResp.json().catch(() => null);
+          if (!deleteResp.ok || !deleteData?.success) {
+            throw new Error(deleteData?.message || "Failed to delete Twilio account");
+          }
+
+          // Refresh accounts/users from server so UI matches DB
           await fetchTwilioAccounts();
+          fetchUsers();
 
-          toast.success("Twilio account deleted and phones unassigned");
+          toast.success("Twilio account deleted");
         } catch (error) {
           console.error("Delete account error:", error);
-          toast.error("Failed to fully delete account");
+          toast.error(error instanceof Error ? error.message : "Failed to fully delete account");
         }
         hideConfirm();
       }
