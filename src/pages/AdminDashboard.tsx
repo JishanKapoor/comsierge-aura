@@ -782,6 +782,16 @@ const AdminDashboard = () => {
                                     ) : (
                                       <span className="text-[10px] text-green-500">(available)</span>
                                     )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeletePhoneFromAccount(account.id, phone);
+                                      }}
+                                      className="ml-1 p-0.5 text-gray-400 hover:text-red-500 rounded transition-colors"
+                                      title="Remove this phone number"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
                                   </span>
                                 );
                               })}
