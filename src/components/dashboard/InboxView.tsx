@@ -162,6 +162,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [isCallingLoading, setIsCallingLoading] = useState(false);
   const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
   const [device, setDevice] = useState<Device | null>(null);
+  
+  // Active browser call state
+  const [activeCall, setActiveCall] = useState<any>(null);
+  const [callStatus, setCallStatus] = useState<"connecting" | "ringing" | "connected" | "ended" | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [callDuration, setCallDuration] = useState(0);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [callingContact, setCallingContact] = useState<{ number: string; name?: string } | null>(null);
 
   // Track recently deleted phone numbers to prevent them from reappearing during polling
   const recentlyDeletedPhones = useRef<Set<string>>(new Set());
@@ -1514,6 +1522,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         console.error("Twilio Device Error:", error);
         toast.error("Call error: " + error.message);
         setIsCallingLoading(false);
+        setCallStatus(null);
+        setActiveCall(null);
       });
 
       await newDevice.register();
@@ -1527,6 +1537,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         return;
       }
       
+      // Set calling contact info for UI
+      setCallingContact({ number, name });
+      setCallStatus("connecting");
+      setCallDuration(0);
+      
       console.log("🔵 Browser call - calling device.connect with params:", { To: number, customCallerId: fromNumber });
       const call = await newDevice.connect({
         params: {
@@ -1535,27 +1550,90 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         },
       });
 
-      toast.success(`Calling ${name || number} via Browser...`);
+      setActiveCall(call);
+      setCallStatus("ringing");
 
       call.on("accept", () => {
-        console.log("Call accepted");
+        console.log("Call accepted/connected");
         setIsCallingLoading(false);
+        setCallStatus("connected");
+        // Start call duration timer
+        callTimerRef.current = setInterval(() => {
+          setCallDuration(d => d + 1);
+        }, 1000);
       });
 
       call.on("disconnect", () => {
         console.log("Call disconnected");
         setIsCallingLoading(false);
+        setCallStatus("ended");
+        setActiveCall(null);
+        setIsMuted(false);
+        if (callTimerRef.current) {
+          clearInterval(callTimerRef.current);
+          callTimerRef.current = null;
+        }
+        // Clear call UI after a moment
+        setTimeout(() => {
+          setCallStatus(null);
+          setCallingContact(null);
+          setCallDuration(0);
+        }, 2000);
       });
       
       call.on("cancel", () => {
+        console.log("Call cancelled");
         setIsCallingLoading(false);
+        setCallStatus(null);
+        setActiveCall(null);
+        setCallingContact(null);
+        if (callTimerRef.current) {
+          clearInterval(callTimerRef.current);
+          callTimerRef.current = null;
+        }
+      });
+
+      call.on("ringing", () => {
+        console.log("Call ringing");
+        setCallStatus("ringing");
       });
 
     } catch (error: any) {
       console.error("Browser call failed:", error);
       toast.error("Failed to start browser call: " + error.message);
       setIsCallingLoading(false);
+      setCallStatus(null);
+      setActiveCall(null);
+      setCallingContact(null);
     }
+  };
+
+  // Call control functions
+  const handleHangup = () => {
+    if (activeCall) {
+      activeCall.disconnect();
+      setActiveCall(null);
+      setCallStatus("ended");
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+        callTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleToggleMute = () => {
+    if (activeCall) {
+      const newMuteState = !isMuted;
+      activeCall.mute(newMuteState);
+      setIsMuted(newMuteState);
+      toast.info(newMuteState ? "Muted" : "Unmuted");
+    }
+  };
+
+  const formatCallDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleBridgeCall = () => {
@@ -3862,6 +3940,111 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Active Browser Call UI */}
+      {callStatus && callingContact && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]">
+          <div className="bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl shadow-2xl w-full max-w-xs p-6 text-white">
+            {/* Contact Info */}
+            <div className="text-center mb-6">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl font-semibold">
+                  {(callingContact.name || callingContact.number)?.[0]?.toUpperCase() || "?"}
+                </span>
+              </div>
+              <h3 className="text-lg font-semibold truncate">
+                {callingContact.name || callingContact.number}
+              </h3>
+              {callingContact.name && (
+                <p className="text-sm text-gray-400">{callingContact.number}</p>
+              )}
+            </div>
+
+            {/* Call Status */}
+            <div className="text-center mb-6">
+              {callStatus === "connecting" && (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm text-gray-300">Connecting...</span>
+                </div>
+              )}
+              {callStatus === "ringing" && (
+                <div className="flex items-center justify-center gap-2">
+                  <Phone className="w-4 h-4 animate-pulse" />
+                  <span className="text-sm text-gray-300">Ringing...</span>
+                </div>
+              )}
+              {callStatus === "connected" && (
+                <div className="text-center">
+                  <span className="text-2xl font-mono text-green-400">{formatCallDuration(callDuration)}</span>
+                  <p className="text-xs text-gray-400 mt-1">Connected</p>
+                </div>
+              )}
+              {callStatus === "ended" && (
+                <div className="text-center">
+                  <span className="text-sm text-gray-300">Call Ended</span>
+                  <p className="text-xs text-gray-400 mt-1">{formatCallDuration(callDuration)}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Call Controls */}
+            {(callStatus === "ringing" || callStatus === "connected") && (
+              <div className="flex items-center justify-center gap-4">
+                {/* Mute Button */}
+                <button
+                  onClick={handleToggleMute}
+                  className={cn(
+                    "w-14 h-14 rounded-full flex items-center justify-center transition-all",
+                    isMuted 
+                      ? "bg-red-500 hover:bg-red-600" 
+                      : "bg-gray-700 hover:bg-gray-600"
+                  )}
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? (
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Hangup Button */}
+                <button
+                  onClick={handleHangup}
+                  className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all"
+                  title="End Call"
+                >
+                  <Phone className="w-6 h-6 rotate-[135deg]" />
+                </button>
+              </div>
+            )}
+
+            {/* Close button for ended state */}
+            {callStatus === "ended" && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                  onClick={() => {
+                    setCallStatus(null);
+                    setCallingContact(null);
+                    setCallDuration(0);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Call Mode Selection Dialog */}
