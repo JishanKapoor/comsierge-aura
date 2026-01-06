@@ -1639,17 +1639,26 @@ router.post("/token", authMiddleware, async (req, res) => {
         await client.applications(appSid).update({
           voiceUrl: voiceWebhookUrl,
           voiceMethod: "POST",
+          statusCallback: `${webhookBase}/api/twilio/webhook/call-status`,
+          statusCallbackMethod: "POST",
         });
         
         // Verify the update worked
         const updatedApp = await client.applications(appSid).fetch();
         console.log(`✅ TwiML App updated. New voiceUrl: ${updatedApp.voiceUrl}`);
+        
+        // Extra verification: check if the voiceUrl actually matches
+        if (updatedApp.voiceUrl !== voiceWebhookUrl) {
+          console.error(`❌ WARNING: voiceUrl mismatch! Expected: ${voiceWebhookUrl}, Got: ${updatedApp.voiceUrl}`);
+        }
       } else {
         // Create new app
         const newApp = await client.applications.create({
           friendlyName: appName,
           voiceUrl: voiceWebhookUrl,
           voiceMethod: "POST",
+          statusCallback: `${webhookBase}/api/twilio/webhook/call-status`,
+          statusCallbackMethod: "POST",
         });
         appSid = newApp.sid;
         console.log(`✅ Created new TwiML App: ${appSid} with voiceUrl: ${voiceWebhookUrl}`);
@@ -1696,11 +1705,15 @@ router.post("/token", authMiddleware, async (req, res) => {
     });
     token.addGrant(voiceGrant);
 
+    console.log(`✅ Token generated for ${identity} using TwiML app ${appSid}`);
+
     res.json({
       success: true,
       token: token.toJwt(),
       identity: identity,
-      twimlAppSid: appSid
+      twimlAppSid: appSid,
+      voiceWebhookUrl: voiceWebhookUrl, // For debugging
+      accountSid: accountSid.slice(0, 10) + "..." // For debugging (partial)
     });
 
   } catch (error) {

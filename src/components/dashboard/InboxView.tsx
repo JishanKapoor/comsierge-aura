@@ -1496,6 +1496,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       });
       
       const data = await response.json();
+      console.log("🔵 Token response:", {
+        success: data.success,
+        identity: data.identity,
+        twimlAppSid: data.twimlAppSid,
+        voiceWebhookUrl: data.voiceWebhookUrl,
+        accountSid: data.accountSid,
+      });
+      
       if (!data.success) {
         throw new Error(data.message);
       }
