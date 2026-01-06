@@ -84,7 +84,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    passwordResetIssuedAt: {
+      type: Date,
+      default: null,
+    },
     passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
+    passwordChangedAt: {
       type: Date,
       default: null,
     },
@@ -97,6 +105,10 @@ const userSchema = new mongoose.Schema(
 // Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
+
+  // Any password change should invalidate previously issued reset links.
+  // (We also check this explicitly during reset-password.)
+  this.passwordChangedAt = new Date();
   
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);

@@ -461,6 +461,9 @@ router.put("/change-password", async (req, res) => {
     if (!isMatch) return res.status(401).json({ success: false, message: "Current password is incorrect" });
 
     user.password = newPassword;
+    user.passwordResetToken = null;
+    user.passwordResetIssuedAt = null;
+    user.passwordResetExpires = null;
     await user.save();
 
     res.json({ success: true, message: "Password changed successfully" });
@@ -703,6 +706,7 @@ router.post("/forgot-password", async (req, res) => {
     const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     user.passwordResetToken = resetTokenHash;
+    user.passwordResetIssuedAt = new Date();
     user.passwordResetExpires = Date.now() + 60 * 60 * 1000;
     await user.save();
 
@@ -756,9 +760,24 @@ router.post("/reset-password", async (req, res) => {
 
     if (!user) return res.status(400).json({ success: false, message: "Invalid or expired reset token" });
 
+    // If the user changed their password after this reset link was issued,
+    // invalidate the link.
+    if (
+      user.passwordResetIssuedAt &&
+      user.passwordChangedAt &&
+      user.passwordChangedAt.getTime() > user.passwordResetIssuedAt.getTime()
+    ) {
+      user.passwordResetToken = null;
+      user.passwordResetIssuedAt = null;
+      user.passwordResetExpires = null;
+      await user.save();
+      return res.status(400).json({ success: false, message: "Invalid or expired reset token" });
+    }
+
     user.password = password;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
+    user.passwordResetToken = null;
+    user.passwordResetIssuedAt = null;
+    user.passwordResetExpires = null;
     await user.save();
 
     const jwtToken = generateToken(user._id);
