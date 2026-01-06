@@ -5,7 +5,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { preloadedImages } from "@/hooks/useImagePreloader";
 import Logo from "@/components/Logo";
 import { toast } from "sonner";
-import { loadTwilioAccounts } from "@/components/dashboard/adminStore";
 import { API_BASE_URL } from "@/config";
 
 const API_URL = `${API_BASE_URL}/api`;
@@ -59,35 +58,30 @@ const SelectNumber = () => {
     const fetchAvailableNumbers = async () => {
       setIsFetchingNumbers(true);
       try {
-        // Get Twilio accounts from local storage (admin-added phones)
-        const twilioAccounts = loadTwilioAccounts();
-        const allPhones = twilioAccounts.flatMap((acc) => acc.phoneNumbers);
-        
-        // Get all users from backend to know which phones are assigned
-        const response = await fetch(`${API_URL}/auth/users`);
-        const data = await response.json();
-        
-        if (data.success) {
-          // Get assigned phones from backend users
-          const assignedPhones = data.data
-            .filter((u: any) => u.phoneNumber)
-            .map((u: any) => u.phoneNumber);
-          
-          // Filter to get available phones
-          const available = allPhones.filter((phone) => !assignedPhones.includes(phone));
-          setAvailableNumbers(available);
-          setSelectedNumber(available[0] || null);
-        } else {
-          setAvailableNumbers(allPhones);
-          setSelectedNumber(allPhones[0] || null);
+        const token = localStorage.getItem("comsierge_token");
+        if (!token) {
+          navigate("/auth", { replace: true });
+          return;
         }
+
+        const response = await fetch(`${API_URL}/auth/available-phones`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "Failed to load available numbers");
+        }
+
+        const available = (data.data?.available || []) as string[];
+        setAvailableNumbers(available);
+        setSelectedNumber(available[0] || null);
       } catch (error) {
         console.error("Failed to fetch available numbers:", error);
-        // Fallback to all phones from Twilio accounts
-        const twilioAccounts = loadTwilioAccounts();
-        const allPhones = twilioAccounts.flatMap((acc) => acc.phoneNumbers);
-        setAvailableNumbers(allPhones);
-        setSelectedNumber(allPhones[0] || null);
+        setAvailableNumbers([]);
+        setSelectedNumber(null);
       } finally {
         setIsFetchingNumbers(false);
       }
@@ -113,15 +107,26 @@ const SelectNumber = () => {
     setIsLoading(true);
 
     try {
-      // Save the assignment via backend API
-      const response = await fetch(`${API_URL}/auth/users/${user.id}/phone`, {
+      const token = localStorage.getItem("comsierge_token");
+      if (!token) {
+        toast.error("Please log in again");
+        navigate("/auth", { replace: true });
+        return;
+      }
+
+      // Save the assignment via backend API (current user)
+      const response = await fetch(`${API_URL}/auth/me/phone`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ phoneNumber: selectedNumber }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to assign phone number");
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to assign phone number");
       }
 
       // Refresh user data to get the updated phone number

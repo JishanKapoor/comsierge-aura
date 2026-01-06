@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import User from "../models/User.js";
+import TwilioAccount from "../models/TwilioAccount.js";
 
 const router = express.Router();
 
@@ -445,6 +446,131 @@ router.get("/me", async (req, res) => {
   } catch (error) {
     console.error("Auth check error:", error);
     res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
+// @route   GET /api/auth/available-phones
+// @desc    Get all phone numbers not assigned to any user (authenticated)
+router.get("/available-phones", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select("_id");
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const accounts = await TwilioAccount.find().select("phoneNumbers");
+    const allPhones = accounts.flatMap((a) => a.phoneNumbers || []);
+
+    const assignedUsers = await User.find({ phoneNumber: { $ne: null } }).select("phoneNumber");
+    const assignedPhones = assignedUsers.map((u) => u.phoneNumber);
+
+    const availablePhones = allPhones.filter((p) => !assignedPhones.includes(p));
+
+    res.json({
+      success: true,
+      data: {
+        available: availablePhones,
+      },
+    });
+  } catch (error) {
+    console.error("Get available phones error:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
+// @route   PUT /api/auth/me/phone
+// @desc    Assign a phone number to the current user
+router.put("/me/phone", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, message: "Please select a phone number" });
+    }
+
+    const account = await TwilioAccount.findOne({ phoneNumbers: phoneNumber }).select("_id");
+    if (!account) {
+      return res.status(400).json({ success: false, message: "Phone number not found in any Twilio account" });
+    }
+
+    const existingUser = await User.findOne({ phoneNumber, _id: { $ne: user._id } }).select("_id");
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: "Phone number already assigned to another user" });
+    }
+
+    user.phoneNumber = phoneNumber;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Phone number assigned",
+      data: {
+        user: {
+          id: user._id,
+          phoneNumber: user.phoneNumber,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Assign phone to current user error:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
+// @route   PUT /api/auth/me/forwarding
+// @desc    Update forwarding number for the current user
+router.put("/me/forwarding", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const { forwardingNumber } = req.body;
+    if (forwardingNumber) {
+      const digits = forwardingNumber.replace(/\D/g, "");
+      const isValid = digits.length === 10 || (digits.length === 11 && digits[0] === "1");
+      if (!isValid) return res.status(400).json({ success: false, message: "Please enter a valid US phone number" });
+    }
+
+    user.forwardingNumber = forwardingNumber || null;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Forwarding number updated",
+      data: {
+        user: {
+          id: user._id,
+          forwardingNumber: user.forwardingNumber,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update forwarding for current user error:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
   }
 });
 

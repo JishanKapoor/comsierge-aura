@@ -92,9 +92,17 @@ const SetupForwarding = () => {
       const digits = normalizeUsPhoneDigits(forwardingNumber);
       const e164 = digits.length === 10 ? `+1${digits}` : `+${digits}`;
 
-      const response = await fetch(`${API_URL}/auth/users/${user.id}/forwarding`, {
+      const token = localStorage.getItem("comsierge_token");
+      if (!token) {
+        throw new Error("Please log in again");
+      }
+
+      const response = await fetch(`${API_URL}/auth/me/forwarding`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ forwardingNumber: e164 }),
       });
 

@@ -343,27 +343,62 @@ const AdminDashboard = () => {
       setVerificationStatus("success");
       setVerificationMessage(`Verified: ${data.data.phoneNumber?.friendlyName || "Phone number"} (SMS: ${data.data.phoneNumber?.smsEnabled ? "✓" : "✗"}, Voice: ${data.data.phoneNumber?.voiceEnabled ? "✓" : "✗"})`);
 
+      // Sync to backend (MongoDB) so all users can see available numbers
+      const token = localStorage.getItem("comsierge_token");
+      if (!token) {
+        setVerificationStatus("error");
+        setVerificationMessage("Missing session token. Please log in again.");
+        toast.error("Please log in again");
+        setIsVerifying(false);
+        return;
+      }
+
+      const syncResp = await fetch(`${API_URL}/admin/twilio-accounts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          accountSid: newAccountSid.trim(),
+          authToken: newAuthToken.trim(),
+          friendlyName: data.data.account?.friendlyName,
+        }),
+      });
+
+      const syncData = await syncResp.json();
+      if (!syncResp.ok || !syncData.success) {
+        setVerificationStatus("error");
+        setVerificationMessage(syncData.message || "Failed to sync Twilio account to server");
+        toast.error(syncData.message || "Failed to save numbers to server");
+        setIsVerifying(false);
+        return;
+      }
+
+      // Use server-returned phoneNumbers as the source of truth
+      const serverPhoneNumbers: string[] = syncData.data?.phoneNumbers || [];
+
       // Now add to local storage
       if (existingAccount) {
         const updatedAccounts = twilioAccounts.map((acc) =>
           acc.accountSid === newAccountSid.trim()
-            ? { ...acc, phoneNumbers: [...acc.phoneNumbers, newPhoneNumber.trim()] }
+            ? { ...acc, phoneNumbers: Array.from(new Set([...(acc.phoneNumbers || []), ...serverPhoneNumbers, newPhoneNumber.trim()])) }
             : acc
         );
         setTwilioAccounts(updatedAccounts);
         saveTwilioAccounts(updatedAccounts);
-        toast.success("Phone number verified and added to existing account");
+        toast.success("Twilio numbers synced to server");
       } else {
         const newAccount: TwilioAccount = {
           id: `twilio-${Date.now()}`,
           accountSid: newAccountSid.trim(),
           authToken: newAuthToken.trim(),
-          phoneNumbers: [newPhoneNumber.trim()],
+          phoneNumbers: Array.from(new Set([newPhoneNumber.trim(), ...serverPhoneNumbers])),
         };
         const updatedAccounts = [...twilioAccounts, newAccount];
         setTwilioAccounts(updatedAccounts);
         saveTwilioAccounts(updatedAccounts);
-        toast.success("Twilio account verified and added");
+        toast.success("Twilio numbers synced to server");
       }
 
       // Clear form after brief delay to show success
