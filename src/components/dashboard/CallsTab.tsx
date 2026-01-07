@@ -1390,8 +1390,20 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                     {call.status === "forwarded" && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Forwarded</span>
                     )}
+                    {call.status === "transferred" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Transferred</span>
+                    )}
                     {call.status === "blocked" && (
                       <span className="text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded">Blocked</span>
+                    )}
+                    {call.status === "busy" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded">Busy</span>
+                    )}
+                    {call.status === "no-answer" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-700 rounded">No Answer</span>
+                    )}
+                    {call.status === "failed" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded">Failed</span>
                     )}
                   </p>
                   <p className="text-xs text-gray-500 truncate">{call.phone}</p>

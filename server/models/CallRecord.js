@@ -34,7 +34,7 @@ const callRecordSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled", "missed", "forwarded", "blocked"],
+      enum: ["initiated", "ringing", "in-progress", "completed", "busy", "failed", "no-answer", "canceled", "missed", "forwarded", "blocked", "transferred"],
       default: "initiated",
     },
     twilioSid: {

@@ -1230,7 +1230,7 @@ router.post("/webhook/voice", async (req, res) => {
             contactName: contactName,
             direction: "outgoing",
             type: "outgoing",
-            status: "completed",
+            status: "initiated", // Will be updated by status webhook
             twilioCallSid: CallSid,
             startedAt: new Date()
           });
@@ -1312,7 +1312,106 @@ router.post("/webhook/voice", async (req, res) => {
           return res.send(response.toString());
         }
         
-        // Get active forward rules for this user
+        // ===============================================
+        // TRANSFER RULES - Check FIRST, route DIRECTLY to transfer target
+        // Transfer rules bypass forward-to number and go straight to target
+        // ===============================================
+        const transferRules = await Rule.find({ 
+          userId: user._id, 
+          type: "transfer",
+          active: true 
+        });
+        
+        console.log(`   🔄 Found ${transferRules.length} active transfer rules`);
+        
+        for (const rule of transferRules) {
+          const conditions = rule.conditions || {};
+          const mode = conditions.mode || "all";
+          const transferDetails = rule.transferDetails || {};
+          
+          console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${mode})`);
+          
+          // Check if rule applies to calls
+          const transferMode = transferDetails.mode || "both";
+          if (transferMode !== "calls" && transferMode !== "both") {
+            console.log(`      ⏭️ Transfer rule is for messages only, skipping`);
+            continue;
+          }
+          
+          // Check schedule
+          if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
+            if (new Date() > new Date(rule.schedule.endTime)) {
+              console.log(`      ⏭️ Transfer rule expired, skipping`);
+              continue;
+            }
+          }
+          
+          // Check conditions
+          let matches = false;
+          
+          switch (mode) {
+            case "all":
+              matches = true;
+              console.log(`      ✓ Mode 'all' - matches`);
+              break;
+              
+            case "favorites":
+              matches = callerInfo.isFavorite;
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'favorites' - isFavorite: ${callerInfo.isFavorite}`);
+              break;
+              
+            case "saved":
+              matches = callerInfo.isSavedContact;
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'saved' - isSavedContact: ${callerInfo.isSavedContact}`);
+              break;
+              
+            case "tags":
+              const requiredTags = conditions.tags || [];
+              matches = requiredTags.length === 0 || requiredTags.some(tag => callerInfo.tags.includes(tag));
+              console.log(`      ${matches ? '✓' : '✗'} Mode 'tags' - required: [${requiredTags}], caller has: [${callerInfo.tags}]`);
+              break;
+              
+            default:
+              matches = false;
+          }
+          
+          // Check if transfer target phone exists
+          const transferTargetPhone = transferDetails.contactPhone;
+          
+          if (matches && transferTargetPhone) {
+            console.log(`   ✅ Transfer rule matched! Routing DIRECTLY to: ${transferTargetPhone}`);
+            
+            // Log the call as transferred
+            await CallRecord.create({
+              userId: user._id,
+              contactPhone: From,
+              contactName: callerInfo.contactName,
+              direction: "incoming",
+              type: "incoming",
+              status: "transferred",
+              twilioCallSid: CallSid,
+              forwardedTo: transferTargetPhone,
+              matchedRule: rule.rule,
+              reason: "transfer_rule"
+            });
+            
+            // Transfer DIRECTLY to target number
+            const dial = response.dial({
+              callerId: From, // Show original caller ID
+              timeout: 30,
+              action: "/api/twilio/webhook/forward-status"
+            });
+            dial.number(transferTargetPhone);
+            
+            res.type("text/xml");
+            return res.send(response.toString());
+          }
+        }
+        
+        // ===============================================
+        // FORWARD RULES - If no transfer rule matched, check forward rules
+        // Forward rules route to user's personal forwarding number
+        // ===============================================
         const forwardRules = await Rule.find({ 
           userId: user._id, 
           type: "forward",
@@ -1790,8 +1889,43 @@ router.post("/webhook/status", async (req, res) => {
     if (MessageSid) {
       console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
     }
+    
     if (CallSid) {
       console.log(`📊 Call Status Update: ${CallSid} - ${CallStatus} - Duration: ${CallDuration || 0}s`);
+      
+      // Update the CallRecord with the final status
+      // Map Twilio statuses to our status values
+      let dbStatus = CallStatus;
+      if (CallStatus === "completed") {
+        dbStatus = "completed";
+      } else if (CallStatus === "busy") {
+        dbStatus = "busy";
+      } else if (CallStatus === "no-answer") {
+        dbStatus = "no-answer";
+      } else if (CallStatus === "failed") {
+        dbStatus = "failed";
+      } else if (CallStatus === "canceled") {
+        dbStatus = "canceled";
+      }
+      
+      // Only update on terminal statuses
+      const terminalStatuses = ["completed", "busy", "no-answer", "failed", "canceled"];
+      if (terminalStatuses.includes(CallStatus)) {
+        const updated = await CallRecord.findOneAndUpdate(
+          { twilioCallSid: CallSid },
+          { 
+            status: dbStatus,
+            duration: parseInt(CallDuration) || 0 
+          },
+          { new: true }
+        );
+        
+        if (updated) {
+          console.log(`   ✅ Updated CallRecord ${CallSid} to status: ${dbStatus}, duration: ${CallDuration}s`);
+        } else {
+          console.log(`   ⚠️ No CallRecord found for ${CallSid}`);
+        }
+      }
     }
 
     res.status(200).send("OK");
@@ -2101,6 +2235,34 @@ router.post("/make-call", authMiddleware, async (req, res) => {
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST',
       });
+      
+      // Create call record for Click-to-Call (Call via My Phone)
+      try {
+        // Look up contact name
+        let contactName = null;
+        const normalizedTo = toNumber.replace(/[^\d+]/g, "");
+        let contact = await Contact.findOne({ userId: user._id, phone: normalizedTo });
+        if (!contact) {
+          const altTo = normalizedTo.startsWith("+") ? normalizedTo.substring(1) : "+" + normalizedTo;
+          contact = await Contact.findOne({ userId: user._id, phone: altTo });
+        }
+        contactName = contact?.name || null;
+        
+        await CallRecord.create({
+          userId: user._id,
+          contactPhone: toNumber,
+          contactName: contactName,
+          direction: "outgoing",
+          type: "outgoing",
+          status: "initiated", // Will be updated by status webhook
+          twilioCallSid: call.sid,
+          startedAt: new Date(),
+          reason: "click_to_call"
+        });
+        console.log(`   ✅ Created outgoing call record for Click-to-Call, CallSid: ${call.sid}`);
+      } catch (recordErr) {
+        console.error(`   ❌ Failed to create Click-to-Call record:`, recordErr.message);
+      }
 
       res.json({
         success: true,
