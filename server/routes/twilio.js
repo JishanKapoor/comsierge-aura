@@ -1278,6 +1278,30 @@ router.post("/webhook/voice", async (req, res) => {
 
       if (user) {
         console.log(`   ✅ Found user: ${user.email}`);
+
+        // Prevent routing loops: if the caller is the user's routing/forwarding number,
+        // block calling the Comsierge number.
+        const normalizedForwarding = normalize(user.forwardingNumber);
+        if (normalizedForwarding && callerPhone && callerPhone === normalizedForwarding) {
+          console.log(`   🔁 Caller is user's forwarding number (${user.forwardingNumber}). Blocking to prevent loop.`);
+          response.say({ voice: "alice" }, "Please call from a different number.");
+          response.hangup();
+
+          // Still log the call as blocked
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: From,
+            contactName: From,
+            direction: "incoming",
+            type: "incoming",
+            status: "blocked",
+            twilioCallSid: CallSid,
+            reason: "self_call_from_routing_number",
+          });
+
+          res.type("text/xml");
+          return res.send(response.toString());
+        }
         
         // Check caller info against contacts
         let contact = await Contact.findOne({ userId: user._id, phone: From });
@@ -2193,6 +2217,26 @@ router.post("/webhook/status", async (req, res) => {
           console.log(`   ✅ Updated CallRecord via ${matchedBy} to status: ${updated?.status}, duration: ${updated?.duration || 0}s`);
         }
       }
+
+      // Non-terminal updates (helps UI move off "Dialing" quickly for Click-to-Call)
+      const nonTerminalStatuses = ["initiated", "ringing", "answered"];
+      if (nonTerminalStatuses.includes(CallStatus)) {
+        let record = await CallRecord.findOne({ twilioCallSid: CallSid });
+        let matchedBy = CallSid;
+        if (!record && ParentCallSid) {
+          record = await CallRecord.findOne({ twilioCallSid: ParentCallSid });
+          matchedBy = ParentCallSid;
+        }
+
+        if (record && record.reason === "click_to_call") {
+          const mappedStatus = CallStatus === "answered" ? "in-progress" : CallStatus;
+          const isTerminalAlready = ["completed", "busy", "no-answer", "failed", "canceled"].includes(record.status);
+          if (!isTerminalAlready && record.status !== mappedStatus) {
+            await CallRecord.findByIdAndUpdate(record._id, { status: mappedStatus });
+            console.log(`   ⏱️ Updated Click-to-Call via ${matchedBy} to status: ${mappedStatus}`);
+          }
+        }
+      }
     }
 
     res.status(200).send("OK");
@@ -2498,6 +2542,8 @@ router.post("/make-call", authMiddleware, async (req, res) => {
         url: `${webhookBase}/api/twilio/webhook/connect?to=${encodeURIComponent(toNumber)}`,
         from: cleanFrom,      // Show Twilio number to Agent
         to: agentNumber,      // Call Agent's real phone
+        // Ring timeout for the agent leg (reduces time stuck on "Dialing")
+        timeout: 20,
         statusCallback: `${webhookBase}/api/twilio/webhook/status`,
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST',

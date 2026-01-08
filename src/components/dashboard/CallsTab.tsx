@@ -899,19 +899,27 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       // Backend creates the CallRecord for Click-to-Call. Just refresh/poll to show status changes.
       loadCalls(false);
 
-      // Auto-refresh every 5 seconds for 2 minutes to catch status updates
-      let refreshCount = 0;
-      const maxRefreshes = 24; // 2 minutes of 5-second intervals
-      const refreshInterval = setInterval(() => {
-        refreshCount++;
+      // Auto-refresh aggressively at first so UI updates quickly
+      // 0-60s: every 2s, then 60-120s: every 5s
+      let refreshInterval: any = setInterval(() => {
         loadCalls(false);
-        if (refreshCount >= maxRefreshes) {
-          clearInterval(refreshInterval);
-        }
-      }, 5000);
-
-      // Store interval ID to clean up if component unmounts
+      }, 2000);
       (window as any).__callRefreshInterval = refreshInterval;
+
+      const switchTimer = setTimeout(() => {
+        clearInterval(refreshInterval);
+        refreshInterval = setInterval(() => {
+          loadCalls(false);
+        }, 5000);
+        (window as any).__callRefreshInterval = refreshInterval;
+      }, 60000);
+
+      const stopTimer = setTimeout(() => {
+        clearInterval(refreshInterval);
+        clearTimeout(switchTimer);
+      }, 120000);
+
+      (window as any).__callRefreshStopTimer = stopTimer;
       
     } catch (error: any) {
       console.error("Bridge call failed:", error);
