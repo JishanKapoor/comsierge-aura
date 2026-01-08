@@ -67,6 +67,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ConversationSkeleton, ChatLoadingSkeleton } from "./LoadingSkeletons";
 import { Device } from "@twilio/voice-sdk";
 
+type MessageAttachment = {
+  url: string;
+  contentType: string;
+  filename?: string;
+};
+
 type ChatBubble = {
   id: string;
   role: "incoming" | "outgoing" | "ai";
@@ -75,6 +81,7 @@ type ChatBubble = {
   translatedContent?: string; // For storing translated text
   wasForwarded?: boolean;
   forwardedTo?: string;
+  attachments?: MessageAttachment[]; // MMS image attachments
 };
 
 type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
@@ -2902,7 +2909,49 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                               <span className="text-[10px] font-medium">Forwarded to your phone</span>
                             </div>
                           )}
-                          <p className="text-sm">{bubble.content}</p>
+                          
+                          {/* Show MMS image attachments */}
+                          {bubble.attachments && bubble.attachments.length > 0 && (
+                            <div className="mb-2">
+                              {bubble.attachments.map((att, idx) => (
+                                att.contentType?.startsWith("image/") ? (
+                                  <a 
+                                    key={idx} 
+                                    href={att.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="block"
+                                  >
+                                    <img 
+                                      src={att.url} 
+                                      alt={att.filename || "MMS image"} 
+                                      className="max-w-full max-h-60 rounded-md object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                                      loading="lazy"
+                                    />
+                                  </a>
+                                ) : (
+                                  <a 
+                                    key={idx} 
+                                    href={att.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className={cn(
+                                      "flex items-center gap-2 text-xs underline",
+                                      isOutgoing ? "text-indigo-100" : "text-indigo-600"
+                                    )}
+                                  >
+                                    <Paperclip className="w-3 h-3" />
+                                    {att.filename || "Attachment"}
+                                  </a>
+                                )
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Only show text content if it's not just "[Image]" placeholder */}
+                          {bubble.content && bubble.content !== "[Image]" && (
+                            <p className="text-sm">{bubble.content}</p>
+                          )}
                           
                           {/* Show translated content if available */}
                           {hasTranslation && (

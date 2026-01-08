@@ -528,6 +528,9 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         to: cleanTo,
       };
 
+      // Track attachment for saving to message
+      let outboundAttachment = null;
+
       // If media is provided, store it in MongoDB and create a public URL
       if (mediaBase64) {
         console.log("📷 MMS requested - media type:", mediaType);
@@ -552,6 +555,13 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           
           // Add media URL to message options
           messageOptions.mediaUrl = [mediaUrl];
+          
+          // Store attachment info for the message record
+          outboundAttachment = {
+            url: mediaUrl,
+            contentType: mediaType || "image/jpeg",
+            filename: "sent_image",
+          };
         } catch (mediaError) {
           console.error("❌ Failed to save media:", mediaError);
           return res.status(500).json({
@@ -573,12 +583,14 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactPhone: cleanTo,
           contactName: contactName || "Unknown",
           direction: "outgoing",
-          body: body || "[Image]",
+          body: body || (outboundAttachment ? "[Image]" : ""),
           status: "sent", // Use a simple status value that's in the enum
           twilioSid: twilioMessage.sid,
           fromNumber: cleanFrom,
           toNumber: cleanTo,
           isRead: true, // Outgoing messages are always read
+          // Include MMS attachment if present
+          attachments: outboundAttachment ? [outboundAttachment] : undefined,
         };
         console.log("📝 Attempting to save message:", JSON.stringify(msgData, null, 2));
         savedMessage = await saveMessageToDB(msgData);
