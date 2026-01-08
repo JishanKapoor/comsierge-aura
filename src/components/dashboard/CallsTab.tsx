@@ -459,6 +459,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
     }
   };
 
+  // Find contact by phone number (handles various formats)
+  const findContactByPhone = useCallback((phone: string) => {
+    const normalizedPhone = phone?.replace(/[^\d+]/g, "") || "";
+    return contacts.find(c => {
+      const contactPhone = c.phone?.replace(/[^\d+]/g, "") || "";
+      return contactPhone === normalizedPhone || 
+             contactPhone === normalizedPhone.replace("+1", "") ||
+             "+1" + contactPhone === normalizedPhone;
+    });
+  }, [contacts]);
+
   // Block/unblock a phone number
   const toggleBlockNumber = async (phone: string, currentlyBlocked: boolean) => {
     try {
@@ -1309,9 +1320,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-medium text-indigo-600">
-                      {contact.name.charAt(0)}
-                    </div>
+                    {contact.avatar ? (
+                      <img 
+                        src={contact.avatar} 
+                        alt={contact.name} 
+                        className="w-7 h-7 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-medium text-indigo-600">
+                        {contact.name.charAt(0)}
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs font-medium text-gray-800">{contact.name}</p>
                       <p className="text-xs text-gray-500">{contact.phone}</p>
@@ -1380,15 +1399,34 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
           </div>
         ) : (
           <div className="max-h-full overflow-y-auto">
-            {filteredCalls.map((call) => (
+            {filteredCalls.map((call) => {
+              const callContact = findContactByPhone(call.phone);
+              return (
               <div key={call.id} className="flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors group">
-                <div className={`w-8 h-8 rounded-full ${getCallBgClass(call.type)} flex items-center justify-center shrink-0`}>
-                  {call.hasVoicemail ? (
-                    <Voicemail className="w-3.5 h-3.5 text-amber-500" />
-                  ) : (
-                    getCallIcon(call.type)
-                  )}
-                </div>
+                {callContact?.avatar ? (
+                  <div className="relative shrink-0">
+                    <img 
+                      src={callContact.avatar} 
+                      alt={call.contactName} 
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${getCallBgClass(call.type)} flex items-center justify-center border border-white`}>
+                      {call.hasVoicemail ? (
+                        <Voicemail className="w-2.5 h-2.5 text-amber-500" />
+                      ) : (
+                        <span className="scale-75">{getCallIcon(call.type)}</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`w-8 h-8 rounded-full ${getCallBgClass(call.type)} flex items-center justify-center shrink-0`}>
+                    {call.hasVoicemail ? (
+                      <Voicemail className="w-3.5 h-3.5 text-amber-500" />
+                    ) : (
+                      getCallIcon(call.type)
+                    )}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5 flex-wrap">
                     {call.contactName}
@@ -1579,7 +1617,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
                   </Button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>

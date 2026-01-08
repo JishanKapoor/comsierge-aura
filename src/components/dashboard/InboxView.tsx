@@ -2375,6 +2375,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               const isUnread = !msg.isRead;
               const isPinned = msg.isPinned || false;
               const statusInfo = getStatusInfo(msg.status);
+              // Look up contact to get avatar
+              const contactForAvatar = contacts.find(c => normalizePhone(c.phone) === normalizePhone(msg.contactPhone));
 
               const togglePinFromRow = async (e: React.MouseEvent) => {
                 e.preventDefault();
@@ -2430,11 +2432,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 >
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
-                    <div 
-                    className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-white text-sm font-medium bg-indigo-500"
-                  >
-                    {msg.contactName.charAt(0)}
-                  </div>
+                    {contactForAvatar?.avatar ? (
+                      <img 
+                        src={contactForAvatar.avatar} 
+                        alt={msg.contactName} 
+                        className="w-10 h-10 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div 
+                        className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center text-white text-sm font-medium bg-indigo-500"
+                      >
+                        {msg.contactName.charAt(0)}
+                      </div>
+                    )}
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
@@ -2540,9 +2550,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <ArrowLeft className="w-5 h-5 text-gray-500" />
                   </button>
                 )}
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium bg-indigo-500">
-                  {selectedMessage.contactName.charAt(0)}
-                </div>
+                {selectedSavedContact?.avatar ? (
+                  <img 
+                    src={selectedSavedContact.avatar} 
+                    alt={selectedMessage.contactName} 
+                    className="w-8 h-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium bg-indigo-500">
+                    {selectedMessage.contactName.charAt(0)}
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-gray-800">
@@ -2769,9 +2787,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       )}
                     >
                       {isLeftAligned && (
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0 bg-indigo-500">
-                          {selectedMessage.contactName.charAt(0)}
-                        </div>
+                        selectedSavedContact?.avatar ? (
+                          <img 
+                            src={selectedSavedContact.avatar} 
+                            alt={selectedMessage.contactName} 
+                            className="w-7 h-7 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0 bg-indigo-500">
+                            {selectedMessage.contactName.charAt(0)}
+                          </div>
+                        )
                       )}
 
                       <div className="max-w-[78%]">
