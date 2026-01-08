@@ -46,7 +46,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Device } from "@twilio/voice-sdk";
 import { CallSkeleton } from "./LoadingSkeletons";
 
-type Filter = "all" | "missed" | "incoming" | "outgoing";
+type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail";
 
 interface CallsTabProps {
   selectedContactPhone?: string | null;
@@ -229,7 +229,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const loadCalls = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingCalls(true);
     try {
-      const callRecords = await fetchCalls(filter === "all" ? undefined : filter);
+      // For voicemail filter, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail") ? undefined : filter;
+      const callRecords = await fetchCalls(apiFilter);
       
       // Helper functions for formatting (inside callback to avoid closure issues)
       const formatDurationForCall = (seconds: number): string | undefined => {
@@ -367,7 +369,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   };
 
   // Filter calls - API already filters by type, just do client-side search
+  // For voicemail filter, we filter client-side since API doesn't have voicemail filter
   const filteredCalls = calls.filter((call) => {
+    // Voicemail filter - show only calls with voicemails
+    if (filter === "voicemail" && !call.hasVoicemail) return false;
+    
     if (!searchQuery) return true;
     const matchesSearch =
       call.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -379,7 +385,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const refreshCalls = async () => {
     setIsLoadingCalls(true);
     try {
-      const callRecords = await fetchCalls(filter === "all" ? undefined : filter);
+      // For voicemail filter, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail") ? undefined : filter;
+      const callRecords = await fetchCalls(apiFilter);
       
       // Build a set of blocked phone numbers from contacts
       const blockedPhones = new Set<string>();
@@ -1351,14 +1359,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
       {/* Filters */}
       <div className="flex gap-1.5 flex-wrap">
-        {(["all", "missed", "incoming", "outgoing"] as Filter[]).map((f) => (
+        {(["all", "missed", "incoming", "outgoing", "voicemail"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-2.5 py-1 text-xs rounded font-medium capitalize transition-colors ${
               filter === f ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }${
+              f === "voicemail" ? " flex items-center gap-1" : ""
             }`}
           >
+            {f === "voicemail" && <Voicemail className="w-3 h-3" />}
             {f}
           </button>
         ))}
