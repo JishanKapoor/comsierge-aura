@@ -234,7 +234,7 @@ const Dashboard = () => {
       case "calls":
         return (
           <div key="calls" style={paddedStyle}>
-            <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} />
+            <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} isActive={isActive} />
           </div>
         );
       case "contacts":

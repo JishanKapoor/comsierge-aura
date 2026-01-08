@@ -51,9 +51,10 @@ type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail";
 interface CallsTabProps {
   selectedContactPhone?: string | null;
   onClearSelection?: () => void;
+  isActive?: boolean;
 }
 
-const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => {
+const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: CallsTabProps) => {
   const { user } = useAuth();
   const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
   
@@ -154,11 +155,27 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     loadContactsData();
   }, [loadContactsData]);
 
-  // Refresh contacts when window regains focus (user may have renamed in another tab)
+  // Refresh contacts when this tab becomes active (user may have renamed in Contacts tab)
   useEffect(() => {
+    if (isActive) {
+      loadContactsData();
+    }
+  }, [isActive, loadContactsData]);
+
+  // Refresh contacts when window/tab regains visibility
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadContactsData();
+      }
+    };
     const handleFocus = () => loadContactsData();
+    document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [loadContactsData]);
 
   // Reusable function to load calls from API
