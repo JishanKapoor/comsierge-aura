@@ -2849,15 +2849,24 @@ router.post("/calls", async (req, res) => {
 // @route   POST /api/twilio/end-call
 // @desc    End an active call
 // @access  Private (user)
-router.post("/end-call", async (req, res) => {
+router.post("/end-call", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
     const { callSid } = req.body;
 
-    if (!accountSid || !authToken || !callSid) {
+    if (!callSid) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, callSid",
+        message: "callSid is required",
+      });
+    }
+
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken } = await resolveTwilioConfig({}, userPhoneNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found. Contact admin.",
       });
     }
 
@@ -2895,15 +2904,24 @@ router.post("/end-call", async (req, res) => {
 // @route   POST /api/twilio/hold-call
 // @desc    Put a call on hold or resume
 // @access  Private (user)
-router.post("/hold-call", async (req, res) => {
+router.post("/hold-call", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
     const { callSid, hold } = req.body;
 
-    if (!accountSid || !authToken || !callSid) {
+    if (!callSid) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, callSid",
+        message: "callSid is required",
+      });
+    }
+
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken } = await resolveTwilioConfig({}, userPhoneNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found. Contact admin.",
       });
     }
 
@@ -2971,23 +2989,50 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
     const client = twilio(accountSid, authToken);
 
     try {
-      // End current call and initiate new call to transfer number
-      // This is a "cold transfer" - for warm transfer you'd use conference
-      await client.calls(callSid).update({ status: "completed" });
-      
-      // Make new call to transfer target
-      const newCall = await client.calls.create({
-        twiml: `<Response><Say voice="alice">Transferring call from Comsierge.</Say><Dial>${transferTo}</Dial></Response>`,
-        from: fromNumber,
-        to: transferTo,
-      });
+      // Real transfer: redirect the *callee/PSTN leg* to Dial transferTo,
+      // and end the agent leg. This preserves the current other party and
+      // connects them to the new destination.
+
+      const buildTransferTwiml = (to) => (
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<Response>` +
+        `<Say voice="alice">Please hold while I transfer your call.</Say>` +
+        `<Dial>${to}</Dial>` +
+        `</Response>`
+      );
+
+      // Try to find the active child leg of this call.
+      // For browser calls, callSid is typically the parent (client) leg.
+      let childSid = null;
+      try {
+        const children = await client.calls.list({ parentCallSid: callSid, limit: 20 });
+        const activeChild = (children || []).find((c) =>
+          ["in-progress", "ringing", "queued"].includes(String(c.status || "").toLowerCase())
+        );
+        if (activeChild) childSid = activeChild.sid;
+      } catch (e) {
+        console.error("Transfer: failed to list child calls:", e.message);
+      }
+
+      const sidToRedirect = childSid || callSid;
+      await client.calls(sidToRedirect).update({ twiml: buildTransferTwiml(transferTo) });
+
+      // End the agent leg if we redirected a different leg.
+      if (childSid && childSid !== callSid) {
+        try {
+          await client.calls(callSid).update({ status: "completed" });
+        } catch (e) {
+          console.error("Transfer: failed to end agent leg:", e.message);
+        }
+      }
 
       res.json({
         success: true,
         message: "Call transferred successfully",
         data: {
           originalCallSid: callSid,
-          newCallSid: newCall.sid,
+          redirectedCallSid: sidToRedirect,
+          childCallSid: childSid,
           transferTo: transferTo,
         },
       });

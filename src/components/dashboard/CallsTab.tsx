@@ -938,18 +938,46 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
   const hangUp = async () => {
     if (!activeCall) return;
-    
-    const creds = getTwilioCredentials();
-    
-    // If we have a real call SID, end it via API
-    if (creds && activeCall.callSid) {
+
+    // If this is a Browser VoIP call, end it via the Twilio Voice SDK.
+    // Calling the REST API here is unreliable because browser calls often don't have
+    // account credentials client-side and the CallSid in the browser is not always the PSTN leg.
+    if (activeCallRef.current && typeof activeCallRef.current.disconnect === "function") {
       try {
+        activeCallRef.current.disconnect();
+      } catch (e) {
+        console.error("VoIP disconnect error:", e);
+      }
+      try {
+        device?.disconnectAll?.();
+      } catch (e) {
+        console.error("Device disconnectAll error:", e);
+      }
+
+      activeCallRef.current = null;
+      setActiveCall(null);
+      setShowTransferCall(false);
+      setTransferCallTo("");
+      setShowKeypad(false);
+      setShowAddParticipant(false);
+
+      // Refresh to reflect final status/recording when webhooks arrive
+      loadCalls(false);
+      toast.success("Call ended");
+      return;
+    }
+    
+    // Non-VoIP (server-controlled) call
+    if (activeCall.callSid) {
+      try {
+        const token = localStorage.getItem("comsierge_token");
         await fetch(`${API_BASE_URL}/api/twilio/end-call`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": token ? `Bearer ${token}` : "",
+          },
           body: JSON.stringify({
-            accountSid: creds.accountSid,
-            authToken: creds.authToken,
             callSid: activeCall.callSid,
           }),
         });
@@ -962,35 +990,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     const durationSec = Math.floor(durationMs / 1000);
     const wasMissed = activeCall.status === "ringing";
     
-    // Save call record to database
-    const savedCall = await saveCallRecord({
-      contactPhone: activeCall.number,
-      contactName: activeCall.name,
-      direction: "outgoing",
-      type: wasMissed ? "missed" : "outgoing",
-      status: wasMissed ? "canceled" : "completed",
-      twilioSid: activeCall.callSid,
-      fromNumber: user?.phoneNumber || "",
-      toNumber: activeCall.number,
-      duration: wasMissed ? 0 : durationSec,
-      startTime: new Date(activeCall.startedAt).toISOString(),
-      endTime: new Date().toISOString(),
-    });
-    
-    // Add to local call history (or refresh from API)
-    if (savedCall) {
-      const newCall: Call = {
-        id: savedCall.id,
-        contactId: `phone:${activeCall.number}`,
-        contactName: activeCall.name || activeCall.number,
-        phone: activeCall.number,
-        timestamp: `Today, ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
-        type: wasMissed ? "missed" : "outgoing",
-        duration: wasMissed ? undefined : formatDuration(durationMs),
-        isBlocked: false,
-      };
-      setCalls(prev => [newCall, ...prev]);
-    }
+    // For server-controlled calls, the backend/webhooks are the source of truth.
+    // Just refresh the call list instead of creating a local CallRecord.
+    loadCalls(false);
     
     toast.success(wasMissed ? "Call canceled" : `Call ended (${formatDuration(durationMs)})`);
     setActiveCall(null);
@@ -1012,7 +1014,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
     // Actually mute/unmute the Twilio call
     if (activeCallRef.current && typeof activeCallRef.current.mute === 'function') {
       const newMuteState = !activeCall.isMuted;
-      activeCallRef.current.mute(newMuteState);
+      try {
+        activeCallRef.current.mute(newMuteState);
+      } catch (e) {
+        console.error("VoIP mute error:", e);
+      }
       setActiveCall(prev => prev ? { ...prev, isMuted: newMuteState } : prev);
       toast.info(newMuteState ? "Muted" : "Unmuted");
     } else {
@@ -1261,6 +1267,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           return;
         }
         toast.success(`Call transferred to ${transferCallTo.trim()}`);
+
+        // Ensure the agent browser leg ends immediately.
+        if (activeCallRef.current && typeof activeCallRef.current.disconnect === "function") {
+          try {
+            activeCallRef.current.disconnect();
+          } catch (e) {
+            console.error("VoIP disconnect after transfer error:", e);
+          }
+        }
         activeCallRef.current = null;
         setActiveCall(null);
       } catch (error) {
