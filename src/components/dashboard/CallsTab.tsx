@@ -680,8 +680,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         throw new Error(data.message);
       }
 
-      // 2. Initialize Device
-      const newDevice = new Device(data.token);
+      // 2. Initialize Device with sounds disabled to prevent double ring
+      const newDevice = new Device(data.token, {
+        // Disable all default sounds - we don't need ringtone for outgoing calls
+        disableAudioContextSounds: true,
+      });
 
       newDevice.on("error", (error) => {
         console.error("Twilio Device Error:", error);
