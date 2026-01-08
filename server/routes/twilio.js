@@ -1528,25 +1528,29 @@ router.post("/webhook/voice", async (req, res) => {
             reason: !forwardingNumber ? "no_forwarding_number" : "no_matching_rule"
           });
           
+          // Get webhook base URL
+          const vmWebhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+          
           // Play a message and optionally record voicemail
           response.say({ voice: "alice" }, "Hello, the person you are trying to reach is unavailable. Please leave a message after the beep.");
           response.record({ 
             maxLength: 120, 
             transcribe: true,
-            transcribeCallback: "/api/twilio/webhook/transcription",
-            action: "/api/twilio/webhook/voicemail"
+            transcribeCallback: `${vmWebhookBase}/api/twilio/webhook/transcription`,
+            action: `${vmWebhookBase}/api/twilio/webhook/voicemail`
           });
           response.say({ voice: "alice" }, "Thank you. Goodbye.");
         }
         
       } else {
         console.log("   ⚠️ No user found for this number. Playing voicemail.");
+        const vmWebhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
         response.say("Hello, thank you for calling. Please leave a message after the beep.");
         response.record({ 
           maxLength: 120, 
           transcribe: true,
-          transcribeCallback: "/api/twilio/webhook/transcription",
-          action: "/api/twilio/webhook/voicemail"
+          transcribeCallback: `${vmWebhookBase}/api/twilio/webhook/transcription`,
+          action: `${vmWebhookBase}/api/twilio/webhook/voicemail`
         });
         response.say("Thank you. Goodbye.");
       }
@@ -1570,43 +1574,87 @@ router.post("/webhook/voice", async (req, res) => {
 // @access  Public (Twilio webhook)
 router.post("/webhook/forward-status", async (req, res) => {
   try {
-    const { CallSid, DialCallStatus, DialCallDuration } = req.body;
-    console.log("📞 Forward Status:", { CallSid, DialCallStatus, DialCallDuration });
+    const { CallSid, DialCallStatus, DialCallDuration, From, To } = req.body;
+    console.log("📞 Forward Status:", { CallSid, DialCallStatus, DialCallDuration, From, To });
+    console.log("📞 Full forward-status body:", req.body);
     
     const response = new twilio.twiml.VoiceResponse();
     
-    // Update call record with actual status
-    const statusMap = {
-      "completed": "completed",
-      "answered": "completed",
-      "busy": "missed",
-      "no-answer": "missed",
-      "failed": "missed",
-      "canceled": "missed"
-    };
+    // Map Twilio DialCallStatus to our status values
+    // IMPORTANT: "completed" from Twilio does NOT mean answered!
+    // "answered" means they picked up, "completed" just means call ended
+    // "no-answer" means they didn't pick up, "busy" means line was busy
+    let finalStatus;
+    let finalType;
     
-    const finalStatus = statusMap[DialCallStatus] || "missed";
-    const finalType = (DialCallStatus === "completed" || DialCallStatus === "answered") ? "incoming" : "missed";
+    if (DialCallStatus === "answered") {
+      // Actually answered the call
+      finalStatus = "completed";
+      finalType = "incoming";
+    } else if (DialCallStatus === "completed") {
+      // Call completed - need to check duration to determine if answered
+      const duration = parseInt(DialCallDuration) || 0;
+      if (duration > 0) {
+        // Had duration = was answered
+        finalStatus = "completed";
+        finalType = "incoming";
+      } else {
+        // No duration = wasn't answered, probably hung up
+        finalStatus = "no-answer";
+        finalType = "missed";
+      }
+    } else if (DialCallStatus === "busy") {
+      finalStatus = "busy";
+      finalType = "missed";
+    } else if (DialCallStatus === "no-answer") {
+      finalStatus = "no-answer";
+      finalType = "missed";
+    } else if (DialCallStatus === "failed") {
+      finalStatus = "failed";
+      finalType = "missed";
+    } else if (DialCallStatus === "canceled") {
+      finalStatus = "canceled";
+      finalType = "missed";
+    } else {
+      // Unknown status - treat as missed
+      finalStatus = "missed";
+      finalType = "missed";
+    }
     
-    await CallRecord.findOneAndUpdate(
+    console.log(`   📊 Mapped status: ${DialCallStatus} -> ${finalStatus}, type: ${finalType}`);
+    
+    const updated = await CallRecord.findOneAndUpdate(
       { twilioCallSid: CallSid },
       { 
         status: finalStatus,
         type: finalType,
         duration: parseInt(DialCallDuration) || 0
-      }
+      },
+      { new: true }
     );
     
+    if (updated) {
+      console.log(`   ✅ Updated CallRecord ${CallSid} to status: ${finalStatus}`);
+    } else {
+      console.log(`   ⚠️ No CallRecord found for ${CallSid}`);
+    }
+    
+    // Get webhook base URL for voicemail action
+    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+    
     // If not answered, offer voicemail
-    if (DialCallStatus !== "completed" && DialCallStatus !== "answered") {
+    if (finalStatus !== "completed") {
+      console.log(`   📞 Call was not answered (${DialCallStatus}), offering voicemail`);
       response.say({ voice: "alice" }, "The call could not be completed. Please leave a message after the beep.");
       response.record({ 
         maxLength: 120, 
         transcribe: true,
-        transcribeCallback: "/api/twilio/webhook/transcription",
-        action: "/api/twilio/webhook/voicemail"
+        transcribeCallback: `${webhookBase}/api/twilio/webhook/transcription`,
+        action: `${webhookBase}/api/twilio/webhook/voicemail`
       });
       response.say({ voice: "alice" }, "Thank you. Goodbye.");
+    } else {
+      console.log(`   ✅ Call was answered, no voicemail needed`);
     }
     
     res.type("text/xml");
