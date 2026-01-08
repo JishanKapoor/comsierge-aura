@@ -56,9 +56,10 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+// Increase JSON body limit for base64 image uploads (default is 100KB)
+app.use(express.json({ limit: '5mb' }));
 // For Twilio webhooks (they send form-urlencoded data)
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Routes
 app.use("/api/auth", authRoutes);

@@ -140,42 +140,48 @@ router.put("/:id", async (req, res) => {
 
     // Keep denormalized names in sync across the app (Inbox/Calls/Rules).
     // This prevents stale names from appearing in search and lists.
-    const phoneCandidates = buildPhoneCandidates(oldPhone, contact.phone);
+    // Wrapped in try-catch so propagation failures don't break the main save.
+    try {
+      const phoneCandidates = buildPhoneCandidates(oldPhone, contact.phone);
 
-    if (contact.name) {
-      const nameUpdate = { contactName: contact.name };
+      if (contact.name) {
+        const nameUpdate = { contactName: contact.name };
 
-      await Conversation.updateMany(
-        {
-          userId: req.user._id,
-          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
-        },
-        { $set: nameUpdate }
-      );
+        await Conversation.updateMany(
+          {
+            userId: req.user._id,
+            $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+          },
+          { $set: nameUpdate }
+        );
 
-      await Message.updateMany(
-        {
-          userId: req.user._id,
-          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
-        },
-        { $set: nameUpdate }
-      );
+        await Message.updateMany(
+          {
+            userId: req.user._id,
+            $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+          },
+          { $set: nameUpdate }
+        );
 
-      await CallRecord.updateMany(
-        {
-          userId: req.user._id,
-          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
-        },
-        { $set: nameUpdate }
-      );
+        await CallRecord.updateMany(
+          {
+            userId: req.user._id,
+            $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+          },
+          { $set: nameUpdate }
+        );
 
-      await Rule.updateMany(
-        {
-          userId: req.user._id,
-          "transferDetails.contactPhone": { $in: phoneCandidates },
-        },
-        { $set: { "transferDetails.contactName": contact.name } }
-      );
+        await Rule.updateMany(
+          {
+            userId: req.user._id,
+            "transferDetails.contactPhone": { $in: phoneCandidates },
+          },
+          { $set: { "transferDetails.contactName": contact.name } }
+        );
+      }
+    } catch (propagationError) {
+      console.error("Name propagation error (non-fatal):", propagationError);
+      // Don't fail the request - contact was saved successfully
     }
 
     res.json({

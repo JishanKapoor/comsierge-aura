@@ -114,12 +114,22 @@ export const updateContact = async (id: string, updates: Partial<Contact>): Prom
       headers: getAuthHeaders(),
       body: JSON.stringify(normalizedUpdates),
     });
+    
+    // Handle non-JSON responses (like 413 Payload Too Large)
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      if (response.status === 413) {
+        return { success: false, error: "Image too large. Please use a smaller photo." };
+      }
+      return { success: false, error: `Server error: ${response.status} ${response.statusText}` };
+    }
+    
     const data: ApiResponse = await response.json();
     
     if (data.success) {
       return { success: true, error: null };
     }
-    return { success: false, error: data.message || "Failed to update contact" };
+    return { success: false, error: data.message || data.error || "Failed to update contact" };
   } catch (error) {
     console.error("Update contact error:", error);
     return { success: false, error: "Network error. Please try again." };
