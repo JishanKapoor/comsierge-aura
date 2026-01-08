@@ -307,10 +307,40 @@ router.get("/:id/voicemail", async (req, res) => {
       return res.status(404).json({ success: false, message: "No voicemail for this call" });
     }
 
-    // Get Twilio credentials from user's account or env
+    const normalizePhone = (value) => {
+      const cleaned = String(value || "").replace(/[^\d+]/g, "");
+      if (!cleaned) return "";
+      if (cleaned.startsWith("+")) return cleaned;
+      // Best-effort: assume US if no country code
+      return `+${cleaned}`;
+    };
+
+    // Resolve Twilio credentials.
+    // IMPORTANT: TwilioAccount does NOT have a `userId` field at the top-level.
     const TwilioAccount = (await import("../models/TwilioAccount.js")).default;
-    const twilioAccount = await TwilioAccount.findOne({ userId: req.user._id });
-    
+    let twilioAccount = null;
+
+    const hintedAccountSid = call?.metadata?.twilioAccountSid || call?.metadata?.accountSid;
+    if (hintedAccountSid) {
+      twilioAccount = await TwilioAccount.findOne({ accountSid: hintedAccountSid });
+    }
+
+    // Try matching by the user's assigned Twilio number (most reliable for incoming voicemail)
+    if (!twilioAccount && req.user?.phoneNumber) {
+      const target = normalizePhone(req.user.phoneNumber);
+      const accounts = await TwilioAccount.find({});
+      twilioAccount = accounts.find(acc => (acc.phoneNumbers || []).some(p => normalizePhone(p) === target)) || null;
+    }
+
+    // Try matching by call's to/from fields if present
+    if (!twilioAccount) {
+      const maybeTwilioNumber = normalizePhone(call.toNumber || call.fromNumber);
+      if (maybeTwilioNumber) {
+        const accounts = await TwilioAccount.find({});
+        twilioAccount = accounts.find(acc => (acc.phoneNumbers || []).some(p => normalizePhone(p) === maybeTwilioNumber)) || null;
+      }
+    }
+
     const accountSid = twilioAccount?.accountSid || process.env.TWILIO_ACCOUNT_SID;
     const authToken = twilioAccount?.authToken || process.env.TWILIO_AUTH_TOKEN;
 

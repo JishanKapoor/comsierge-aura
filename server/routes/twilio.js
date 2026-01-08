@@ -1852,7 +1852,7 @@ async function transcribeRecording(callSid, recordingUrl, recordingSid, accountS
 // @access  Public (Twilio webhook)
 router.post("/webhook/voicemail", async (req, res) => {
   try {
-    const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText, From, To } = req.body;
+    const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText, From, To, AccountSid } = req.body;
     console.log("📞 Voicemail received:", { 
       CallSid, 
       RecordingUrl, 
@@ -1866,11 +1866,16 @@ router.post("/webhook/voicemail", async (req, res) => {
     // Update call record with voicemail info
     const updatedRecord = await CallRecord.findOneAndUpdate(
       { twilioCallSid: CallSid },
-      { 
-        hasVoicemail: true,
-        voicemailUrl: RecordingUrl,
-        voicemailDuration: parseInt(RecordingDuration) || 0,
-        voicemailTranscript: TranscriptionText || null
+      {
+        $set: {
+          hasVoicemail: true,
+          voicemailUrl: RecordingUrl,
+          voicemailDuration: parseInt(RecordingDuration) || 0,
+          voicemailTranscript: TranscriptionText || null,
+          ...(From ? { fromNumber: From } : {}),
+          ...(To ? { toNumber: To } : {}),
+          ...(AccountSid ? { "metadata.twilioAccountSid": AccountSid } : {}),
+        },
       },
       { new: true }
     );
@@ -1893,11 +1898,16 @@ router.post("/webhook/voicemail", async (req, res) => {
             type: "missed",
             status: "missed",
             twilioCallSid: CallSid,
+            fromNumber: From,
+            toNumber: To,
             hasVoicemail: true,
             voicemailUrl: RecordingUrl,
             voicemailDuration: parseInt(RecordingDuration) || 0,
             voicemailTranscript: TranscriptionText || null,
-            reason: "voicemail_only"
+            reason: "voicemail_only",
+            metadata: {
+              ...(AccountSid ? { twilioAccountSid: AccountSid } : {}),
+            },
           });
           console.log(`   ✅ Created new CallRecord with voicemail for user ${user.email}`);
         }
