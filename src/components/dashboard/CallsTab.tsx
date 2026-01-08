@@ -142,82 +142,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const [isTranscriptAiLoading, setIsTranscriptAiLoading] = useState(false);
   const transcriptAiChatRef = useRef<HTMLDivElement>(null);
 
-  // Audio refs for ringtone
-  const ringToneRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Initialize ringtone audio
-  useEffect(() => {
-    // Create a simple ringtone using Web Audio API
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    
-    const createRingtone = () => {
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = 440;
-      oscillator.type = "sine";
-      gainNode.gain.value = 0.3;
-      
-      return { oscillator, gainNode, audioContext };
-    };
-    
-    // Store the create function for later use
-    (window as any).__ringToneCreate = createRingtone;
-    
-    return () => {
-      audioContext.close();
-    };
-  }, []);
-  
-  // Play/stop ringtone based on call status
-  useEffect(() => {
-    let ringInterval: NodeJS.Timeout | null = null;
-    let oscillator: OscillatorNode | null = null;
-    let gainNode: GainNode | null = null;
-    
-    if (activeCall?.status === "ringing") {
-      // Play ringtone pattern (ring for 1 sec, silence for 2 sec)
-      const playRing = () => {
-        try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-          oscillator = audioContext.createOscillator();
-          gainNode = audioContext.createGain();
-          
-          oscillator.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          
-          oscillator.frequency.value = 440;
-          oscillator.type = "sine";
-          gainNode.gain.value = 0.2;
-          
-          oscillator.start();
-          
-          // Stop after 1 second
-          setTimeout(() => {
-            if (oscillator) {
-              oscillator.stop();
-              audioContext.close();
-            }
-          }, 1000);
-        } catch (e) {
-          console.log("Audio not available");
-        }
-      };
-      
-      playRing();
-      ringInterval = setInterval(playRing, 3000);
-    }
-    
-    return () => {
-      if (ringInterval) clearInterval(ringInterval);
-      if (oscillator) {
-        try { oscillator.stop(); } catch(e) {}
-      }
-    };
-  }, [activeCall?.status]);
+  // Note: Ringtone is handled by Twilio SDK - no custom ringtone needed
 
   // Fetch contacts from API on mount
   useEffect(() => {
@@ -1269,6 +1194,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           return;
         }
         toast.success(`Call transferred to ${transferCallTo.trim()}`);
+        
+        // Refresh calls to show the transferred status
+        loadCalls(false);
 
         // Ensure the agent browser leg ends immediately.
         if (activeCallRef.current && typeof activeCallRef.current.disconnect === "function") {

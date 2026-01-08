@@ -2269,6 +2269,9 @@ router.post("/webhook/status", async (req, res) => {
 
         if (!record) {
           console.log(`   ⚠️ No CallRecord found for ${CallSid} or ParentCallSid ${ParentCallSid}`);
+        } else if (record.status === "transferred") {
+          // Don't overwrite transferred calls - they were intentionally ended
+          console.log(`   ⏭️ Skipping status update for transferred call ${matchedBy}`);
         } else {
           // Map Twilio statuses to our status values
           let dbStatus = CallStatus;
@@ -3016,6 +3019,12 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
 
       const sidToRedirect = childSid || callSid;
       await client.calls(sidToRedirect).update({ twiml: buildTransferTwiml(transferTo) });
+
+      // Mark the call record as transferred so status webhooks don't overwrite it
+      await CallRecord.findOneAndUpdate(
+        { twilioCallSid: callSid },
+        { status: "transferred", transferredTo: transferTo }
+      );
 
       // End the agent leg if we redirected a different leg.
       if (childSid && childSid !== callSid) {
