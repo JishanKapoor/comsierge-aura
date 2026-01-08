@@ -286,7 +286,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           phone: record.contactPhone,
           timestamp: formatTimestampForCall(record.createdAt),
           type: record.type,
-          status: record.status,
+          status: record.status as Call["status"],
           duration: formatDurationForCall(record.duration),
           isBlocked: record.status === "blocked" || isBlockedContact,
           recordingUrl: record.recordingUrl,
@@ -295,6 +295,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           voicemailUrl: record.voicemailUrl,
           voicemailDuration: record.voicemailDuration,
           voicemailTranscript: record.voicemailTranscript,
+          // Routing fields
+          forwardedTo: record.forwardedTo,
+          matchedRule: record.matchedRule,
+          reason: record.reason,
         };
       });
       setCalls(formattedCalls);
@@ -1385,10 +1389,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5">
+                  <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5 flex-wrap">
                     {call.contactName}
+                    {/* Status badges */}
+                    {call.status === "completed" && call.type === "outgoing" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Connected</span>
+                    )}
+                    {call.status === "completed" && call.type === "incoming" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Answered</span>
+                    )}
                     {call.status === "forwarded" && (
-                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Forwarded</span>
+                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Routed</span>
                     )}
                     {call.status === "transferred" && (
                       <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Transferred</span>
@@ -1400,13 +1411,38 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                       <span className="text-[10px] px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded">Busy</span>
                     )}
                     {call.status === "no-answer" && (
-                      <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-700 rounded">No Answer</span>
+                      <span className="text-[10px] px-1 py-0.5 bg-orange-100 text-orange-700 rounded">No Answer</span>
                     )}
                     {call.status === "failed" && (
                       <span className="text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded">Failed</span>
                     )}
+                    {call.status === "canceled" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-600 rounded">Canceled</span>
+                    )}
+                    {call.status === "initiated" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Dialing...</span>
+                    )}
+                    {call.status === "ringing" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Ringing</span>
+                    )}
+                    {call.hasVoicemail && (
+                      <span className="text-[10px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded">Voicemail</span>
+                    )}
                   </p>
                   <p className="text-xs text-gray-500 truncate">{call.phone}</p>
+                  {/* Show routing destination for forwarded/transferred calls */}
+                  {call.status === "forwarded" && call.forwardedTo && (
+                    <p className="text-xs text-green-600 truncate mt-0.5 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3" />
+                      Routed to {call.forwardedTo}
+                    </p>
+                  )}
+                  {call.status === "transferred" && call.forwardedTo && (
+                    <p className="text-xs text-blue-600 truncate mt-0.5 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3" />
+                      Transferred to {call.forwardedTo}
+                    </p>
+                  )}
                   {call.transcription && (
                     <p className="text-xs text-indigo-500 truncate mt-0.5 flex items-center gap-1">
                       <FileText className="w-3 h-3" />
@@ -1414,7 +1450,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                     </p>
                   )}
                   {call.hasVoicemail && call.voicemailTranscript && (
-                    <p className="text-xs text-gray-400 truncate mt-0.5 italic">"{call.voicemailTranscript}"</p>
+                    <p className="text-xs text-amber-600 truncate mt-0.5 italic">"{call.voicemailTranscript}"</p>
+                  )}
+                  {call.hasVoicemail && !call.voicemailTranscript && (
+                    <p className="text-xs text-amber-500 truncate mt-0.5 flex items-center gap-1">
+                      <Voicemail className="w-3 h-3" />
+                      Voicemail left
+                    </p>
                   )}
                 </div>
                 <div className="text-right shrink-0 hidden sm:block">
@@ -1425,10 +1467,20 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                         <Voicemail className="w-3 h-3 text-amber-500" />
                         {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}
                       </>
+                    ) : call.status === "completed" ? (
+                      <>
+                        <Clock className="w-3 h-3 text-green-500" />
+                        {call.duration || "Connected"}
+                      </>
+                    ) : call.status === "missed" || call.type === "missed" ? (
+                      <>
+                        <PhoneMissed className="w-3 h-3 text-red-400" />
+                        Missed
+                      </>
                     ) : (
                       <>
                         <Clock className="w-3 h-3" />
-                        {call.duration || "Missed"}
+                        {call.duration || "-"}
                       </>
                     )}
                   </p>

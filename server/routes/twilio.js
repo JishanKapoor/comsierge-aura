@@ -1529,6 +1529,7 @@ router.post("/webhook/voice", async (req, res) => {
           response.record({ 
             maxLength: 120, 
             transcribe: true,
+            transcribeCallback: "/api/twilio/webhook/transcription",
             action: "/api/twilio/webhook/voicemail"
           });
           response.say({ voice: "alice" }, "Thank you. Goodbye.");
@@ -1537,7 +1538,12 @@ router.post("/webhook/voice", async (req, res) => {
       } else {
         console.log("   ⚠️ No user found for this number. Playing voicemail.");
         response.say("Hello, thank you for calling. Please leave a message after the beep.");
-        response.record({ maxLength: 120, transcribe: true });
+        response.record({ 
+          maxLength: 120, 
+          transcribe: true,
+          transcribeCallback: "/api/twilio/webhook/transcription",
+          action: "/api/twilio/webhook/voicemail"
+        });
         response.say("Thank you. Goodbye.");
       }
     }
@@ -1593,6 +1599,7 @@ router.post("/webhook/forward-status", async (req, res) => {
       response.record({ 
         maxLength: 120, 
         transcribe: true,
+        transcribeCallback: "/api/twilio/webhook/transcription",
         action: "/api/twilio/webhook/voicemail"
       });
       response.say({ voice: "alice" }, "Thank you. Goodbye.");
@@ -1769,19 +1776,57 @@ async function transcribeRecording(callSid, recordingUrl, recordingSid, accountS
 // @access  Public (Twilio webhook)
 router.post("/webhook/voicemail", async (req, res) => {
   try {
-    const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText } = req.body;
-    console.log("📞 Voicemail received:", { CallSid, RecordingUrl, RecordingDuration });
+    const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText, From, To } = req.body;
+    console.log("📞 Voicemail received:", { 
+      CallSid, 
+      RecordingUrl, 
+      RecordingDuration,
+      hasTranscript: !!TranscriptionText,
+      From,
+      To
+    });
+    console.log("📞 Full voicemail body:", req.body);
     
     // Update call record with voicemail info
-    await CallRecord.findOneAndUpdate(
+    const updatedRecord = await CallRecord.findOneAndUpdate(
       { twilioCallSid: CallSid },
       { 
         hasVoicemail: true,
         voicemailUrl: RecordingUrl,
         voicemailDuration: parseInt(RecordingDuration) || 0,
         voicemailTranscript: TranscriptionText || null
-      }
+      },
+      { new: true }
     );
+    
+    if (updatedRecord) {
+      console.log(`   ✅ Updated CallRecord ${CallSid} with voicemail. URL: ${RecordingUrl}`);
+    } else {
+      console.log(`   ⚠️ No CallRecord found for CallSid: ${CallSid}. Creating new record if possible.`);
+      // Try to create a new record if we have enough info
+      if (From && To) {
+        // Find user by their Twilio number
+        const User = (await import("../models/User.js")).default;
+        const user = await User.findOne({ phoneNumber: To }) || await User.findOne({ phoneNumber: To.startsWith("+") ? To.substring(1) : "+" + To });
+        if (user) {
+          await CallRecord.create({
+            userId: user._id,
+            contactPhone: From,
+            contactName: From,
+            direction: "incoming",
+            type: "missed",
+            status: "missed",
+            twilioCallSid: CallSid,
+            hasVoicemail: true,
+            voicemailUrl: RecordingUrl,
+            voicemailDuration: parseInt(RecordingDuration) || 0,
+            voicemailTranscript: TranscriptionText || null,
+            reason: "voicemail_only"
+          });
+          console.log(`   ✅ Created new CallRecord with voicemail for user ${user.email}`);
+        }
+      }
+    }
     
     const response = new twilio.twiml.VoiceResponse();
     response.say({ voice: "alice" }, "Thank you for your message. Goodbye.");
@@ -1794,6 +1839,51 @@ router.post("/webhook/voicemail", async (req, res) => {
     const response = new twilio.twiml.VoiceResponse();
     res.type("text/xml");
     res.send(response.toString());
+  }
+});
+
+// @route   POST /api/twilio/webhook/transcription
+// @desc    Handle voicemail transcription callback (separate from recording)
+// @access  Public (Twilio webhook)
+router.post("/webhook/transcription", async (req, res) => {
+  try {
+    const { CallSid, RecordingSid, TranscriptionText, TranscriptionStatus } = req.body;
+    console.log("📝 Transcription received:", { 
+      CallSid, 
+      RecordingSid, 
+      TranscriptionStatus,
+      TranscriptionText: TranscriptionText?.substring(0, 100)
+    });
+    
+    if (TranscriptionStatus === "completed" && TranscriptionText) {
+      // Update call record with transcription
+      const updated = await CallRecord.findOneAndUpdate(
+        { twilioCallSid: CallSid },
+        { voicemailTranscript: TranscriptionText },
+        { new: true }
+      );
+      
+      if (updated) {
+        console.log(`   ✅ Updated CallRecord ${CallSid} with voicemail transcription`);
+      } else {
+        // Try by recording SID
+        const byRecording = await CallRecord.findOneAndUpdate(
+          { voicemailUrl: { $regex: RecordingSid } },
+          { voicemailTranscript: TranscriptionText },
+          { new: true }
+        );
+        if (byRecording) {
+          console.log(`   ✅ Updated CallRecord by recording SID with transcription`);
+        } else {
+          console.log(`   ⚠️ No CallRecord found for transcription (CallSid: ${CallSid}, RecordingSid: ${RecordingSid})`);
+        }
+      }
+    }
+    
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Transcription webhook error:", error);
+    res.status(500).send("Error");
   }
 });
 

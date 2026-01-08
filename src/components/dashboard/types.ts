@@ -60,7 +60,7 @@ export interface Call {
   phone: string;
   timestamp: string;
   type: "incoming" | "outgoing" | "missed";
-  status?: "initiated" | "ringing" | "in-progress" | "completed" | "busy" | "failed" | "no-answer" | "canceled" | "missed" | "forwarded" | "blocked";
+  status?: "initiated" | "ringing" | "in-progress" | "completed" | "busy" | "failed" | "no-answer" | "canceled" | "missed" | "forwarded" | "blocked" | "transferred";
   duration?: string;
   isBlocked?: boolean;
   // Recording & Transcript fields
@@ -71,6 +71,10 @@ export interface Call {
   voicemailUrl?: string;
   voicemailDuration?: number;
   voicemailTranscript?: string;
+  // Routing fields
+  forwardedTo?: string;
+  matchedRule?: string;
+  reason?: string;
 }
 
 export interface Reminder {
