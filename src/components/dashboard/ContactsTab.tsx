@@ -857,6 +857,15 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                         <Camera className="w-3 h-3" />
                       </button>
                     </div>
+                    {editForm.avatar && (
+                      <button
+                        type="button"
+                        onClick={() => setEditForm({ ...editForm, avatar: "" })}
+                        className="mt-1.5 text-xs text-red-500 hover:text-red-600"
+                      >
+                        Remove photo
+                      </button>
+                    )}
                   </div>
 
                   {/* Form */}

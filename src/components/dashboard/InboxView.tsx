@@ -482,20 +482,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const type = (file.type || "").toLowerCase();
     const name = (file.name || "").toLowerCase();
 
+    // Only allow images (for MMS)
     const byMime =
       type === "image/jpeg" ||
       type === "image/png" ||
-      type === "image/gif" ||
-      type === "application/pdf" ||
-      type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      type === "image/gif";
 
     const byExt =
       name.endsWith(".jpg") ||
       name.endsWith(".jpeg") ||
       name.endsWith(".png") ||
-      name.endsWith(".gif") ||
-      name.endsWith(".pdf") ||
-      name.endsWith(".docx");
+      name.endsWith(".gif");
 
     return byMime || byExt;
   };
@@ -977,12 +974,25 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (isMobile) setMobilePane("chat");
   };
 
+  // Convert file to base64 for sending
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSend = async () => {
     if (!selectedMessage) return;
 
     const trimmed = newMessage.trim();
     if (!trimmed && !pendingAttachment) return;
     if (isSending) return;
+
+    // Capture attachment before clearing (for MMS)
+    const attachmentToSend = pendingAttachment;
 
     // Clear input immediately for instant feel
     setNewMessage("");
@@ -1016,11 +1026,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         timestamp,
       });
     }
-    if (pendingAttachment) {
+    if (attachmentToSend) {
       optimisticBubbles.push({
         id: `${optimisticId}-file`,
         role: "outgoing",
-        content: `📎 ${pendingAttachment.name}`,
+        content: `📷 ${attachmentToSend.name}`,
         timestamp,
       });
     }
@@ -1061,13 +1071,36 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       
       setIsSending(true);
       try {
+        // Convert image to base64 if present
+        let mediaBase64: string | undefined;
+        if (attachmentToSend) {
+          try {
+            mediaBase64 = await fileToBase64(attachmentToSend);
+          } catch (e) {
+            console.error("Failed to convert image to base64:", e);
+            toast.error("Failed to process image");
+          }
+        }
+
         // Send with user's assigned phone - backend will use env creds + validate the number
-        const requestBody = {
+        const requestBody: {
+          toNumber: string;
+          body: string;
+          fromNumber: string;
+          contactName: string;
+          mediaBase64?: string;
+          mediaType?: string;
+        } = {
           toNumber: recipientPhone,
-          body: messageToSend,
+          body: messageToSend || (attachmentToSend ? "" : ""),
           fromNumber: userPhone,
           contactName: selectedMessage.contactName,
         };
+
+        if (mediaBase64) {
+          requestBody.mediaBase64 = mediaBase64;
+          requestBody.mediaType = attachmentToSend?.type || "image/jpeg";
+        }
         
         const token = localStorage.getItem("comsierge_token");
         if (!token) {
@@ -3017,7 +3050,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   ref={fileInputRef}
                   type="file"
                   className="hidden"
-                  accept="image/jpeg,image/png,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.jpg,.jpeg,.png,.gif,.pdf,.docx"
+                  accept="image/jpeg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
@@ -3029,7 +3062,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     }
 
                     if (!isAllowedAttachment(file)) {
-                      toast.error("Unsupported file type. Allowed: JPEG, PNG, GIF, PDF, DOCX.");
+                      toast.error("Only images allowed (JPEG, PNG, GIF)");
                       e.currentTarget.value = "";
                       return;
                     }
@@ -3722,6 +3755,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           <Camera className="w-3 h-3" />
                         </button>
                       </div>
+                      {contactEditForm.avatar && (
+                        <button
+                          type="button"
+                          onClick={() => setContactEditForm({ ...contactEditForm, avatar: "" })}
+                          className="mt-1.5 text-xs text-red-500 hover:text-red-600"
+                        >
+                          Remove photo
+                        </button>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">

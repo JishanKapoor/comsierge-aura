@@ -434,7 +434,7 @@ router.post("/list-numbers", async (req, res) => {
 // @access  Private (user)
 router.post("/send-sms", authMiddleware, async (req, res) => {
   try {
-    const { toNumber, body, fromNumber, contactName } = req.body;
+    const { toNumber, body, fromNumber, contactName, mediaBase64, mediaType } = req.body;
     
     if (!fromNumber) {
       return res.status(400).json({
@@ -443,10 +443,11 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       });
     }
     
-    if (!toNumber || !body) {
+    // Either body or media is required
+    if (!toNumber || (!body && !mediaBase64)) {
       return res.status(400).json({
         success: false,
-        message: "toNumber and body are required",
+        message: "toNumber and either body or media are required",
       });
     }
 
@@ -505,17 +506,51 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           message: `Phone number ${cleanFrom} does not have SMS capability enabled.`,
         });
       }
+      
+      // Check MMS capability if sending media
+      if (mediaBase64 && !validNumber.capabilities?.mms) {
+        return res.status(400).json({
+          success: false,
+          message: `Phone number ${cleanFrom} does not have MMS capability. Cannot send images.`,
+        });
+      }
     } catch (e) {
       console.error("Failed to validate Twilio number:", e.message);
       // Continue anyway - Twilio will reject if invalid
     }
 
     try {
-      const twilioMessage = await client.messages.create({
-        body: body,
+      // Build message options
+      const messageOptions = {
+        body: body || "",
         from: cleanFrom,
         to: cleanTo,
-      });
+      };
+
+      // If media is provided, we need to upload it and get a URL
+      // Twilio requires a publicly accessible URL for MMS
+      // For now, we can use a data URL approach via Twilio's media handling
+      // OR upload to a temporary storage service
+      let mediaUrl = null;
+      if (mediaBase64) {
+        // For simplicity, we'll save the base64 to a temp file and serve it
+        // Or use a cloud storage service. For MVP, let's use data URL trick
+        // Note: Twilio doesn't directly accept data URLs, we need a real URL
+        // Best approach: Upload to cloud storage (S3, Cloudinary, etc.)
+        
+        // For now, return an error explaining the limitation
+        // TODO: Implement cloud storage upload for MMS
+        console.log("📷 MMS requested - media type:", mediaType);
+        
+        // Try to send without body if we have media but no text
+        // Twilio does support sending MMS with just media
+        return res.status(400).json({
+          success: false,
+          message: "MMS (picture messaging) is not yet fully configured. Please send text messages only for now.",
+        });
+      }
+
+      const twilioMessage = await client.messages.create(messageOptions);
 
       console.log("✅ Twilio message sent:", twilioMessage.sid);
 
@@ -527,7 +562,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactPhone: cleanTo,
           contactName: contactName || "Unknown",
           direction: "outgoing",
-          body,
+          body: body || "[Image]",
           status: "sent", // Use a simple status value that's in the enum
           twilioSid: twilioMessage.sid,
           fromNumber: cleanFrom,
