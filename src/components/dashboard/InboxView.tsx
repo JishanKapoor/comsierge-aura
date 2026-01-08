@@ -142,6 +142,44 @@ const translateText = async (text: string, targetLang: string, sourceLang: strin
   }
 };
 
+// Compress image to reduce size before storing as base64
+const compressImage = (file: File, maxWidth = 200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        
+        // Scale down if needed
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"));
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+};
+
 const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -488,7 +526,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     notes: "",
     isFavorite: false,
     tags: [] as string[],
+    avatar: "",
   });
+  const contactPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [contactCustomTagInput, setContactCustomTagInput] = useState("");
   const [contactCustomTags, setContactCustomTags] = useState<string[]>([]);
@@ -1334,6 +1374,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       notes: selectedSavedContact?.notes || "",
       isFavorite: !!selectedSavedContact?.isFavorite,
       tags: selectedSavedContact?.tags || [],
+      avatar: selectedSavedContact?.avatar || "",
     });
     setContactCustomTagInput("");
     setShowContactModal(true);
@@ -1384,6 +1425,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           notes: contactEditForm.notes || undefined,
           isFavorite: contactEditForm.isFavorite,
           tags: contactEditForm.tags,
+          avatar: contactEditForm.avatar || undefined,
         });
         if (!success) {
           toast.error(error || "Failed to update contact");
@@ -1400,6 +1442,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   notes: contactEditForm.notes || undefined,
                   isFavorite: contactEditForm.isFavorite,
                   tags: contactEditForm.tags,
+                  avatar: contactEditForm.avatar || undefined,
                 }
               : c
           )
@@ -1413,6 +1456,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           notes: contactEditForm.notes || undefined,
           isFavorite: contactEditForm.isFavorite,
           tags: contactEditForm.tags,
+          avatar: contactEditForm.avatar || undefined,
         });
         if (!newContact) {
           toast.error(error || "Failed to create contact");
@@ -3641,10 +3685,40 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   <div className="p-4 space-y-3">
                     <div className="flex flex-col items-center">
                       <div className="relative">
-                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
-                          <span className="text-lg text-gray-700">{contactEditForm.firstName.charAt(0) || "?"}</span>
-                        </div>
-                        <button className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center" type="button">
+                        {contactEditForm.avatar ? (
+                          <img 
+                            src={contactEditForm.avatar} 
+                            alt="Contact" 
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                            <span className="text-lg text-gray-700">{contactEditForm.firstName.charAt(0) || "?"}</span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          ref={contactPhotoInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              try {
+                                const compressed = await compressImage(file, 200, 0.7);
+                                setContactEditForm({ ...contactEditForm, avatar: compressed });
+                              } catch (err) {
+                                console.error("Image compression failed:", err);
+                                toast.error("Failed to process image. Try a smaller file.");
+                              }
+                            }
+                          }}
+                        />
+                        <button 
+                          onClick={() => contactPhotoInputRef.current?.click()}
+                          className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-gray-800 text-white flex items-center justify-center hover:bg-gray-700 transition-colors" 
+                          type="button"
+                        >
                           <Camera className="w-3 h-3" />
                         </button>
                       </div>
