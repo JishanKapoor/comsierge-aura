@@ -123,6 +123,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   // Voicemail playback state
   const [playingVoicemailId, setPlayingVoicemailId] = useState<string | null>(null);
   const voicemailAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Active Twilio Call reference (for mute/unmute)
+  const activeCallRef = useRef<any>(null);
 
   // Transcript viewing state
   const [viewingTranscript, setViewingTranscript] = useState<{ 
@@ -780,6 +783,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           customCallerId: fromNumber // Pass Twilio number as caller ID
         },
       });
+      
+      // Store the call reference for mute/unmute
+      activeCallRef.current = call;
 
       // Set active call with ringing status
       const callStartTime = Date.now();
@@ -805,11 +811,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
       call.on("disconnect", () => {
         console.log("Call disconnected");
+        activeCallRef.current = null;
         setActiveCall(null);
         setIsCallingLoading(false);
       });
       
       call.on("cancel", () => {
+         activeCallRef.current = null;
          setActiveCall(null);
          setIsCallingLoading(false);
       });
@@ -1000,8 +1008,18 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
   const toggleMute = async () => {
     if (!activeCall) return;
-    setActiveCall(prev => prev ? { ...prev, isMuted: !prev.isMuted } : prev);
-    toast.info(activeCall.isMuted ? "Unmuted" : "Muted");
+    
+    // Actually mute/unmute the Twilio call
+    if (activeCallRef.current && typeof activeCallRef.current.mute === 'function') {
+      const newMuteState = !activeCall.isMuted;
+      activeCallRef.current.mute(newMuteState);
+      setActiveCall(prev => prev ? { ...prev, isMuted: newMuteState } : prev);
+      toast.info(newMuteState ? "Muted" : "Unmuted");
+    } else {
+      // Fallback for non-browser calls
+      setActiveCall(prev => prev ? { ...prev, isMuted: !prev.isMuted } : prev);
+      toast.info(activeCall.isMuted ? "Unmuted" : "Muted");
+    }
   };
 
   const toggleHold = async () => {
@@ -1218,23 +1236,23 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       return;
     }
     
-    const creds = getTwilioCredentials();
     let transferNum = transferCallTo.replace(/[^\d+]/g, "");
     if (!transferNum.startsWith("+")) {
       transferNum = "+1" + transferNum;
     }
     
-    if (creds && activeCall.callSid) {
+    if (activeCall.callSid) {
       try {
+        const token = localStorage.getItem("comsierge_token");
         const response = await fetch(`${API_BASE_URL}/api/twilio/transfer-call`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": token ? `Bearer ${token}` : "",
+          },
           body: JSON.stringify({
-            accountSid: creds.accountSid,
-            authToken: creds.authToken,
             callSid: activeCall.callSid,
             transferTo: transferNum,
-            fromNumber: creds.fromNumber,
           }),
         });
         const data = await response.json();
@@ -1243,6 +1261,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           return;
         }
         toast.success(`Call transferred to ${transferCallTo.trim()}`);
+        activeCallRef.current = null;
         setActiveCall(null);
       } catch (error) {
         console.error("Transfer call error:", error);
@@ -1250,7 +1269,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
         return;
       }
     } else {
-      toast.success(`Transferring call to ${transferCallTo.trim()} (simulated)`);
+      toast.error("No active call to transfer");
     }
     
     setShowTransferCall(false);

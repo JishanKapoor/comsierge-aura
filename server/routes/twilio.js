@@ -2947,15 +2947,24 @@ router.post("/hold-call", async (req, res) => {
 // @route   POST /api/twilio/transfer-call
 // @desc    Transfer a call to another number
 // @access  Private (user)
-router.post("/transfer-call", async (req, res) => {
+router.post("/transfer-call", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body);
+    // Resolve Twilio config from user's phone number (not from body)
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body, userPhoneNumber);
     const { callSid, transferTo } = req.body;
 
-    if (!accountSid || !authToken || !callSid || !transferTo) {
+    if (!callSid || !transferTo) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, callSid, transferTo",
+        message: "callSid and transferTo are required",
+      });
+    }
+    
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found. Contact admin.",
       });
     }
 
