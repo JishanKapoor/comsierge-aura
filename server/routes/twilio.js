@@ -1423,17 +1423,18 @@ router.post("/webhook/voice", async (req, res) => {
               reason: "transfer_rule"
             });
             
-            // Transfer DIRECTLY to target number
+            // Transfer with "press 1 to accept" screening to prevent carrier voicemail
             const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
             const dial = response.dial({
               callerId: From, // Show original caller ID
-              answerOnBridge: true,
               timeout: 30,
               action: `${webhookBase}/api/twilio/webhook/forward-status`
             });
-            // Best-effort: prevent connecting caller to target's voicemail.
-            // If Twilio supports this attr for <Number>, it will detect machines and avoid bridging.
-            dial.number({ machineDetection: "Enable" }, transferTargetPhone);
+            // Use URL to screen the call with "press 1" - voicemail can't press 1
+            dial.number({
+              url: `${webhookBase}/api/twilio/webhook/forward-screen?callerName=${encodeURIComponent(callerInfo.contactName || From)}&comsiergeNumber=${encodeURIComponent(To)}`,
+              method: "POST"
+            }, transferTargetPhone);
             
             res.type("text/xml");
             return res.send(response.toString());
@@ -1533,17 +1534,19 @@ router.post("/webhook/voice", async (req, res) => {
             matchedRule: matchedRule?.rule
           });
           
-          // Forward to personal number with timeout, then voicemail
+          // Forward with "press 1 to accept" screening to prevent carrier voicemail
           const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
           const dial = response.dial({
-            // Show the Comsierge number to the user (agent). Caller should never be routed to agent voicemail.
+            // Show the Comsierge number to the user (agent).
             callerId: To,
-            answerOnBridge: true,
             timeout: 25,
             action: `${webhookBase}/api/twilio/webhook/forward-status`
           });
-          // Best-effort: prevent connecting caller to the agent's carrier voicemail.
-          dial.number({ machineDetection: "Enable" }, forwardingNumber);
+          // Use URL to screen the call with "press 1" - voicemail can't press 1
+          dial.number({
+            url: `${webhookBase}/api/twilio/webhook/forward-screen?callerName=${encodeURIComponent(callerInfo.contactName || From)}&comsiergeNumber=${encodeURIComponent(To)}`,
+            method: "POST"
+          }, forwardingNumber);
           
         } else {
           // No matching rule or no forwarding number - log as missed, don't ring
@@ -1596,6 +1599,59 @@ router.post("/webhook/voice", async (req, res) => {
     console.error("Voice webhook error stack:", error.stack);
     // response already defined at top of function
     response.say("Sorry, an error occurred.");
+    res.type("text/xml");
+    res.send(response.toString());
+  }
+});
+
+// @route   POST /api/twilio/webhook/forward-screen
+// @desc    Screen forwarded calls with "press 1 to accept" - prevents carrier voicemail from answering
+// @access  Public (Twilio webhook)
+router.post("/webhook/forward-screen", async (req, res) => {
+  try {
+    const { callerName, comsiergeNumber } = req.query;
+    const { Digits, CallSid } = req.body;
+    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+    
+    console.log("📞 Forward Screen:", { callerName, comsiergeNumber, Digits, CallSid });
+    
+    const response = new twilio.twiml.VoiceResponse();
+    
+    // If user pressed 1, accept the call (bridge to caller)
+    if (Digits === "1") {
+      console.log("   ✅ User pressed 1 - accepting call");
+      // Empty response = bridge is established
+      res.type("text/xml");
+      return res.send(response.toString());
+    }
+    
+    // If user pressed something else, reject
+    if (Digits && Digits !== "1") {
+      console.log("   ❌ User declined call");
+      response.hangup();
+      res.type("text/xml");
+      return res.send(response.toString());
+    }
+    
+    // First time - prompt the user to press 1
+    const displayName = callerName || "Unknown caller";
+    const gather = response.gather({
+      numDigits: 1,
+      action: `${webhookBase}/api/twilio/webhook/forward-screen?callerName=${encodeURIComponent(callerName || "")}&comsiergeNumber=${encodeURIComponent(comsiergeNumber || "")}`,
+      method: "POST",
+      timeout: 8
+    });
+    gather.say({ voice: "alice" }, `Incoming call from ${displayName}. Press 1 to accept.`);
+    
+    // If no response after timeout, hang up (will trigger forward-status with no-answer)
+    response.hangup();
+    
+    res.type("text/xml");
+    res.send(response.toString());
+  } catch (error) {
+    console.error("Forward screen error:", error);
+    const response = new twilio.twiml.VoiceResponse();
+    response.hangup();
     res.type("text/xml");
     res.send(response.toString());
   }
