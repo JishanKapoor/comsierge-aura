@@ -6,6 +6,32 @@ import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
 
+function buildPhoneCandidates(...phones) {
+  const set = new Set();
+  for (const phone of phones) {
+    if (!phone) continue;
+    const raw = String(phone).trim();
+    if (!raw) continue;
+
+    set.add(raw);
+    set.add(raw.replace(/[^\d+]/g, ""));
+
+    const digits = raw.replace(/\D/g, "");
+    if (digits) {
+      set.add(digits);
+      if (digits.length === 10) {
+        set.add(`1${digits}`);
+        set.add(`+1${digits}`);
+      }
+      if (digits.length === 11 && digits.startsWith("1")) {
+        set.add(`+${digits}`);
+        set.add(digits.slice(1));
+      }
+    }
+  }
+  return Array.from(set);
+}
+
 // All routes require authentication
 router.use(authMiddleware);
 
@@ -75,13 +101,42 @@ router.get("/search", async (req, res) => {
       .skip(parseInt(skip))
       .limit(parseInt(limit));
 
+    // Resolve latest contact names for consistent UI.
+    const messageContactIds = Array.from(
+      new Set(
+        messages
+          .map((m) => m.contactId)
+          .filter(Boolean)
+          .map((id) => String(id))
+      )
+    );
+
+    const contactsById = new Map();
+    if (messageContactIds.length) {
+      const contacts = await Contact.find({
+        userId: req.user._id,
+        _id: { $in: messageContactIds },
+      }).select("_id name");
+
+      for (const contact of contacts) {
+        contactsById.set(String(contact._id), contact);
+      }
+    }
+
+    const responseMessages = messages.map((m) => {
+      const obj = m.toObject();
+      const c = obj.contactId ? contactsById.get(String(obj.contactId)) : null;
+      if (c?.name) obj.contactName = c.name;
+      return obj;
+    });
+
     const total = await Message.countDocuments(query);
 
     res.json({
       success: true,
-      count: messages.length,
+      count: responseMessages.length,
       total,
-      data: messages,
+      data: responseMessages,
     });
   } catch (error) {
     console.error("Search messages error:", error);
@@ -127,12 +182,63 @@ router.get("/conversations", async (req, res) => {
       lastMessageAt: -1 
     });
 
+    // Resolve latest contact names for consistent UI.
+    const conversationContactIds = Array.from(
+      new Set(
+        conversations
+          .map((c) => c.contactId)
+          .filter(Boolean)
+          .map((id) => String(id))
+      )
+    );
+
+    const contactsById = new Map();
+    const contactsByPhone = new Map();
+    if (conversationContactIds.length) {
+      const contacts = await Contact.find({
+        userId: req.user._id,
+        _id: { $in: conversationContactIds },
+      }).select("_id name");
+
+      for (const contact of contacts) {
+        contactsById.set(String(contact._id), contact);
+      }
+    }
+
+    // Fallback: resolve by phone for legacy conversations missing contactId
+    const convPhones = Array.from(
+      new Set(conversations.map((c) => c.contactPhone).filter(Boolean).map((p) => String(p)))
+    );
+    if (convPhones.length) {
+      const phoneCandidates = buildPhoneCandidates(...convPhones);
+      const phoneContacts = await Contact.find({
+        userId: req.user._id,
+        phone: { $in: phoneCandidates },
+      }).select("_id name phone");
+      for (const contact of phoneContacts) {
+        if (contact.phone) {
+          for (const key of buildPhoneCandidates(contact.phone)) {
+            contactsByPhone.set(String(key), contact);
+          }
+        }
+      }
+    }
+
+    const responseConversations = conversations.map((conv) => {
+      const obj = conv.toObject();
+      const c = obj.contactId
+        ? contactsById.get(String(obj.contactId))
+        : (obj.contactPhone ? contactsByPhone.get(String(obj.contactPhone)) : null);
+      if (c?.name) obj.contactName = c.name;
+      return obj;
+    });
+
     console.log(`Found ${conversations.length} conversations for user ${req.user._id}`);
 
     res.json({
       success: true,
-      count: conversations.length,
-      data: conversations,
+      count: responseConversations.length,
+      data: responseConversations,
     });
   } catch (error) {
     console.error("Get conversations error:", error);

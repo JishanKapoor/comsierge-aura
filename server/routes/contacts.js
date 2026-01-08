@@ -1,8 +1,38 @@
 import express from "express";
 import Contact from "../models/Contact.js";
+import Conversation from "../models/Conversation.js";
+import Message from "../models/Message.js";
+import CallRecord from "../models/CallRecord.js";
+import Rule from "../models/Rule.js";
 import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
+
+function buildPhoneCandidates(...phones) {
+  const set = new Set();
+  for (const phone of phones) {
+    if (!phone) continue;
+    const raw = String(phone).trim();
+    if (!raw) continue;
+
+    set.add(raw);
+    set.add(raw.replace(/[^\d+]/g, ""));
+
+    const digits = raw.replace(/\D/g, "");
+    if (digits) {
+      set.add(digits);
+      if (digits.length === 10) {
+        set.add(`1${digits}`);
+        set.add(`+1${digits}`);
+      }
+      if (digits.length === 11 && digits.startsWith("1")) {
+        set.add(`+${digits}`);
+        set.add(digits.slice(1));
+      }
+    }
+  }
+  return Array.from(set);
+}
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -91,6 +121,9 @@ router.put("/:id", async (req, res) => {
       });
     }
 
+    const oldName = contact.name;
+    const oldPhone = contact.phone;
+
     const { name, phone, email, company, notes, tags, avatar, isFavorite, isBlocked } = req.body;
     
     if (name) contact.name = name;
@@ -104,6 +137,46 @@ router.put("/:id", async (req, res) => {
     if (isBlocked !== undefined) contact.isBlocked = isBlocked;
 
     await contact.save();
+
+    // Keep denormalized names in sync across the app (Inbox/Calls/Rules).
+    // This prevents stale names from appearing in search and lists.
+    const phoneCandidates = buildPhoneCandidates(oldPhone, contact.phone);
+
+    if (contact.name) {
+      const nameUpdate = { contactName: contact.name };
+
+      await Conversation.updateMany(
+        {
+          userId: req.user._id,
+          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+        },
+        { $set: nameUpdate }
+      );
+
+      await Message.updateMany(
+        {
+          userId: req.user._id,
+          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+        },
+        { $set: nameUpdate }
+      );
+
+      await CallRecord.updateMany(
+        {
+          userId: req.user._id,
+          $or: [{ contactId: contact._id }, { contactPhone: { $in: phoneCandidates } }],
+        },
+        { $set: nameUpdate }
+      );
+
+      await Rule.updateMany(
+        {
+          userId: req.user._id,
+          "transferDetails.contactPhone": { $in: phoneCandidates },
+        },
+        { $set: { "transferDetails.contactName": contact.name } }
+      );
+    }
 
     res.json({
       success: true,

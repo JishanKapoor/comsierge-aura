@@ -5,6 +5,32 @@ import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
 
+function buildPhoneCandidates(...phones) {
+  const set = new Set();
+  for (const phone of phones) {
+    if (!phone) continue;
+    const raw = String(phone).trim();
+    if (!raw) continue;
+
+    set.add(raw);
+    set.add(raw.replace(/[^\d+]/g, ""));
+
+    const digits = raw.replace(/\D/g, "");
+    if (digits) {
+      set.add(digits);
+      if (digits.length === 10) {
+        set.add(`1${digits}`);
+        set.add(`+1${digits}`);
+      }
+      if (digits.length === 11 && digits.startsWith("1")) {
+        set.add(`+${digits}`);
+        set.add(digits.slice(1));
+      }
+    }
+  }
+  return Array.from(set);
+}
+
 // All routes require authentication
 router.use(authMiddleware);
 
@@ -55,10 +81,66 @@ router.get("/", async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
+    // Ensure consistent display names even if older records had stale contactName.
+    const contactIds = Array.from(
+      new Set(
+        calls
+          .map((c) => c.contactId)
+          .filter(Boolean)
+          .map((id) => String(id))
+      )
+    );
+
+    const contactsById = new Map();
+    const contactsByPhone = new Map();
+    if (contactIds.length) {
+      const contacts = await Contact.find({
+        userId: req.user._id,
+        _id: { $in: contactIds },
+      }).select("_id name phone");
+
+      for (const contact of contacts) {
+        contactsById.set(String(contact._id), contact);
+        if (contact.phone) {
+          for (const key of buildPhoneCandidates(contact.phone)) {
+            contactsByPhone.set(String(key), contact);
+          }
+        }
+      }
+    }
+
+    // Fallback: resolve by phone for legacy records missing contactId
+    const callPhones = Array.from(
+      new Set(calls.map((c) => c.contactPhone).filter(Boolean).map((p) => String(p)))
+    );
+    if (callPhones.length) {
+      const phoneCandidates = buildPhoneCandidates(...callPhones);
+      const contactsByPhoneCandidates = await Contact.find({
+        userId: req.user._id,
+        phone: { $in: phoneCandidates },
+      }).select("_id name phone");
+      for (const contact of contactsByPhoneCandidates) {
+        if (contact.phone) {
+          for (const key of buildPhoneCandidates(contact.phone)) {
+            contactsByPhone.set(String(key), contact);
+          }
+        }
+      }
+    }
+
+    const responseCalls = calls.map((call) => {
+      const obj = call.toObject();
+      const c = obj.contactId
+        ? contactsById.get(String(obj.contactId))
+        : (obj.contactPhone ? contactsByPhone.get(String(obj.contactPhone)) : null);
+      if (c?.name) obj.contactName = c.name;
+      return obj;
+    });
+
     res.json({
       success: true,
-      count: calls.length,
-      data: calls,
+      count: responseCalls.length,
+      data: responseCalls,
     });
   } catch (error) {
     console.error("Get calls error:", error);
