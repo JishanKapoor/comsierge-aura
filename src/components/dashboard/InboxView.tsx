@@ -1458,7 +1458,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           notes: contactEditForm.notes || undefined,
           isFavorite: contactEditForm.isFavorite,
           tags: contactEditForm.tags,
-          avatar: contactEditForm.avatar || undefined,
+          // Important: allow clearing avatar by sending empty string
+          avatar: contactEditForm.avatar,
         });
         if (!success) {
           toast.error(error || "Failed to update contact");
@@ -1475,7 +1476,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   notes: contactEditForm.notes || undefined,
                   isFavorite: contactEditForm.isFavorite,
                   tags: contactEditForm.tags,
-                  avatar: contactEditForm.avatar || undefined,
+                  avatar: contactEditForm.avatar,
                 }
               : c
           )
@@ -1489,7 +1490,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           notes: contactEditForm.notes || undefined,
           isFavorite: contactEditForm.isFavorite,
           tags: contactEditForm.tags,
-          avatar: contactEditForm.avatar || undefined,
+          avatar: contactEditForm.avatar,
         });
         if (!newContact) {
           toast.error(error || "Failed to create contact");

@@ -309,7 +309,8 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: editForm.notes || undefined,
         isFavorite: editForm.isFavorite,
         tags: editForm.tags,
-        avatar: editForm.avatar || undefined,
+        // Important: allow clearing avatar by sending empty string
+        avatar: editForm.avatar,
       };
       const { success, error } = await updateContactApi(selectedContact.id, updates);
       if (success) {
@@ -331,7 +332,8 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
         notes: editForm.notes || undefined,
         isFavorite: editForm.isFavorite,
         tags: editForm.tags,
-        avatar: editForm.avatar || undefined,
+        // Important: allow empty avatar (no photo)
+        avatar: editForm.avatar,
       };
       const { contact: newContact, error } = await createContactApi(contactData);
       if (newContact) {
