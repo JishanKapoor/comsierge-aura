@@ -3004,11 +3004,24 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
         `</Response>`
       );
 
-      // Try to find the active child leg of this call.
-      // For browser calls, callSid is typically the parent (client) leg.
+      // Try to find the active PSTN (child) leg of this call.
+      // IMPORTANT: The frontend may send either the parent (client leg) CallSid OR the child (PSTN) CallSid.
+      let parentSid = callSid;
       let childSid = null;
+
+      // If callSid is actually a child call, fetch to discover its parent.
       try {
-        const children = await client.calls.list({ parentCallSid: callSid, limit: 20 });
+        const callInfo = await client.calls(callSid).fetch();
+        if (callInfo?.parentCallSid) {
+          parentSid = callInfo.parentCallSid;
+        }
+      } catch (e) {
+        // Not fatal; we'll attempt transfer using the provided sid.
+        console.error("Transfer: failed to fetch call info:", e.message);
+      }
+
+      try {
+        const children = await client.calls.list({ parentCallSid: parentSid, limit: 20 });
         const activeChild = (children || []).find((c) =>
           ["in-progress", "ringing", "queued"].includes(String(c.status || "").toLowerCase())
         );
@@ -3017,19 +3030,23 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
         console.error("Transfer: failed to list child calls:", e.message);
       }
 
+      // Prefer redirecting the active PSTN leg; fallback to whichever sid we were given.
       const sidToRedirect = childSid || callSid;
       await client.calls(sidToRedirect).update({ twiml: buildTransferTwiml(transferTo) });
 
-      // Mark the call record as transferred so status webhooks don't overwrite it
-      await CallRecord.findOneAndUpdate(
-        { twilioCallSid: callSid },
-        { status: "transferred", transferredTo: transferTo }
+      // Mark the related CallRecord as transferred so status webhooks don't overwrite it.
+      // We try several possible SIDs depending on which one the client provided.
+      const sidCandidates = [callSid, parentSid, childSid, sidToRedirect].filter(Boolean);
+      await CallRecord.updateMany(
+        { twilioCallSid: { $in: sidCandidates } },
+        { $set: { status: "transferred", forwardedTo: transferTo } }
       );
 
       // End the agent leg if we redirected a different leg.
-      if (childSid && childSid !== callSid) {
+      // If the client passed the parentSid (agent/client leg), end it after redirect.
+      if (childSid && parentSid && parentSid !== childSid) {
         try {
-          await client.calls(callSid).update({ status: "completed" });
+          await client.calls(parentSid).update({ status: "completed" });
         } catch (e) {
           console.error("Transfer: failed to end agent leg:", e.message);
         }
@@ -3040,6 +3057,7 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
         message: "Call transferred successfully",
         data: {
           originalCallSid: callSid,
+          parentCallSid: parentSid,
           redirectedCallSid: sidToRedirect,
           childCallSid: childSid,
           transferTo: transferTo,
