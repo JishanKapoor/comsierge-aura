@@ -3057,15 +3057,24 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
 // @route   POST /api/twilio/send-dtmf
 // @desc    Send DTMF tones to an active call (for IVR navigation)
 // @access  Private (user)
-router.post("/send-dtmf", async (req, res) => {
+router.post("/send-dtmf", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
     const { callSid, digits } = req.body;
 
-    if (!accountSid || !authToken || !callSid || !digits) {
+    if (!callSid || !digits) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, callSid, digits",
+        message: "callSid and digits are required",
+      });
+    }
+
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken } = await resolveTwilioConfig({}, userPhoneNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found. Contact admin.",
       });
     }
 
@@ -3217,15 +3226,24 @@ router.post("/add-participant", async (req, res) => {
 // @route   POST /api/twilio/record-call
 // @desc    Start/stop recording an active call
 // @access  Private (user)
-router.post("/record-call", async (req, res) => {
+router.post("/record-call", authMiddleware, async (req, res) => {
   try {
-    const { accountSid, authToken } = await resolveTwilioConfig(req.body);
     const { callSid, action } = req.body;
 
-    if (!accountSid || !authToken || !callSid || !action) {
+    if (!callSid || !action) {
       return res.status(400).json({
         success: false,
-        message: "All fields are required: accountSid, authToken, callSid, action (start/stop)",
+        message: "callSid and action (start/stop) are required",
+      });
+    }
+
+    const userPhoneNumber = req.user?.phoneNumber;
+    const { accountSid, authToken } = await resolveTwilioConfig({}, userPhoneNumber);
+
+    if (!accountSid || !authToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Twilio credentials not found. Contact admin.",
       });
     }
 

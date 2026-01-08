@@ -1031,17 +1031,18 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const toggleHold = async () => {
     if (!activeCall) return;
     
-    const creds = getTwilioCredentials();
     const newHoldState = !activeCall.isOnHold;
     
-    if (creds && activeCall.callSid) {
+    if (activeCall.callSid) {
       try {
+        const token = localStorage.getItem("comsierge_token");
         const response = await fetch(`${API_BASE_URL}/api/twilio/hold-call`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": token ? `Bearer ${token}` : "",
+          },
           body: JSON.stringify({
-            accountSid: creds.accountSid,
-            authToken: creds.authToken,
             callSid: activeCall.callSid,
             hold: newHoldState,
           }),
@@ -1063,17 +1064,18 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const toggleRecording = async () => {
     if (!activeCall) return;
     
-    const creds = getTwilioCredentials();
     const newRecordingState = !activeCall.isRecording;
     
-    if (creds && activeCall.callSid) {
+    if (activeCall.callSid) {
       try {
+        const token = localStorage.getItem("comsierge_token");
         const response = await fetch(`${API_BASE_URL}/api/twilio/record-call`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": token ? `Bearer ${token}` : "",
+          },
           body: JSON.stringify({
-            accountSid: creds.accountSid,
-            authToken: creds.authToken,
             callSid: activeCall.callSid,
             action: newRecordingState ? "start" : "stop",
           }),
@@ -1095,16 +1097,16 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
   const sendDTMF = async (digit: string) => {
     if (!activeCall) return;
     
-    const creds = getTwilioCredentials();
-    
-    if (creds && activeCall.callSid) {
+    if (activeCall.callSid) {
       try {
+        const token = localStorage.getItem("comsierge_token");
         await fetch(`${API_BASE_URL}/api/twilio/send-dtmf`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": token ? `Bearer ${token}` : "",
+          },
           body: JSON.stringify({
-            accountSid: creds.accountSid,
-            authToken: creds.authToken,
             callSid: activeCall.callSid,
             digits: digit,
           }),
