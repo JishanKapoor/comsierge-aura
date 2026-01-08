@@ -1424,12 +1424,16 @@ router.post("/webhook/voice", async (req, res) => {
             });
             
             // Transfer DIRECTLY to target number
+            const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
             const dial = response.dial({
               callerId: From, // Show original caller ID
+              answerOnBridge: true,
               timeout: 30,
-              action: "/api/twilio/webhook/forward-status"
+              action: `${webhookBase}/api/twilio/webhook/forward-status`
             });
-            dial.number(transferTargetPhone);
+            // Best-effort: prevent connecting caller to target's voicemail.
+            // If Twilio supports this attr for <Number>, it will detect machines and avoid bridging.
+            dial.number({ machineDetection: "Enable" }, transferTargetPhone);
             
             res.type("text/xml");
             return res.send(response.toString());
@@ -1530,12 +1534,16 @@ router.post("/webhook/voice", async (req, res) => {
           });
           
           // Forward to personal number with timeout, then voicemail
+          const webhookBase = process.env.WEBHOOK_BASE_URL || `https://${req.get('host')}`;
           const dial = response.dial({
-            callerId: From, // Show original caller ID
+            // Show the Comsierge number to the user (agent). Caller should never be routed to agent voicemail.
+            callerId: To,
+            answerOnBridge: true,
             timeout: 25,
-            action: "/api/twilio/webhook/forward-status"
+            action: `${webhookBase}/api/twilio/webhook/forward-status`
           });
-          dial.number(forwardingNumber);
+          // Best-effort: prevent connecting caller to the agent's carrier voicemail.
+          dial.number({ machineDetection: "Enable" }, forwardingNumber);
           
         } else {
           // No matching rule or no forwarding number - log as missed, don't ring
@@ -1598,7 +1606,7 @@ router.post("/webhook/voice", async (req, res) => {
 // @access  Public (Twilio webhook)
 router.post("/webhook/forward-status", async (req, res) => {
   try {
-    const { CallSid, DialCallStatus, DialCallDuration, From, To } = req.body;
+    const { CallSid, DialCallStatus, DialCallDuration, From, To, AnsweredBy, DialCallAnsweredBy } = req.body;
     console.log("📞 Forward Status:", { CallSid, DialCallStatus, DialCallDuration, From, To });
     console.log("📞 Full forward-status body:", req.body);
     
@@ -1610,6 +1618,9 @@ router.post("/webhook/forward-status", async (req, res) => {
     // "no-answer" means they didn't pick up, "busy" means line was busy
     let finalStatus;
     let finalType;
+
+    const answeredBy = (DialCallAnsweredBy || AnsweredBy || "").toString().toLowerCase();
+    const answeredByMachine = answeredBy.includes("machine") || answeredBy.includes("fax") || answeredBy.includes("unknown");
     
     if (DialCallStatus === "answered") {
       // Actually answered the call
@@ -1618,7 +1629,11 @@ router.post("/webhook/forward-status", async (req, res) => {
     } else if (DialCallStatus === "completed") {
       // Call completed - need to check duration to determine if answered
       const duration = parseInt(DialCallDuration) || 0;
-      if (duration > 0) {
+      if (answeredByMachine) {
+        // Carrier voicemail / machine answered. Treat as not answered by human.
+        finalStatus = "no-answer";
+        finalType = "missed";
+      } else if (duration > 0) {
         // Had duration = was answered
         finalStatus = "completed";
         finalType = "incoming";
