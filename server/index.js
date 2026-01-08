@@ -15,6 +15,7 @@ import adminRoutes from "./routes/admin.js";
 import supportRoutes from "./routes/support.js";
 import remindersRoutes from "./routes/reminders.js";
 import translateRoutes from "./routes/translate.js";
+import mediaRoutes from "./routes/media.js";
 
 // Load environment variables with explicit path
 const __filename = fileURLToPath(import.meta.url);
@@ -73,6 +74,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/reminders", remindersRoutes);
 app.use("/api/translate", translateRoutes);
+app.use("/api/media", mediaRoutes);
 
 // Root route - shows API info
 app.get("/", (req, res) => {

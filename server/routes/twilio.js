@@ -7,6 +7,7 @@ import Conversation from "../models/Conversation.js";
 import Contact from "../models/Contact.js";
 import CallRecord from "../models/CallRecord.js";
 import Rule from "../models/Rule.js";
+import Media from "../models/Media.js";
 import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 
@@ -527,27 +528,37 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         to: cleanTo,
       };
 
-      // If media is provided, we need to upload it and get a URL
-      // Twilio requires a publicly accessible URL for MMS
-      // For now, we can use a data URL approach via Twilio's media handling
-      // OR upload to a temporary storage service
-      let mediaUrl = null;
+      // If media is provided, store it in MongoDB and create a public URL
       if (mediaBase64) {
-        // For simplicity, we'll save the base64 to a temp file and serve it
-        // Or use a cloud storage service. For MVP, let's use data URL trick
-        // Note: Twilio doesn't directly accept data URLs, we need a real URL
-        // Best approach: Upload to cloud storage (S3, Cloudinary, etc.)
-        
-        // For now, return an error explaining the limitation
-        // TODO: Implement cloud storage upload for MMS
         console.log("📷 MMS requested - media type:", mediaType);
         
-        // Try to send without body if we have media but no text
-        // Twilio does support sending MMS with just media
-        return res.status(400).json({
-          success: false,
-          message: "MMS (picture messaging) is not yet fully configured. Please send text messages only for now.",
-        });
+        try {
+          // Store media in MongoDB
+          const media = new Media({
+            data: mediaBase64,
+            mimeType: mediaType || "image/jpeg",
+            userId: req.user._id,
+          });
+          await media.save();
+          console.log("📷 Media saved to MongoDB with ID:", media._id);
+          
+          // Create public URL for Twilio to fetch
+          // Use the deployed Render URL or construct from request
+          const baseUrl = process.env.RENDER_EXTERNAL_URL || 
+                         process.env.API_BASE_URL || 
+                         `${req.protocol}://${req.get("host")}`;
+          const mediaUrl = `${baseUrl}/api/media/${media._id}`;
+          console.log("📷 Media URL for Twilio:", mediaUrl);
+          
+          // Add media URL to message options
+          messageOptions.mediaUrl = [mediaUrl];
+        } catch (mediaError) {
+          console.error("❌ Failed to save media:", mediaError);
+          return res.status(500).json({
+            success: false,
+            message: "Failed to process image for MMS",
+          });
+        }
       }
 
       const twilioMessage = await client.messages.create(messageOptions);
