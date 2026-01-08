@@ -1242,13 +1242,17 @@ router.post("/webhook/voice", async (req, res) => {
         console.error(`   ❌ Failed to create call record:`, recordErr.message);
       }
       
+      // Get webhook base URL
+      const webhookBase = process.env.WEBHOOK_BASE_URL || `${protocol}://${host}`;
+      
       const dial = response.dial({
         callerId: callerId,
         answerOnBridge: true,
         record: "record-from-answer-dual", // Record both legs separately for better transcription
         recordingStatusCallback: recordingCallbackUrl,
         recordingStatusCallbackMethod: "POST",
-        recordingStatusCallbackEvent: "completed"
+        recordingStatusCallbackEvent: "completed",
+        action: `${webhookBase}/api/twilio/webhook/dial-complete` // Handle dial completion
       });
 
       // Check if destination is a phone number or client
@@ -1955,6 +1959,63 @@ router.post("/webhook/connect", async (req, res) => {
   }
 });
 
+// @route   POST /api/twilio/webhook/dial-complete
+// @desc    Handle dial completion for browser calls - captures actual call outcome
+// @access  Public (Twilio webhook)
+router.post("/webhook/dial-complete", async (req, res) => {
+  try {
+    const { CallSid, DialCallStatus, DialCallDuration, DialCallSid, From, To } = req.body;
+    console.log(`📞 Dial Complete for browser call:`);
+    console.log(`   CallSid (parent): ${CallSid}`);
+    console.log(`   DialCallSid (child): ${DialCallSid}`);
+    console.log(`   DialCallStatus: ${DialCallStatus}`);
+    console.log(`   DialCallDuration: ${DialCallDuration}s`);
+    
+    // Map dial status to our status values
+    let dbStatus = "completed";
+    if (DialCallStatus === "completed" || DialCallStatus === "answered") {
+      dbStatus = "completed";
+    } else if (DialCallStatus === "busy") {
+      dbStatus = "busy";
+    } else if (DialCallStatus === "no-answer") {
+      dbStatus = "no-answer";
+    } else if (DialCallStatus === "failed") {
+      dbStatus = "failed";
+    } else if (DialCallStatus === "canceled") {
+      dbStatus = "canceled";
+    }
+    
+    // Update the CallRecord using the PARENT CallSid (which we stored)
+    const updated = await CallRecord.findOneAndUpdate(
+      { twilioCallSid: CallSid },
+      { 
+        status: dbStatus,
+        duration: parseInt(DialCallDuration) || 0 
+      },
+      { new: true }
+    );
+    
+    if (updated) {
+      console.log(`   ✅ Updated CallRecord to status: ${dbStatus}, duration: ${DialCallDuration}s`);
+    } else {
+      console.log(`   ⚠️ No CallRecord found for parent CallSid: ${CallSid}`);
+    }
+    
+    res.type("text/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup/>
+</Response>`);
+  } catch (error) {
+    console.error("Dial complete error:", error);
+    res.type("text/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup/>
+</Response>`);
+  }
+});
+
 // @route   POST /api/twilio/webhook/dial-status
 // @desc    Handle dial completion status
 // @access  Public (Twilio webhook)
@@ -1974,7 +2035,7 @@ router.post("/webhook/dial-status", async (req, res) => {
 // @access  Public (Twilio webhook)
 router.post("/webhook/status", async (req, res) => {
   try {
-    const { MessageSid, CallSid, MessageStatus, CallStatus, CallDuration, From, To } = req.body;
+    const { MessageSid, CallSid, MessageStatus, CallStatus, CallDuration, From, To, ParentCallSid } = req.body;
     
     if (MessageSid) {
       console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
@@ -1982,6 +2043,7 @@ router.post("/webhook/status", async (req, res) => {
     
     if (CallSid) {
       console.log(`📊 Call Status Update: ${CallSid} - ${CallStatus} - Duration: ${CallDuration || 0}s`);
+      console.log(`   ParentCallSid: ${ParentCallSid || 'none'}, From: ${From}, To: ${To}`);
       
       // Update the CallRecord with the final status
       // Map Twilio statuses to our status values
@@ -2001,7 +2063,8 @@ router.post("/webhook/status", async (req, res) => {
       // Only update on terminal statuses
       const terminalStatuses = ["completed", "busy", "no-answer", "failed", "canceled"];
       if (terminalStatuses.includes(CallStatus)) {
-        const updated = await CallRecord.findOneAndUpdate(
+        // Try to find by CallSid first
+        let updated = await CallRecord.findOneAndUpdate(
           { twilioCallSid: CallSid },
           { 
             status: dbStatus,
@@ -2010,10 +2073,25 @@ router.post("/webhook/status", async (req, res) => {
           { new: true }
         );
         
+        // If not found and there's a ParentCallSid, try that (for child legs of browser calls)
+        if (!updated && ParentCallSid) {
+          updated = await CallRecord.findOneAndUpdate(
+            { twilioCallSid: ParentCallSid },
+            { 
+              status: dbStatus,
+              duration: parseInt(CallDuration) || 0 
+            },
+            { new: true }
+          );
+          if (updated) {
+            console.log(`   ✅ Updated CallRecord via ParentCallSid ${ParentCallSid} to status: ${dbStatus}`);
+          }
+        }
+        
         if (updated) {
           console.log(`   ✅ Updated CallRecord ${CallSid} to status: ${dbStatus}, duration: ${CallDuration}s`);
         } else {
-          console.log(`   ⚠️ No CallRecord found for ${CallSid}`);
+          console.log(`   ⚠️ No CallRecord found for ${CallSid} or ParentCallSid ${ParentCallSid}`);
         }
       }
     }
