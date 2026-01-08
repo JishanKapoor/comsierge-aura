@@ -28,6 +28,44 @@ type View = "all" | "favorites";
 
 const availableTags = ["Family", "Work", "Friend", "VIP", "Business", "School", "Gym", "Medical"];
 
+// Compress image to reduce size before storing as base64
+const compressImage = (file: File, maxWidth = 200, quality = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+        
+        // Scale down if needed
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to get canvas context"));
+          return;
+        }
+        
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedDataUrl);
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+};
+
 interface ContactsTabProps {
   onNavigate?: (tab: string, contactPhone?: string) => void;
 }
@@ -798,14 +836,17 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                         ref={photoInputRef}
                         accept="image/*"
                         className="hidden"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setEditForm({ ...editForm, avatar: reader.result as string });
-                            };
-                            reader.readAsDataURL(file);
+                            try {
+                              // Compress image to avoid MongoDB size limits
+                              const compressed = await compressImage(file, 200, 0.7);
+                              setEditForm({ ...editForm, avatar: compressed });
+                            } catch (err) {
+                              console.error("Image compression failed:", err);
+                              toast.error("Failed to process image. Try a smaller file.");
+                            }
                           }
                         }}
                       />

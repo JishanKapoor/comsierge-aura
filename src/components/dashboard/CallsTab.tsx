@@ -144,14 +144,22 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
 
   // Note: Ringtone is handled by Twilio SDK - no custom ringtone needed
 
-  // Fetch contacts from API on mount
-  useEffect(() => {
-    const loadContactsData = async () => {
-      const data = await fetchContacts();
-      setContacts(data);
-    };
-    loadContactsData();
+  // Fetch contacts from API on mount and when tab becomes visible
+  const loadContactsData = useCallback(async () => {
+    const data = await fetchContacts();
+    setContacts(data);
   }, []);
+
+  useEffect(() => {
+    loadContactsData();
+  }, [loadContactsData]);
+
+  // Refresh contacts when window regains focus (user may have renamed in another tab)
+  useEffect(() => {
+    const handleFocus = () => loadContactsData();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [loadContactsData]);
 
   // Reusable function to load calls from API
   const loadCalls = useCallback(async (showLoading = false) => {
