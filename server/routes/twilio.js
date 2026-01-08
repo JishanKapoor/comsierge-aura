@@ -1951,6 +1951,7 @@ router.post("/webhook/connect", async (req, res) => {
     // To = Agent's personal phone
     // We want to use From (Twilio number) as caller ID when calling the customer
     const twilioNumber = From || Called;
+    const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
     
     console.log("📞 Connect webhook:");
     console.log(`   To (customer): ${to}`);
@@ -1968,7 +1969,7 @@ router.post("/webhook/connect", async (req, res) => {
       res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Connecting you now.</Say>
-  <Dial callerId="${twilioNumber}" timeout="30" action="/api/twilio/webhook/dial-status">
+  <Dial callerId="${twilioNumber}" timeout="30" action="${webhookBase}/api/twilio/webhook/dial-status">
     <Number>${to}</Number>
   </Dial>
   <Say voice="alice">The call could not be completed.</Say>
@@ -1990,7 +1991,7 @@ router.post("/webhook/connect", async (req, res) => {
     // First time - prompt the user
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather numDigits="1" action="/api/twilio/webhook/connect?to=${encodeURIComponent(to)}" method="POST" timeout="10">
+  <Gather numDigits="1" action="${webhookBase}/api/twilio/webhook/connect?to=${encodeURIComponent(to)}" method="POST" timeout="10">
     <Say voice="alice">Press 1 to connect, or hang up to cancel.</Say>
   </Gather>
   <Say voice="alice">No response received. Goodbye.</Say>
@@ -2065,17 +2066,72 @@ router.post("/webhook/dial-complete", async (req, res) => {
 });
 
 // @route   POST /api/twilio/webhook/dial-status
-// @desc    Handle dial completion status
+// @desc    Handle dial completion for "Call via My Phone" - THIS IS THE KEY ENDPOINT
 // @access  Public (Twilio webhook)
 router.post("/webhook/dial-status", async (req, res) => {
-  const { DialCallStatus, DialCallDuration } = req.body;
-  console.log(`📞 Dial completed: ${DialCallStatus}, Duration: ${DialCallDuration}s`);
-  
-  res.type("text/xml");
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+  try {
+    const { CallSid, DialCallStatus, DialCallDuration, DialCallSid, From, To } = req.body;
+    console.log(`📞 Dial-Status (Call via My Phone) - IMPORTANT:`);
+    console.log(`   CallSid (parent - user's phone): ${CallSid}`);
+    console.log(`   DialCallSid (child - destination): ${DialCallSid}`);
+    console.log(`   DialCallStatus: ${DialCallStatus}`);
+    console.log(`   DialCallDuration: ${DialCallDuration}s`);
+    console.log(`   Full body:`, req.body);
+    
+    // Map dial status to our status values
+    // CRITICAL: Use the DIAL duration, not the parent call duration
+    // DialCallDuration = actual conversation time with destination
+    let dbStatus;
+    if (DialCallStatus === "answered") {
+      dbStatus = "completed";
+    } else if (DialCallStatus === "completed") {
+      // Check duration - if > 0, they talked
+      const duration = parseInt(DialCallDuration) || 0;
+      dbStatus = duration > 0 ? "completed" : "no-answer";
+    } else if (DialCallStatus === "busy") {
+      dbStatus = "busy";
+    } else if (DialCallStatus === "no-answer") {
+      dbStatus = "no-answer";
+    } else if (DialCallStatus === "failed") {
+      dbStatus = "failed";
+    } else if (DialCallStatus === "canceled") {
+      dbStatus = "canceled";
+    } else {
+      dbStatus = "no-answer";
+    }
+    
+    console.log(`   📊 Final status: ${dbStatus}`);
+    
+    // Update CallRecord using the PARENT CallSid (that's what we stored)
+    const updated = await CallRecord.findOneAndUpdate(
+      { twilioCallSid: CallSid },
+      { 
+        status: dbStatus,
+        // Use DIAL duration - this is the actual conversation time
+        duration: parseInt(DialCallDuration) || 0
+      },
+      { new: true }
+    );
+    
+    if (updated) {
+      console.log(`   ✅ Updated CallRecord to status: ${dbStatus}, duration: ${DialCallDuration}s`);
+    } else {
+      console.log(`   ⚠️ No CallRecord found for CallSid: ${CallSid}`);
+    }
+    
+    res.type("text/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Hangup/>
 </Response>`);
+  } catch (error) {
+    console.error("Dial-status error:", error);
+    res.type("text/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Hangup/>
+</Response>`);
+  }
 });
 
 // @route   POST /api/twilio/webhook/status

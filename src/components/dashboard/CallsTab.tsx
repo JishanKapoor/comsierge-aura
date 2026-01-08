@@ -888,36 +888,22 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
             status: "initiated",
             callSid,
           });
-          // Refresh calls list
-          const updatedCalls = await fetchCalls();
-          setCalls(updatedCalls.map((record) => {
-            const formatDuration = (seconds: number): string | undefined => {
-              if (!seconds || seconds <= 0) return undefined;
-              const mins = Math.floor(seconds / 60);
-              const secs = seconds % 60;
-              if (mins === 0) return `${secs}s`;
-              return `${mins}m ${secs}s`;
-            };
-            const formatTimestamp = (dateStr: string): string => {
-              const date = new Date(dateStr);
-              const now = new Date();
-              const isToday = date.toDateString() === now.toDateString();
-              if (isToday) {
-                return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              }
-              return date.toLocaleDateString([], { month: "short", day: "numeric" });
-            };
-            return {
-              id: record.id,
-              name: record.contactName || record.contactPhone,
-              number: record.contactPhone,
-              time: formatTimestamp(record.createdAt),
-              duration: formatDuration(record.duration),
-              type: record.direction === "incoming" 
-                ? (record.status === "missed" ? "missed" : "incoming")
-                : "outgoing",
-            } as Call;
-          }));
+          // Refresh calls list immediately
+          loadCalls(false);
+          
+          // Auto-refresh every 5 seconds for 2 minutes to catch status updates
+          let refreshCount = 0;
+          const maxRefreshes = 24; // 2 minutes of 5-second intervals
+          const refreshInterval = setInterval(() => {
+            refreshCount++;
+            loadCalls(false);
+            if (refreshCount >= maxRefreshes) {
+              clearInterval(refreshInterval);
+            }
+          }, 5000);
+          
+          // Store interval ID to clean up if component unmounts
+          (window as any).__callRefreshInterval = refreshInterval;
         } catch (e) {
           console.error("Failed to save call record:", e);
         }
