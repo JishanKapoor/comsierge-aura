@@ -94,6 +94,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
     number: string;
     name?: string;
     startedAt: number;
+    connectedAt?: number; // When call was actually answered (for timer)
     isSpeakerOn: boolean;
     isMuted: boolean;
     isOnHold: boolean;
@@ -752,11 +753,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
       activeCallRef.current = call;
 
       // Set active call with ringing status
+      // startedAt is for tracking when call initiated, connectedAt is for timer
       const callStartTime = Date.now();
       setActiveCall({ 
         number, 
         name, 
-        startedAt: callStartTime, 
+        startedAt: callStartTime,
+        connectedAt: undefined, // Will be set when call connects
         isSpeakerOn: false,
         isMuted: false,
         isOnHold: false,
@@ -769,7 +772,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
 
       call.on("accept", (c) => {
         console.log("Call accepted");
-        setActiveCall(prev => prev ? { ...prev, status: "connected", callSid: c.parameters.CallSid } : null);
+        // Set connectedAt to NOW when the call is actually answered
+        setActiveCall(prev => prev ? { 
+          ...prev, 
+          status: "connected", 
+          callSid: c.parameters.CallSid,
+          connectedAt: Date.now() // Timer starts NOW when connected
+        } : null);
         setIsCallingLoading(false);
       });
 
@@ -950,9 +959,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
       }
     }
     
-    const durationMs = Date.now() - activeCall.startedAt;
+    // Use connectedAt for duration calculation (only count connected time)
+    const durationMs = activeCall.connectedAt ? Date.now() - activeCall.connectedAt : 0;
     const durationSec = Math.floor(durationMs / 1000);
-    const wasMissed = activeCall.status === "ringing";
+    const wasMissed = activeCall.status === "ringing" || !activeCall.connectedAt;
     
     // For server-controlled calls, the backend/webhooks are the source of truth.
     // Just refresh the call list instead of creating a local CallRecord.
@@ -1651,7 +1661,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
               )}
               {activeCall.status === "connected" && (
                 <div className="text-center">
-                  <span className="text-2xl font-mono text-green-400">{formatDuration(callNowMs - activeCall.startedAt)}</span>
+                  <span className="text-2xl font-mono text-green-400">{formatDuration(callNowMs - (activeCall.connectedAt || activeCall.startedAt))}</span>
                   <p className="text-xs text-gray-400 mt-1">Connected</p>
                 </div>
               )}
