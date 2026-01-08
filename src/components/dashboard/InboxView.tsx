@@ -1451,17 +1451,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         })
       );
 
-      // Also update conversations list to reflect the new name
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (normalizePhone(c.contactPhone) !== oldPhoneNorm) return c;
-          return {
-            ...c,
-            contactName: fullName,
-            contactPhone: selectedSavedContact ? phone : c.contactPhone,
-          };
-        })
-      );
+      // Messages list IS the conversations list - no separate setConversations needed
 
       toast.success(selectedSavedContact ? "Contact updated" : "Contact saved");
       setShowContactModal(false);
