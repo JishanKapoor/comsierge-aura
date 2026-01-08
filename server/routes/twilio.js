@@ -571,7 +571,25 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         }
       }
 
-      const twilioMessage = await client.messages.create(messageOptions);
+      console.log("📤 Sending message to Twilio with options:", JSON.stringify({
+        ...messageOptions,
+        body: messageOptions.body?.substring(0, 50) + "..." // Truncate body for logging
+      }, null, 2));
+
+      let twilioMessage;
+      try {
+        twilioMessage = await client.messages.create(messageOptions);
+      } catch (twilioError) {
+        console.error("❌ Twilio API error:", twilioError.message);
+        console.error("❌ Twilio error code:", twilioError.code);
+        console.error("❌ Twilio error details:", twilioError.moreInfo);
+        return res.status(400).json({
+          success: false,
+          message: `Twilio error: ${twilioError.message}`,
+          code: twilioError.code,
+          moreInfo: twilioError.moreInfo,
+        });
+      }
 
       console.log("✅ Twilio message sent:", twilioMessage.sid);
 

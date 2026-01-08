@@ -1107,7 +1107,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         if (mediaBase64) {
           requestBody.mediaBase64 = mediaBase64;
           requestBody.mediaType = attachmentToSend?.type || "image/jpeg";
+          console.log("📷 Sending MMS with media type:", requestBody.mediaType);
+          console.log("📷 Media base64 length:", mediaBase64.length);
         }
+        
+        console.log("📤 Sending message request:", {
+          toNumber: requestBody.toNumber,
+          fromNumber: requestBody.fromNumber,
+          hasMedia: !!requestBody.mediaBase64,
+          bodyLength: requestBody.body?.length || 0,
+        });
         
         const token = localStorage.getItem("comsierge_token");
         if (!token) {
