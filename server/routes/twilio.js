@@ -1794,8 +1794,12 @@ router.post("/webhook/forward-status", async (req, res) => {
     
     console.log(`   📊 Mapped status: ${DialCallStatus} -> ${finalStatus}, type: ${finalType}`);
     
+    // Don't overwrite calls that were already marked as transferred/forwarded
     const updated = await CallRecord.findOneAndUpdate(
-      { twilioCallSid: CallSid },
+      { 
+        twilioCallSid: CallSid,
+        status: { $nin: ["transferred", "forwarded"] }  // Skip if already transferred/forwarded
+      },
       { 
         status: finalStatus,
         type: finalType,
@@ -1807,7 +1811,13 @@ router.post("/webhook/forward-status", async (req, res) => {
     if (updated) {
       console.log(`   ✅ Updated CallRecord ${CallSid} to status: ${finalStatus}`);
     } else {
-      console.log(`   ⚠️ No CallRecord found for ${CallSid}`);
+      // Check if it was skipped due to being transferred
+      const existing = await CallRecord.findOne({ twilioCallSid: CallSid });
+      if (existing && (existing.status === "transferred" || existing.status === "forwarded")) {
+        console.log(`   ⏭️ Skipped update for ${CallSid} - already marked as ${existing.status}`);
+      } else {
+        console.log(`   ⚠️ No CallRecord found for ${CallSid}`);
+      }
     }
     
     // Get webhook base URL for voicemail action
@@ -2216,8 +2226,12 @@ router.post("/webhook/dial-complete", async (req, res) => {
     }
     
     // Update the CallRecord using the PARENT CallSid (which we stored)
+    // Don't overwrite calls that were already marked as transferred/forwarded
     const updated = await CallRecord.findOneAndUpdate(
-      { twilioCallSid: CallSid },
+      { 
+        twilioCallSid: CallSid,
+        status: { $nin: ["transferred", "forwarded"] }
+      },
       { 
         status: dbStatus,
         duration: parseInt(DialCallDuration) || 0 
@@ -2228,7 +2242,12 @@ router.post("/webhook/dial-complete", async (req, res) => {
     if (updated) {
       console.log(`   ✅ Updated CallRecord to status: ${dbStatus}, duration: ${DialCallDuration}s`);
     } else {
-      console.log(`   ⚠️ No CallRecord found for parent CallSid: ${CallSid}`);
+      const existing = await CallRecord.findOne({ twilioCallSid: CallSid });
+      if (existing && (existing.status === "transferred" || existing.status === "forwarded")) {
+        console.log(`   ⏭️ Skipped update for ${CallSid} - already marked as ${existing.status}`);
+      } else {
+        console.log(`   ⚠️ No CallRecord found for parent CallSid: ${CallSid}`);
+      }
     }
     
     res.type("text/xml");
@@ -2284,8 +2303,12 @@ router.post("/webhook/dial-status", async (req, res) => {
     console.log(`   📊 Final status: ${dbStatus}`);
     
     // Update CallRecord using the PARENT CallSid (that's what we stored)
+    // Don't overwrite calls that were already marked as transferred/forwarded
     const updated = await CallRecord.findOneAndUpdate(
-      { twilioCallSid: CallSid },
+      { 
+        twilioCallSid: CallSid,
+        status: { $nin: ["transferred", "forwarded"] }
+      },
       { 
         status: dbStatus,
         // Use DIAL duration - this is the actual conversation time
@@ -2297,7 +2320,12 @@ router.post("/webhook/dial-status", async (req, res) => {
     if (updated) {
       console.log(`   ✅ Updated CallRecord to status: ${dbStatus}, duration: ${DialCallDuration}s`);
     } else {
-      console.log(`   ⚠️ No CallRecord found for CallSid: ${CallSid}`);
+      const existing = await CallRecord.findOne({ twilioCallSid: CallSid });
+      if (existing && (existing.status === "transferred" || existing.status === "forwarded")) {
+        console.log(`   ⏭️ Skipped update for ${CallSid} - already marked as ${existing.status}`);
+      } else {
+        console.log(`   ⚠️ No CallRecord found for CallSid: ${CallSid}`);
+      }
     }
     
     res.type("text/xml");
@@ -2345,9 +2373,9 @@ router.post("/webhook/status", async (req, res) => {
 
         if (!record) {
           console.log(`   ⚠️ No CallRecord found for ${CallSid} or ParentCallSid ${ParentCallSid}`);
-        } else if (record.status === "transferred") {
-          // Don't overwrite transferred calls - they were intentionally ended
-          console.log(`   ⏭️ Skipping status update for transferred call ${matchedBy}`);
+        } else if (record.status === "transferred" || record.status === "forwarded") {
+          // Don't overwrite transferred/forwarded calls - they were intentionally ended or routed
+          console.log(`   ⏭️ Skipping status update for ${record.status} call ${matchedBy}`);
         } else {
           // Map Twilio statuses to our status values
           let dbStatus = CallStatus;

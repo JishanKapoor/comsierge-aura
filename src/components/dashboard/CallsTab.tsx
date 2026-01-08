@@ -1440,21 +1440,22 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5 flex-wrap">
                     {call.contactName}
-                    {/* Status badges */}
+                    {/* Status badges - check specific statuses first, then fallback to completed logic */}
+                    {call.status === "transferred" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Transferred</span>
+                    )}
+                    {call.status === "forwarded" && (
+                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Routed</span>
+                    )}
                     {call.status === "completed" && call.type === "outgoing" && (parseInt(call.duration || "0", 10) > 0) && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Connected</span>
                     )}
                     {call.status === "completed" && call.type === "incoming" && (parseInt(call.duration || "0", 10) > 0) && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Answered</span>
                     )}
-                    {call.status === "completed" && (parseInt(call.duration || "0", 10) === 0) && (
+                    {/* Only show "No Answer" for completed calls with 0 duration that weren't transferred/forwarded */}
+                    {call.status === "completed" && (parseInt(call.duration || "0", 10) === 0) && !call.forwardedTo && (
                       <span className="text-[10px] px-1 py-0.5 bg-orange-100 text-orange-700 rounded">No Answer</span>
-                    )}
-                    {call.status === "forwarded" && (
-                      <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Routed</span>
-                    )}
-                    {call.status === "transferred" && (
-                      <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Transferred</span>
                     )}
                     {call.status === "blocked" && (
                       <span className="text-[10px] px-1 py-0.5 bg-red-100 text-red-700 rounded">Blocked</span>
