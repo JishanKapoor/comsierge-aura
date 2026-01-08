@@ -410,6 +410,21 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
           if (mins === 0) return `${secs}s`;
           return `${mins}m ${secs}s`;
         };
+
+        const allowedStatuses: Array<NonNullable<Call["status"]>> = [
+          "initiated",
+          "ringing",
+          "in-progress",
+          "completed",
+          "busy",
+          "failed",
+          "no-answer",
+          "canceled",
+          "missed",
+          "forwarded",
+          "blocked",
+          "transferred",
+        ];
         
         const formatTimestamp = (dateStr: string): string => {
           const date = new Date(dateStr);
@@ -435,14 +450,21 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                                   blockedPhones.has(normalizedPhone.replace("+1", "")) ||
                                   blockedPhones.has("+1" + normalizedPhone.replace("+1", ""));
         
+        const phone = record.contactPhone || record.toNumber || record.fromNumber || "";
+        const contactName = record.contactName || phone || "Unknown";
+        const status =
+          typeof record.status === "string" && (allowedStatuses as string[]).includes(record.status)
+            ? (record.status as Call["status"])
+            : undefined;
+
         return {
           id: record.id,
-          contactId: `phone:${record.contactPhone}`,
-          contactName: record.contactName || record.contactPhone,
-          phone: record.contactPhone,
+          contactId: `phone:${phone}`,
+          contactName,
+          phone,
           timestamp: formatTimestamp(record.createdAt),
           type: record.type,
-          status: record.status,
+          status,
           duration: formatDurationSec(record.duration),
           isBlocked: record.status === "blocked" || isBlockedContact,
           recordingUrl: record.recordingUrl,
@@ -731,9 +753,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       }
 
       // 2. Initialize Device
-      const newDevice = new Device(data.token, {
-        codecPreferences: ["opus", "pcmu"],
-      });
+      const newDevice = new Device(data.token);
 
       newDevice.on("error", (error) => {
         console.error("Twilio Device Error:", error);
@@ -875,39 +895,23 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
       setSearchQuery("");
       setPendingCall(null);
       setIsCallingLoading(false);
-      
-      // Log the call to history
-      const callSid = data?.data?.callSid as string | undefined;
-      if (callSid) {
-        try {
-          await saveCallRecord({
-            contactPhone: number,
-            contactName: name,
-            direction: "outgoing",
-            duration: 0,
-            status: "initiated",
-            callSid,
-          });
-          // Refresh calls list immediately
-          loadCalls(false);
-          
-          // Auto-refresh every 5 seconds for 2 minutes to catch status updates
-          let refreshCount = 0;
-          const maxRefreshes = 24; // 2 minutes of 5-second intervals
-          const refreshInterval = setInterval(() => {
-            refreshCount++;
-            loadCalls(false);
-            if (refreshCount >= maxRefreshes) {
-              clearInterval(refreshInterval);
-            }
-          }, 5000);
-          
-          // Store interval ID to clean up if component unmounts
-          (window as any).__callRefreshInterval = refreshInterval;
-        } catch (e) {
-          console.error("Failed to save call record:", e);
+
+      // Backend creates the CallRecord for Click-to-Call. Just refresh/poll to show status changes.
+      loadCalls(false);
+
+      // Auto-refresh every 5 seconds for 2 minutes to catch status updates
+      let refreshCount = 0;
+      const maxRefreshes = 24; // 2 minutes of 5-second intervals
+      const refreshInterval = setInterval(() => {
+        refreshCount++;
+        loadCalls(false);
+        if (refreshCount >= maxRefreshes) {
+          clearInterval(refreshInterval);
         }
-      }
+      }, 5000);
+
+      // Store interval ID to clean up if component unmounts
+      (window as any).__callRefreshInterval = refreshInterval;
       
     } catch (error: any) {
       console.error("Bridge call failed:", error);
@@ -1389,11 +1393,14 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                   <p className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5 flex-wrap">
                     {call.contactName}
                     {/* Status badges */}
-                    {call.status === "completed" && call.type === "outgoing" && (
+                    {call.status === "completed" && call.type === "outgoing" && (parseInt(call.duration || "0", 10) > 0) && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Connected</span>
                     )}
-                    {call.status === "completed" && call.type === "incoming" && (
+                    {call.status === "completed" && call.type === "incoming" && (parseInt(call.duration || "0", 10) > 0) && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Answered</span>
+                    )}
+                    {call.status === "completed" && (parseInt(call.duration || "0", 10) === 0) && (
+                      <span className="text-[10px] px-1 py-0.5 bg-orange-100 text-orange-700 rounded">No Answer</span>
                     )}
                     {call.status === "forwarded" && (
                       <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded">Routed</span>
@@ -1466,8 +1473,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection }: CallsTabProps) => 
                       </>
                     ) : call.status === "completed" ? (
                       <>
-                        <Clock className="w-3 h-3 text-green-500" />
-                        {call.duration || "Connected"}
+                        {parseInt(call.duration || "0", 10) > 0 ? (
+                          <>
+                            <Clock className="w-3 h-3 text-green-500" />
+                            {call.duration || "-"}
+                          </>
+                        ) : (
+                          <>
+                            <PhoneMissed className="w-3 h-3 text-orange-500" />
+                            No Answer
+                          </>
+                        )}
                       </>
                     ) : call.status === "missed" || call.type === "missed" ? (
                       <>

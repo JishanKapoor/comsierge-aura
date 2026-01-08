@@ -82,6 +82,8 @@ router.post("/", async (req, res) => {
       type,
       status,
       twilioSid,
+      twilioCallSid,
+      callSid,
       fromNumber,
       toNumber,
       duration,
@@ -107,7 +109,10 @@ router.post("/", async (req, res) => {
       direction: direction || (type === "outgoing" ? "outgoing" : "incoming"),
       type,
       status: status || "completed",
-      twilioSid,
+      // Back-compat: older clients send `twilioSid` or `callSid`.
+      // Our Twilio webhooks update by `twilioCallSid`.
+      twilioSid: twilioSid || callSid,
+      twilioCallSid: twilioCallSid || callSid || twilioSid,
       fromNumber: fromNumber || req.user.phoneNumber,
       toNumber: toNumber || contactPhone,
       duration: duration || 0,

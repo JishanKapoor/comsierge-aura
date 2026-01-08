@@ -2148,54 +2148,49 @@ router.post("/webhook/status", async (req, res) => {
     if (CallSid) {
       console.log(`📊 Call Status Update: ${CallSid} - ${CallStatus} - Duration: ${CallDuration || 0}s`);
       console.log(`   ParentCallSid: ${ParentCallSid || 'none'}, From: ${From}, To: ${To}`);
-      
-      // Update the CallRecord with the final status
-      // Map Twilio statuses to our status values
-      let dbStatus = CallStatus;
-      if (CallStatus === "completed") {
-        dbStatus = "completed";
-      } else if (CallStatus === "busy") {
-        dbStatus = "busy";
-      } else if (CallStatus === "no-answer") {
-        dbStatus = "no-answer";
-      } else if (CallStatus === "failed") {
-        dbStatus = "failed";
-      } else if (CallStatus === "canceled") {
-        dbStatus = "canceled";
-      }
-      
+
+      const durationSeconds = parseInt(CallDuration) || 0;
+
       // Only update on terminal statuses
       const terminalStatuses = ["completed", "busy", "no-answer", "failed", "canceled"];
       if (terminalStatuses.includes(CallStatus)) {
-        // Try to find by CallSid first
-        let updated = await CallRecord.findOneAndUpdate(
-          { twilioCallSid: CallSid },
-          { 
-            status: dbStatus,
-            duration: parseInt(CallDuration) || 0 
-          },
-          { new: true }
-        );
-        
-        // If not found and there's a ParentCallSid, try that (for child legs of browser calls)
-        if (!updated && ParentCallSid) {
-          updated = await CallRecord.findOneAndUpdate(
-            { twilioCallSid: ParentCallSid },
-            { 
-              status: dbStatus,
-              duration: parseInt(CallDuration) || 0 
-            },
-            { new: true }
-          );
-          if (updated) {
-            console.log(`   ✅ Updated CallRecord via ParentCallSid ${ParentCallSid} to status: ${dbStatus}`);
-          }
+        // Find the record first (we sometimes need to avoid overwriting click-to-call dial duration)
+        let record = await CallRecord.findOne({ twilioCallSid: CallSid });
+        let matchedBy = CallSid;
+        if (!record && ParentCallSid) {
+          record = await CallRecord.findOne({ twilioCallSid: ParentCallSid });
+          matchedBy = ParentCallSid;
         }
-        
-        if (updated) {
-          console.log(`   ✅ Updated CallRecord ${CallSid} to status: ${dbStatus}, duration: ${CallDuration}s`);
-        } else {
+
+        if (!record) {
           console.log(`   ⚠️ No CallRecord found for ${CallSid} or ParentCallSid ${ParentCallSid}`);
+        } else {
+          // Map Twilio statuses to our status values
+          let dbStatus = CallStatus;
+
+          // IMPORTANT: If Twilio reports completed but duration is 0, treat as no-answer.
+          // This addresses the “shows connected even though I never picked up” symptom.
+          if (CallStatus === "completed" && durationSeconds === 0) {
+            dbStatus = "no-answer";
+          }
+
+          const update = { status: dbStatus };
+
+          // For Click-to-Call, dial-status webhook stores the *real talk time*.
+          // Don't overwrite that with the parent-leg CallDuration.
+          if (record.reason === "click_to_call") {
+            if (dbStatus !== "completed") {
+              update.duration = 0;
+            } else if ((record.duration || 0) === 0) {
+              // If dial-status never fired (e.g., agent never answered), keep duration 0.
+              update.duration = 0;
+            }
+          } else {
+            update.duration = durationSeconds;
+          }
+
+          const updated = await CallRecord.findByIdAndUpdate(record._id, update, { new: true });
+          console.log(`   ✅ Updated CallRecord via ${matchedBy} to status: ${updated?.status}, duration: ${updated?.duration || 0}s`);
         }
       }
     }
