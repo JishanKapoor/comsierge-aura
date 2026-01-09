@@ -983,8 +983,9 @@ router.post("/webhook/sms", async (req, res) => {
           }
           
           // Run full analysis only for INBOX messages from unknown senders
-          // For saved contacts, default to high priority (they're trusted)
-          if (category === "INBOX" && !senderContext.isSavedContact) {
+          // For saved contacts, we skip spam detection but STILL analyze for urgency/priority
+          if (category === "INBOX" || senderContext.isSavedContact) {
+            // Always analyze for urgency - saved contacts can send non-urgent messages too
             aiAnalysis = await analyzeIncomingMessage(
               Body,
               From,
@@ -1050,11 +1051,11 @@ router.post("/webhook/sms", async (req, res) => {
           // important = notify only for high + medium priority
           // urgent = notify only for high priority
           // 
-          // IMPORTANT: Saved contacts default to "high" priority (they're trusted)
-          // Only unknown senders get AI-determined priority
-          const messagePriority = senderContext.isSavedContact ? "high" : (aiAnalysis?.priority || "medium");
+          // Priority is determined by AI analysis for ALL messages (including saved contacts)
+          // Saved contacts are NOT spam, but they can still send non-urgent messages
+          const messagePriority = aiAnalysis?.priority || "medium";
           
-          console.log(`   Message priority: ${messagePriority} (isSavedContact: ${senderContext.isSavedContact})`);
+          console.log(`   Message priority: ${messagePriority} (AI-determined, isSavedContact: ${senderContext.isSavedContact})`);
           
           switch (priorityFilter) {
             case "all":
