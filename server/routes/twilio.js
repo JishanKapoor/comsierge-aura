@@ -982,7 +982,8 @@ router.post("/webhook/sms", async (req, res) => {
             shouldNotify = true;
           }
           
-          // Run full analysis only for INBOX messages that need it
+          // Run full analysis only for INBOX messages from unknown senders
+          // For saved contacts, default to high priority (they're trusted)
           if (category === "INBOX" && !senderContext.isSavedContact) {
             aiAnalysis = await analyzeIncomingMessage(
               Body,
@@ -999,9 +1000,18 @@ router.post("/webhook/sms", async (req, res) => {
           }
         } catch (aiError) {
           console.error(`   AI analysis failed:`, aiError.message);
-          // Default to HELD on error for safety
-          messageStatus = "held";
-          isHeld = true;
+          // On AI error: still notify for saved contacts, hold unknown senders
+          if (senderContext.isSavedContact) {
+            console.log(`   AI failed but sender is saved contact - still notifying`);
+            messageStatus = "received";
+            isHeld = false;
+            shouldNotify = true;
+          } else {
+            console.log(`   AI failed for unknown sender - holding for safety`);
+            messageStatus = "held";
+            isHeld = true;
+            shouldNotify = true; // Still forward held messages to personal phone
+          }
         }
         
         // Get user's message notification rules
@@ -1039,7 +1049,12 @@ router.post("/webhook/sms", async (req, res) => {
           // all = notify for all messages
           // important = notify only for high + medium priority
           // urgent = notify only for high priority
-          const messagePriority = aiAnalysis?.priority || "medium";
+          // 
+          // IMPORTANT: Saved contacts default to "high" priority (they're trusted)
+          // Only unknown senders get AI-determined priority
+          const messagePriority = senderContext.isSavedContact ? "high" : (aiAnalysis?.priority || "medium");
+          
+          console.log(`   Message priority: ${messagePriority} (isSavedContact: ${senderContext.isSavedContact})`);
           
           switch (priorityFilter) {
             case "all":
@@ -1134,6 +1149,7 @@ router.post("/webhook/sms", async (req, res) => {
         
         console.log(`   Saved to MongoDB for user ${user.email}`);
         console.log(`   Final status: ${messageStatus}, held: ${isHeld}, priority: ${isPriority}, notify: ${shouldNotify}`);
+        console.log(`   User's forwardingNumber: ${user.forwardingNumber || "NOT SET"}`);
         
         // FORWARD SMS to user's personal phone if shouldNotify is true
         // But skip if the sender IS the user's personal number (no point forwarding to yourself)
@@ -1141,8 +1157,10 @@ router.post("/webhook/sms", async (req, res) => {
         const normalizedForwardingNumber = user.forwardingNumber ? normalizeToE164ish(user.forwardingNumber) : null;
         const isSenderPersonalNumber = normalizedForwardingNumber && normalizedFrom === normalizedForwardingNumber;
         
+        console.log(`   Forward check: shouldNotify=${shouldNotify}, forwardingNumber=${user.forwardingNumber}, isSenderPersonalNumber=${isSenderPersonalNumber}`);
+        
         if (isSenderPersonalNumber) {
-          console.log(`   Skipping SMS forward - sender (${From}) is user's personal number`);
+          console.log(`   ❌ Skipping SMS forward - sender (${From}) is user's personal number`);
         } else if (shouldNotify && user.forwardingNumber) {
           console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);
           try {
