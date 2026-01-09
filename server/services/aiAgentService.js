@@ -830,12 +830,9 @@ const makeCallTool = tool(
         return "⚠️ I need either a contact name or phone number to make a call.";
       }
       
-      // Convert userId for Twilio lookup
-      const userObjectId = new mongoose.Types.ObjectId(userId);
-      
-      // Get user's Twilio account for calling
-      const twilioAccount = await TwilioAccount.findOne({ userId: userObjectId });
-      if (!twilioAccount) {
+      // Get user to find their assigned phone number
+      const user = await User.findById(userId);
+      if (!user?.phoneNumber) {
         return "⚠️ You don't have a phone number set up yet. Go to Settings to configure your Twilio number.";
       }
       
@@ -845,7 +842,7 @@ const makeCallTool = tool(
         confirm: true,
         contactName: resolvedName || phone,
         contactPhone: phone,
-        fromNumber: twilioAccount.phoneNumber,
+        fromNumber: user.phoneNumber,
         message: `📞 Ready to call ${resolvedName || phone}. How would you like to call?\n\n1. **VoIP** - Call through the app\n2. **SIP** - Call via your desk phone\n3. **Callback** - Have me call your phone first, then connect`
       });
     } catch (error) {
@@ -981,11 +978,10 @@ const getPhoneInfoTool = tool(
   async ({ userId }) => {
     try {
       const user = await User.findById(userId);
-      const twilioAccount = await TwilioAccount.findOne({ userId });
       
       let info = [];
-      if (twilioAccount) {
-        info.push(`📱 Your Comsierge Number: ${twilioAccount.phoneNumber}`);
+      if (user?.phoneNumber) {
+        info.push(`📱 Your Comsierge Number: ${user.phoneNumber}`);
       }
       if (user?.forwardingNumber) {
         info.push(`📲 Forwarding to: ${user.forwardingNumber}`);
@@ -1021,9 +1017,9 @@ const confirmActionTool = tool(
       
       // Handle confirmed actions
       if (action === "call") {
-        // Trigger actual call via Twilio
-        const twilioAccount = await TwilioAccount.findOne({ userId });
-        if (!twilioAccount) return "No phone configured.";
+        // Get user's phone number
+        const user = await User.findById(userId);
+        if (!user?.phoneNumber) return "No phone configured.";
         
         // This would integrate with Twilio to make the call
         // For now, return success message - frontend handles actual call
