@@ -712,15 +712,33 @@ ${conversationContext || "No history available."}`;
         if (selectedTool) {
           try {
             const result = await selectedTool.invoke(toolCall.args);
-            results.push(result);
+            results.push({ toolName: toolCall.name, result });
           } catch (toolError) {
             console.error(`Tool ${toolCall.name} error:`, toolError);
-            results.push(`Error executing ${toolCall.name}: ${toolError.message}`);
+            results.push({ toolName: toolCall.name, result: `Error: ${toolError.message}` });
           }
         }
       }
       
-      return results.join("\n");
+      // Send tool results back to LLM for natural language interpretation
+      const toolResultsText = results.map(r => `Tool ${r.toolName} result:\n${r.result}`).join("\n\n");
+      
+      const finalResponse = await llm.invoke([
+        new SystemMessage(`You are a helpful assistant. The user asked: "${message}"
+        
+Based on the tool results below, provide a natural, conversational response. 
+- Do NOT just repeat the raw data
+- Interpret the results and answer the user's question directly
+- Be concise and friendly
+- Do NOT use markdown formatting (no ** or * or #) or emojis
+- If they asked about meetings/appointments, tell them clearly if they have one or not, and the details
+
+Tool results:
+${toolResultsText}`),
+        new HumanMessage("Please provide a natural response based on these results."),
+      ]);
+      
+      return finalResponse.content || toolResultsText;
     }
     
     // No tool calls - return text response
