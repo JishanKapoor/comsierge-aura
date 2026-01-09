@@ -3077,7 +3077,7 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
     // Resolve Twilio config from user's phone number (not from body)
     const userPhoneNumber = req.user?.phoneNumber;
     const { accountSid, authToken, fromNumber } = await resolveTwilioConfig(req.body, userPhoneNumber);
-    const { callSid, transferTo } = req.body;
+    const { callSid, transferTo, duration } = req.body;
 
     if (!callSid || !transferTo) {
       return res.status(400).json({
@@ -3141,9 +3141,16 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
       // Mark the related CallRecord as transferred so status webhooks don't overwrite it.
       // We try several possible SIDs depending on which one the client provided.
       const sidCandidates = [callSid, parentSid, childSid, sidToRedirect].filter(Boolean);
+      
+      // Build update object with status and forwardedTo, plus duration if provided
+      const updateObj = { status: "transferred", forwardedTo: transferTo };
+      if (duration !== undefined && duration !== null) {
+        updateObj.duration = duration;
+      }
+      
       await CallRecord.updateMany(
         { twilioCallSid: { $in: sidCandidates } },
-        { $set: { status: "transferred", forwardedTo: transferTo } }
+        { $set: updateObj }
       );
 
       // End the agent leg if we redirected a different leg.

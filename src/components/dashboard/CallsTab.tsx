@@ -1225,6 +1225,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
     
     if (activeCall.callSid) {
       try {
+        // Calculate duration before transfer (time spent talking)
+        const durationMs = activeCall.connectedAt ? Date.now() - activeCall.connectedAt : 0;
+        const durationSec = Math.floor(durationMs / 1000);
+        
         const token = localStorage.getItem("comsierge_token");
         const response = await fetch(`${API_BASE_URL}/api/twilio/transfer-call`, {
           method: "POST",
@@ -1235,6 +1239,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
           body: JSON.stringify({
             callSid: activeCall.callSid,
             transferTo: transferNum,
+            duration: durationSec, // Send duration before transfer
           }),
         });
         const data = await response.json();
@@ -1519,6 +1524,11 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
                       <>
                         <Voicemail className="w-3 h-3 text-amber-500" />
                         {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}
+                      </>
+                    ) : call.status === "transferred" ? (
+                      <>
+                        <Clock className="w-3 h-3 text-blue-500" />
+                        {parseInt(call.duration || "0", 10) > 0 ? call.duration : "-"}
                       </>
                     ) : call.status === "completed" ? (
                       <>
