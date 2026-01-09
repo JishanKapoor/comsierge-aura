@@ -559,11 +559,11 @@ const summarizeConversationTool = tool(
       
       // Use LLM to summarize
       const summaryResponse = await llm.invoke([
-        new SystemMessage("You are a helpful assistant. Summarize the following conversation concisely, highlighting key points, any action items, and any scheduled meetings or appointments."),
+        new SystemMessage("You are a helpful assistant. Summarize the following conversation concisely, highlighting key points, any action items, and any scheduled meetings or appointments. IMPORTANT: Do NOT use any markdown formatting (no ** or * or #), do NOT use emojis. Use plain text only with simple line breaks for structure."),
         new HumanMessage(msgText)
       ]);
       
-      return `📝 Conversation Summary with ${contactName || contactPhone}:\n\n${summaryResponse.content}`;
+      return `Conversation Summary with ${contactName || contactPhone}:\n\n${summaryResponse.content}`;
     } catch (error) {
       console.error("Summarize conversation error:", error);
       return `Error summarizing: ${error.message}`;
