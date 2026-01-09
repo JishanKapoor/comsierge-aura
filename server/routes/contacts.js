@@ -92,6 +92,30 @@ router.post("/", async (req, res) => {
       avatar,
     });
 
+    // Sync contact name to existing conversations/messages/calls with this phone number
+    try {
+      const phoneCandidates = buildPhoneCandidates(phone);
+      
+      await Conversation.updateMany(
+        { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+        { $set: { contactName: name, contactId: contact._id } }
+      );
+      
+      await Message.updateMany(
+        { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+        { $set: { contactName: name, contactId: contact._id } }
+      );
+      
+      await CallRecord.updateMany(
+        { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+        { $set: { contactName: name, contactId: contact._id } }
+      );
+      
+      console.log(`✅ Contact "${name}" created, synced name to existing conversations/messages/calls`);
+    } catch (syncError) {
+      console.error("Name sync on create error (non-fatal):", syncError);
+    }
+
     res.status(201).json({
       success: true,
       message: "Contact created",
@@ -212,6 +236,30 @@ router.delete("/:id", async (req, res) => {
         message: "Contact not found",
       });
     }
+
+    // Update Conversations and Messages to remove the contact name
+    // Revert contactName back to the phone number
+    const phoneCandidates = buildPhoneCandidates(contact.phone);
+    
+    // Update conversations - set contactName back to phone number
+    await Conversation.updateMany(
+      { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+      { $set: { contactName: contact.phone } }
+    );
+    
+    // Update messages - set contactName back to phone number
+    await Message.updateMany(
+      { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+      { $set: { contactName: contact.phone } }
+    );
+    
+    // Update call records - set contactName back to phone number
+    await CallRecord.updateMany(
+      { userId: req.user._id, contactPhone: { $in: phoneCandidates } },
+      { $set: { contactName: contact.phone } }
+    );
+    
+    console.log(`✅ Contact "${contact.name}" deleted, reverted name in conversations/messages/calls`);
 
     res.json({
       success: true,
