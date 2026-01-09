@@ -63,7 +63,7 @@ router.get("/", async (req, res) => {
 // @access  Private
 router.post("/", async (req, res) => {
   try {
-    const { name, phone, email, company, notes, tags, avatar } = req.body;
+    const { name, phone, email, company, notes, tags, avatar, isFavorite, isBlocked } = req.body;
 
     if (!name || !phone) {
       return res.status(400).json({
@@ -72,8 +72,24 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Check for existing contact with same phone
-    const existing = await Contact.findOne({ userId: req.user._id, phone });
+    // Check for existing contact with same phone (handle different formatting)
+    const phoneCandidates = buildPhoneCandidates(phone);
+    const digitsOnly = String(phone || "").replace(/\D/g, "");
+    const last10 = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : "";
+
+    let existing = await Contact.findOne({
+      userId: req.user._id,
+      phone: { $in: phoneCandidates },
+    });
+
+    if (!existing && last10.length === 10) {
+      const regexPattern = last10.split("").join("[^0-9]*");
+      existing = await Contact.findOne({
+        userId: req.user._id,
+        phone: { $regex: regexPattern, $options: "i" },
+      });
+    }
+
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -90,6 +106,8 @@ router.post("/", async (req, res) => {
       notes,
       tags: tags || [],
       avatar,
+      ...(isFavorite !== undefined ? { isFavorite } : {}),
+      ...(isBlocked !== undefined ? { isBlocked } : {}),
     });
 
     // Sync contact name to existing conversations/messages/calls with this phone number
@@ -149,6 +167,35 @@ router.put("/:id", async (req, res) => {
     const oldPhone = contact.phone;
 
     const { name, phone, email, company, notes, tags, avatar, isFavorite, isBlocked } = req.body;
+
+    // If updating phone, prevent duplicates across different formatting
+    if (phone && phone !== contact.phone) {
+      const phoneCandidates = buildPhoneCandidates(phone);
+      const digitsOnly = String(phone || "").replace(/\D/g, "");
+      const last10 = digitsOnly.length >= 10 ? digitsOnly.slice(-10) : "";
+
+      let collision = await Contact.findOne({
+        userId: req.user._id,
+        _id: { $ne: contact._id },
+        phone: { $in: phoneCandidates },
+      });
+
+      if (!collision && last10.length === 10) {
+        const regexPattern = last10.split("").join("[^0-9]*");
+        collision = await Contact.findOne({
+          userId: req.user._id,
+          _id: { $ne: contact._id },
+          phone: { $regex: regexPattern, $options: "i" },
+        });
+      }
+
+      if (collision) {
+        return res.status(400).json({
+          success: false,
+          message: "Contact with this phone number already exists",
+        });
+      }
+    }
     
     if (name) contact.name = name;
     if (phone) contact.phone = phone;
