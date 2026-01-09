@@ -275,6 +275,12 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   }, [baseTags, selectedCallTags, selectedMessageTags]);
 
   const handleSave = async () => {
+    // Validate: if "Specific tags" is selected for calls but no tags chosen, show error
+    if (forwardCalls && callFilter === "tagged" && selectedCallTags.length === 0) {
+      toast.error("Please select at least one tag for call filtering, or choose a different filter.");
+      return;
+    }
+    
     // Save to localStorage for UI persistence
     localStorage.setItem(
       STORAGE_KEY,

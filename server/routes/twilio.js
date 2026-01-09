@@ -1508,7 +1508,8 @@ router.post("/webhook/voice", async (req, res) => {
               
             case "tags":
               const requiredTags = conditions.tags || [];
-              matches = requiredTags.length === 0 || requiredTags.some(tag => callerInfo.tags.includes(tag));
+              // If no tags specified, don't match anyone (user must select at least one tag)
+              matches = requiredTags.length > 0 && requiredTags.some(tag => callerInfo.tags.includes(tag));
               console.log(`      ${matches ? '✓' : '✗'} Mode 'tags' - required: [${requiredTags}], caller has: [${callerInfo.tags}]`);
               break;
               
@@ -1618,7 +1619,8 @@ router.post("/webhook/voice", async (req, res) => {
               
             case "tags":
               const requiredTags = conditions.tags || [];
-              matches = requiredTags.length === 0 || requiredTags.some(tag => callerInfo.tags.includes(tag));
+              // If no tags specified, don't match anyone (user must select at least one tag)
+              matches = requiredTags.length > 0 && requiredTags.some(tag => callerInfo.tags.includes(tag));
               console.log(`      ${matches ? '✓' : '✗'} Mode 'tags' - required: [${requiredTags}], caller has: [${callerInfo.tags}]`);
               break;
               
