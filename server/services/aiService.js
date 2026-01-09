@@ -150,9 +150,16 @@ Your job is to analyze incoming messages and provide actionable insights.
 
 Analyze each message and determine:
 1. Priority (high/medium/low):
-   - HIGH: Urgent matters, emergencies, time-sensitive requests, angry customers, VIP contacts
-   - MEDIUM: Standard business inquiries, follow-ups, general questions
-   - LOW: Newsletters, promotional content, non-urgent messages
+   - HIGH: Urgent matters, emergencies, time-sensitive info (meetings, appointments, deadlines, reminders with times/dates), 
+           requests requiring immediate action, angry/frustrated messages, health/safety concerns, financial matters,
+           anything where delay could cause the recipient to miss something or suffer consequences
+   - MEDIUM: General questions, casual conversation, follow-ups with no urgency, status updates
+   - LOW: Newsletters, promotional content, spam, forwards, memes, purely social messages with no action needed
+
+   IMPORTANT: If a message mentions a specific time, date, deadline, or meeting - it is HIGH priority.
+   Examples of HIGH: "Meeting at 6", "Call me back ASAP", "Your appointment is tomorrow", "Deadline is Friday"
+   Examples of MEDIUM: "Hey how are you", "Just checking in", "Thanks for your help"
+   Examples of LOW: "LOL", "haha", "👍", chain messages, promotional texts
 
 2. Should Hold (true/false):
    - Hold messages that need human review before responding
