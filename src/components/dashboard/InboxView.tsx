@@ -2151,16 +2151,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
     // Delete via API
     try {
-      const token = localStorage.getItem("comsierge_token");
-      const response = await fetch(`/api/messages/conversation/${encodeURIComponent(phone)}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-      });
+      const success = await deleteConversation(phone);
       
-      if (!response.ok) {
+      if (!success) {
         throw new Error("Delete failed");
       }
       

@@ -446,15 +446,9 @@ router.put("/conversation/:contactPhone", async (req, res) => {
 router.delete("/conversation/:contactPhone", async (req, res) => {
   try {
     const rawPhone = req.params.contactPhone;
-    const normalizedPhone = normalizePhone(rawPhone);
     
-    // Try multiple phone formats to ensure we catch the record
-    const phoneVariations = [
-      rawPhone,
-      normalizedPhone,
-      normalizedPhone.replace(/^\+1/, ""),
-      `+1${normalizedPhone.replace(/^\+1/, "").replace(/^\+/, "")}`,
-    ].filter(p => p);
+    // Use buildPhoneCandidates for comprehensive phone matching
+    const phoneVariations = buildPhoneCandidates(rawPhone);
 
     console.log(`Deleting conversation for phone: ${rawPhone}, variations:`, phoneVariations);
 
