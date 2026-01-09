@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { isValidUsPhoneNumber } from "@/lib/validations";
 import { Contact } from "./types";
-import { fetchContacts, createContact as createContactApi, updateContact as updateContactApi, deleteContact as deleteContactApi } from "./contactsApi";
+import { fetchContacts, createContact as createContactApi, updateContact as updateContactApi, deleteContact as deleteContactApi, onContactsChange } from "./contactsApi";
 import { useAuth } from "@/contexts/AuthContext";
 import { ContactSkeleton } from "./LoadingSkeletons";
 
@@ -169,6 +169,14 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       loadContacts(false);
     }, 15000);
     return () => clearInterval(pollInterval);
+  }, [loadContacts]);
+
+  // React immediately to contact changes from other screens (Inbox, etc.)
+  useEffect(() => {
+    const unsubscribe = onContactsChange(() => {
+      loadContacts(false);
+    });
+    return unsubscribe;
   }, [loadContacts]);
 
   // Close menu on outside click
