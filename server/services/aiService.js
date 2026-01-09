@@ -228,15 +228,15 @@ const graphState = {
 async function classifySpam(state) {
   try {
     const { message, senderPhone, senderName, conversationHistory, senderContext } = state;
-    
-    // Calculate key variables
+
     const isSavedContact = senderContext.isSavedContact || senderContext.isFavorite || false;
     const userSentCount = conversationHistory
-      ? conversationHistory.filter(m => m.direction === "outbound" || m.direction === "outgoing").length
+      ? conversationHistory.filter((m) => m.direction === "outbound" || m.direction === "outgoing").length
       : 0;
+
     const normalizedMessage = String(message || "").trim().toLowerCase();
-    
-    // RULE 1: SAVED CONTACT → INBOX (instant, no AI needed)
+
+    // RULE 1: SAVED CONTACT → INBOX (instant)
     if (isSavedContact) {
       console.log("   [FastClassify] Saved contact → INBOX");
       return {
@@ -250,16 +250,14 @@ async function classifySpam(state) {
           spamProbability: 0,
           isSpam: false,
           isHeld: false,
-          reasoning: "Saved contact - messages from contacts in address book are always delivered to inbox.",
+          reasoning: "Saved contact - always inbox.",
         },
       };
     }
-    
-    // RULE 2: ESTABLISHED CONVERSATION (user has replied before)
-    // Once you've replied to someone, their messages ALWAYS go to inbox - NEVER spam
+
+    // RULE 2: ESTABLISHED CONVERSATION → INBOX (always)
     if (userSentCount > 0) {
       console.log(`   [FastClassify] Established conversation (${userSentCount} replies) → INBOX (always)`);
-      
       return {
         ...state,
         spamAnalysis: {
@@ -275,23 +273,20 @@ async function classifySpam(state) {
         },
       };
     }
-    
-    // RULE 3: FIRST CONTACT (unknown sender, user never replied)
-    // Only OBVIOUS SPAM goes to spam. Everything else (including "hey", greetings, normal messages) → INBOX
 
-    // Deterministic guardrail: short greetings are never spam.
-    // This protects against occasional LLM misclassification and cases where history/contact matching is missing.
+    // RULE 3: FIRST CONTACT → SPAM ONLY IF PROMOTIONAL/AUTOMATED
+    // Deterministic guardrail: common short greetings are never spam.
     if (
       normalizedMessage.length > 0 &&
-      normalizedMessage.length <= 24 &&
-      /^(hey|hi|hello|hiya|yo|sup|whats up|what's up)[!?.\s]*$/.test(normalizedMessage)
+      normalizedMessage.length <= 32 &&
+      /^(me|hey|hi|hello|hiya|yo|sup|whats up|what's up)[!?.\s]*$/.test(normalizedMessage)
     ) {
       console.log("   [FastClassify] Greeting guardrail → INBOX");
       return {
         ...state,
         spamAnalysis: {
           category: "INBOX",
-          senderTrust: "medium",
+          senderTrust: "low",
           intent: "conversational",
           behaviorPattern: "normal",
           contentRiskLevel: "none",
@@ -302,76 +297,60 @@ async function classifySpam(state) {
         },
       };
     }
-    
-    const prompt = `You are a spam classifier for FIRST-TIME messages from UNKNOWN senders.
 
-MESSAGE: "${message}"
-FROM: ${senderName || senderPhone || "Unknown"}
+    const looksPromotionalSpam = (text) => {
+      const t = String(text || "").toLowerCase();
+      if (!t.trim()) return false;
 
-ONLY mark as SPAM if the message is OBVIOUS automated spam:
-- Financial scams (crypto, wire money, investment schemes, Nigerian prince)
-- Phishing (verify account, confirm password, click link to avoid suspension)
-- Lottery/prize claims ("You won!")
-- Unsolicited product sales (warranties, insurance, medications)
-- Mass-marketing templates with generic pitches
+      const hasUrl = /(https?:\/\/|www\.|\bbit\.ly\b|\bt\.co\b|\bgoo\.gl\b|\bwa\.me\b)/i.test(t);
+      const hasOptOut = /(reply\s+stop|text\s+stop|unsubscribe|opt\s*out|stop\s+to\s+stop)/i.test(t);
+      const hasPromoWords = /(free|deal|discount|offer|promo|promotion|limited\s*time|sale|coupon|win|winner|prize|giveaway|gift\s*card)/i.test(t);
+      const hasScamWords = /(verify\s+your|account\s+suspended|password|bank|wire\s+money|crypto|investment|loan|credit\s+score|bitcoin)/i.test(t);
+      const hasMoneyHook = /(\$\s?\d+|\b\d{2,}%\b|earn\s+\$|make\s+\$)/i.test(t);
 
-EVERYTHING ELSE goes to INBOX, including:
-- Greetings like "hey", "hi", "hello", "what's up"
-- Questions or personal messages
-- Short messages
-- Anything that could be from a real person trying to reach them
+      if (hasOptOut) return true;
+      if (hasUrl && (hasPromoWords || hasScamWords || hasMoneyHook)) return true;
+      if (hasPromoWords && hasMoneyHook) return true;
 
-Default to INBOX. Only use SPAM for obvious automated garbage.
+      return false;
+    };
 
-Respond with JSON only:
-{"category": "SPAM" | "INBOX", "reason": "brief explanation"}`;
+    const isSpam = looksPromotionalSpam(message);
+    const reasoning = isSpam
+      ? "Unknown sender promotional/marketing pattern detected"
+      : "Unknown sender but not promotional - defaulting to inbox";
 
-    const response = await fastLlm.invoke([
-      new SystemMessage("You classify first-contact messages. Respond with JSON only. Default to INBOX."),
-      new HumanMessage(prompt),
-    ]);
-    
-    let result = { category: "INBOX", reason: "First contact - allowing through" };
-    try {
-      const text = response.content.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch (e) { /* use default */ }
-    
-    console.log(`   [FastClassify] First contact → ${result.category}: ${result.reason}`);
-    
-    // SPAM and HELD are the same thing
-    const isSpam = result.category === "SPAM";
-    
+    console.log(`   [FastClassify] First contact → ${isSpam ? "SPAM" : "INBOX"}: ${reasoning}`);
+
     return {
       ...state,
       spamAnalysis: {
         category: isSpam ? "SPAM" : "INBOX",
         senderTrust: isSpam ? "none" : "low",
-        intent: isSpam ? "deceptive" : "conversational",
-        behaviorPattern: isSpam ? "scripted" : "normal",
-        contentRiskLevel: isSpam ? "high" : "none",
-        spamProbability: isSpam ? 95 : 5,
-        isSpam: isSpam,
-        isHeld: isSpam, // SPAM = HELD, same thing
-        reasoning: result.reason,
+        intent: isSpam ? "promotional" : "conversational",
+        behaviorPattern: isSpam ? "automated" : "normal",
+        contentRiskLevel: isSpam ? "medium" : "none",
+        spamProbability: isSpam ? 85 : 5,
+        isSpam,
+        isHeld: isSpam,
+        reasoning,
       },
     };
   } catch (error) {
     console.error("Fast classification error:", error);
-    // Default to HELD on error for safety
+    // Product rule: default to INBOX if uncertain
     return {
       ...state,
       spamAnalysis: {
-        category: "HELD",
-        senderTrust: "medium",
+        category: "INBOX",
+        senderTrust: "low",
         intent: "conversational",
         behaviorPattern: "normal",
         contentRiskLevel: "none",
         spamProbability: 0,
         isSpam: false,
-        isHeld: true,
-        reasoning: "Classification error - holding for review",
+        isHeld: false,
+        reasoning: "Classification error - defaulting to inbox",
       },
     };
   }
