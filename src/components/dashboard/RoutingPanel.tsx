@@ -172,6 +172,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   };
 
   useEffect(() => {
+    // First try to load from localStorage for instant UI
     const saved = safeParseJson<{
       forwardCalls?: boolean;
       forwardMessages?: boolean;
@@ -181,14 +182,63 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       selectedMessageTags?: string[];
     }>(localStorage.getItem(STORAGE_KEY));
 
-    if (!saved) return;
-
-    if (typeof saved.forwardCalls === "boolean") setForwardCalls(saved.forwardCalls);
-    if (typeof saved.forwardMessages === "boolean") setForwardMessages(saved.forwardMessages);
-    if (saved.callFilter) setCallFilter(saved.callFilter);
-    if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
-    if (saved.messageFilter) setMessageFilter(saved.messageFilter);
-    if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
+    if (saved) {
+      if (typeof saved.forwardCalls === "boolean") setForwardCalls(saved.forwardCalls);
+      if (typeof saved.forwardMessages === "boolean") setForwardMessages(saved.forwardMessages);
+      if (saved.callFilter) setCallFilter(saved.callFilter);
+      if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
+      if (saved.messageFilter) setMessageFilter(saved.messageFilter);
+      if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
+    }
+    
+    // Then load from backend to ensure we're in sync
+    const loadRulesFromBackend = async () => {
+      try {
+        const token = localStorage.getItem("comsierge_token");
+        const response = await fetch(`${API_BASE_URL}/api/rules`, {
+          headers: { Authorization: token ? `Bearer ${token}` : "" }
+        });
+        
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const rules = data.data || [];
+        
+        // Find forward rule for calls
+        const callRule = rules.find((r: any) => r.type === "forward" && r.active);
+        if (callRule) {
+          setForwardCalls(true);
+          const mode = callRule.conditions?.mode || "all";
+          const modeToFilter: Record<string, CallFilter> = {
+            all: "all",
+            favorites: "favorites",
+            saved: "contacts",
+            tags: "tagged"
+          };
+          setCallFilter(modeToFilter[mode] || "all");
+          if (mode === "tags" && callRule.conditions?.tags) {
+            setSelectedCallTags(callRule.conditions.tags);
+          }
+        }
+        
+        // Find message-notify rule
+        const msgRule = rules.find((r: any) => r.type === "message-notify" && r.active);
+        if (msgRule) {
+          setForwardMessages(true);
+          const priorityFilter = msgRule.conditions?.priorityFilter || "all";
+          setMessageFilter(priorityFilter as MessageFilter);
+          if (msgRule.conditions?.notifyTags) {
+            setSelectedMessageTags(msgRule.conditions.notifyTags);
+          }
+        }
+        
+        console.log("📜 Loaded routing rules from backend:", { callRule, msgRule });
+      } catch (e) {
+        console.error("Failed to load routing rules from backend:", e);
+      }
+    };
+    
+    loadRulesFromBackend();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

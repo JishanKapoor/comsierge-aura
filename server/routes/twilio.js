@@ -1528,6 +1528,12 @@ router.post("/webhook/voice", async (req, res) => {
         });
         
         console.log(`   📜 Found ${forwardRules.length} active forward rules`);
+        console.log(`   📜 User's forwardingNumber: ${user.forwardingNumber || "NOT SET"}`);
+        
+        // Log all forward rules for debugging
+        for (const r of forwardRules) {
+          console.log(`   📜 Rule: "${r.rule}" | mode: ${r.conditions?.mode} | transferMode: ${r.transferDetails?.mode}`);
+        }
         
         // Determine if call should be forwarded based on rules
         let shouldForward = false;
