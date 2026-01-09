@@ -676,7 +676,20 @@ You have these tools - USE THEM when the user's intent matches:
 12. unblock_contact - Unblock a blocked contact
     Triggers: "unblock", "allow again", "remove block", "let them message"
 
-=== CRITICAL RULES ===
+=== CRITICAL RULES FOR UNDERSTANDING INTENT ===
+1. READ THE AI CHAT HISTORY CAREFULLY - it contains important context from previous messages
+2. When user provides info like "X is +1234567890" - they're giving you a phone number for X, NOT asking to rename something
+3. "forward calls to Mark" then "Mark is +123..." means: use +123 as the target for the forward rule
+4. "change it back" or "undo" - refer to the chat history to see what was changed
+5. When user says "[Name] is [phone]" after asking for a forward/transfer - they're providing the TARGET phone number
+
+=== INTERPRETING MULTI-STEP CONVERSATIONS ===
+- If user said "forward to Mark" and you asked for Mark's number, and they reply "+1234567890" or "Mark is +1234567890"
+  → Complete the forward rule with targetPhone=+1234567890
+- If user gives a second number like "[Name] is [another number]" - they might be adding an alternative number, ask for clarification
+- Always use chat history to understand what the user is trying to accomplish
+
+=== TOOL CALL RULES ===
 1. BE ACTION-ORIENTED - Execute immediately, don't ask unnecessary questions
 2. ALWAYS include these in tool calls:
    - userId: "${userId}"
@@ -690,7 +703,7 @@ You have these tools - USE THEM when the user's intent matches:
 8. When user says "unblock" → call unblock_contact with sourceContact and sourcePhone
 9. If no tool matches, analyze the conversation or answer the question
 
-=== CONVERSATION HISTORY ===
+=== CONVERSATION HISTORY (IMPORTANT - READ THIS) ===
 ${conversationContext || "No history available."}`;
 
     const response = await llmWithTools.invoke([

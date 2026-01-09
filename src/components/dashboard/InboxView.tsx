@@ -1323,14 +1323,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const buildConversationContext = () => {
     if (!selectedMessage) return "";
+    
+    // Include recent SMS thread
     const recent = activeThread.slice(-12);
-    const transcript = recent
+    const smsTranscript = recent
       .map((b) => {
         const who = b.role === "incoming" ? selectedMessage.contactName : b.role === "outgoing" ? "Me" : "AI";
         return `${who}: ${b.content}`;
       })
       .join("\n");
-    return `Conversation with ${selectedMessage.contactName} (${selectedMessage.contactPhone}):\n${transcript}`;
+    
+    // Include AI chat history for context continuity
+    const aiChatHistory = aiChatsByConversationId[selectedMessage.id] || [];
+    const recentAiChat = aiChatHistory.slice(-10); // Last 10 AI chat messages
+    const aiChatTranscript = recentAiChat
+      .map((msg) => `${msg.isUser ? "User" : "AI Assistant"}: ${msg.content}`)
+      .join("\n");
+    
+    let context = `SMS Conversation with ${selectedMessage.contactName} (${selectedMessage.contactPhone}):\n${smsTranscript}`;
+    
+    if (aiChatTranscript) {
+      context += `\n\n=== Recent AI Chat History (IMPORTANT - use this for context) ===\n${aiChatTranscript}`;
+    }
+    
+    return context;
   };
 
   const [aiLoading, setAiLoading] = useState(false);
