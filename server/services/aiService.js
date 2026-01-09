@@ -231,7 +231,10 @@ async function classifySpam(state) {
     
     // Calculate key variables
     const isSavedContact = senderContext.isSavedContact || senderContext.isFavorite || false;
-    const userSentCount = conversationHistory ? conversationHistory.filter(m => m.direction === 'outbound').length : 0;
+    const userSentCount = conversationHistory
+      ? conversationHistory.filter(m => m.direction === "outbound" || m.direction === "outgoing").length
+      : 0;
+    const normalizedMessage = String(message || "").trim().toLowerCase();
     
     // RULE 1: SAVED CONTACT → INBOX (instant, no AI needed)
     if (isSavedContact) {
@@ -275,6 +278,30 @@ async function classifySpam(state) {
     
     // RULE 3: FIRST CONTACT (unknown sender, user never replied)
     // Only OBVIOUS SPAM goes to spam. Everything else (including "hey", greetings, normal messages) → INBOX
+
+    // Deterministic guardrail: short greetings are never spam.
+    // This protects against occasional LLM misclassification and cases where history/contact matching is missing.
+    if (
+      normalizedMessage.length > 0 &&
+      normalizedMessage.length <= 24 &&
+      /^(hey|hi|hello|hiya|yo|sup|whats up|what's up)[!?.\s]*$/.test(normalizedMessage)
+    ) {
+      console.log("   [FastClassify] Greeting guardrail → INBOX");
+      return {
+        ...state,
+        spamAnalysis: {
+          category: "INBOX",
+          senderTrust: "medium",
+          intent: "conversational",
+          behaviorPattern: "normal",
+          contentRiskLevel: "none",
+          spamProbability: 0,
+          isSpam: false,
+          isHeld: false,
+          reasoning: "Short greeting - always inbox",
+        },
+      };
+    }
     
     const prompt = `You are a spam classifier for FIRST-TIME messages from UNKNOWN senders.
 
@@ -530,7 +557,7 @@ async function analyzeIncomingMessage(message, senderPhone, senderName, conversa
     tags: [],
     hasConversationHistory: conversationHistory.length > 0,
     messageCount: conversationHistory.length,
-    userHasReplied: conversationHistory.some(m => m.direction === 'outbound'),
+    userHasReplied: conversationHistory.some(m => m.direction === "outbound" || m.direction === "outgoing"),
     isBlocked: false,
   };
   
@@ -554,7 +581,7 @@ async function classifyMessageAsSpam(message, senderPhone, senderName, senderCon
       tags: [],
       hasConversationHistory: conversationHistory.length > 0,
       messageCount: conversationHistory.length,
-      userHasReplied: conversationHistory.some(m => m.direction === 'outbound'),
+      userHasReplied: conversationHistory.some(m => m.direction === "outbound" || m.direction === "outgoing"),
       isBlocked: false,
     };
     
