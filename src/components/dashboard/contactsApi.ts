@@ -10,6 +10,19 @@ interface ApiResponse<T = any> {
   error?: string;
 }
 
+// Event emitter for contact changes - other components can subscribe to this
+type ContactChangeListener = () => void;
+const contactChangeListeners: Set<ContactChangeListener> = new Set();
+
+export const onContactsChange = (listener: ContactChangeListener) => {
+  contactChangeListeners.add(listener);
+  return () => contactChangeListeners.delete(listener); // Return unsubscribe function
+};
+
+const notifyContactsChanged = () => {
+  contactChangeListeners.forEach(listener => listener());
+};
+
 const getAuthHeaders = () => {
   const token = localStorage.getItem("comsierge_token");
   return {
@@ -68,6 +81,7 @@ export const createContact = async (contact: Omit<Contact, "id">): Promise<{ con
     const data: ApiResponse = await response.json();
     
     if (data.success && data.data) {
+      notifyContactsChanged(); // Notify listeners that contacts changed
       return {
         contact: {
           id: data.data._id,
@@ -127,6 +141,7 @@ export const updateContact = async (id: string, updates: Partial<Contact>): Prom
     const data: ApiResponse = await response.json();
     
     if (data.success) {
+      notifyContactsChanged(); // Notify listeners that contacts changed
       return { success: true, error: null };
     }
     return { success: false, error: data.message || data.error || "Failed to update contact" };
@@ -144,6 +159,9 @@ export const deleteContact = async (id: string): Promise<boolean> => {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
+    if (data.success) {
+      notifyContactsChanged(); // Notify listeners that contacts changed
+    }
     return data.success;
   } catch (error) {
     console.error("Delete contact error:", error);

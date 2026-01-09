@@ -44,7 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { languages } from "./mockData";
 import type { Contact, Message } from "./types";
-import { fetchContacts } from "./contactsApi";
+import { fetchContacts, onContactsChange } from "./contactsApi";
 import { loadRules, saveRules, ActiveRule } from "./rulesStore";
 import { loadTwilioAccounts } from "./adminStore";
 import { 
@@ -354,6 +354,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }, 5000);
     return () => clearInterval(pollInterval);
   }, [loadConversations]);
+
+  // Listen for contact changes (create/update/delete) and refresh
+  useEffect(() => {
+    const unsubscribe = onContactsChange(() => {
+      refreshContacts();
+      loadConversations(false); // Refresh to update contact names
+    });
+    return unsubscribe;
+  }, [refreshContacts, loadConversations]);
   
   // Menu states
   const [showMoreMenu, setShowMoreMenu] = useState(false);
