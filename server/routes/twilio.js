@@ -1164,19 +1164,37 @@ router.post("/webhook/sms", async (req, res) => {
         } else if (shouldNotify && user.forwardingNumber) {
           console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);
           try {
-            // Use env variables directly - they're already configured
-            const accountSid = process.env.TWILIO_ACCOUNT_SID;
-            const authToken = process.env.TWILIO_AUTH_TOKEN;
+            // Find the TwilioAccount that owns this phone number (To)
+            const normalizedTo = normalizeToE164ish(To);
+            let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: To });
             
-            if (accountSid && authToken) {
-              const forwardClient = twilio(accountSid, authToken);
+            // If no match, try normalized version
+            if (!twilioAccount && normalizedTo && normalizedTo !== To) {
+              twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedTo });
+            }
+            
+            // If still no match, search all accounts and compare normalized
+            if (!twilioAccount) {
+              const allAccounts = await TwilioAccount.find({});
+              for (const acc of allAccounts) {
+                const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+                if (normalizedPhones.includes(normalizedTo)) {
+                  twilioAccount = acc;
+                  break;
+                }
+              }
+            }
+            
+            if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
+              console.log(`   Found TwilioAccount for ${To}: ${twilioAccount.accountSid.slice(0, 8)}...`);
+              const forwardClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
               
               // Build forwarded message with sender info
               const senderName = contact?.name || From;
               const forwardedBody = `[SMS from ${senderName}]\n${Body}`;
               
               // Use the normalized To number
-              const fromNumber = normalizeToE164ish(To);
+              const fromNumber = normalizedTo;
               
               const forwardResult = await forwardClient.messages.create({
                 body: forwardedBody,
@@ -1197,7 +1215,7 @@ router.post("/webhook/sms", async (req, res) => {
               });
               
             } else {
-              console.log(`   Missing Twilio credentials in env`);
+              console.log(`   ❌ No TwilioAccount found for ${To} - cannot forward SMS`);
             }
           } catch (forwardErr) {
             console.error(`   Failed to forward SMS:`, forwardErr.message);
