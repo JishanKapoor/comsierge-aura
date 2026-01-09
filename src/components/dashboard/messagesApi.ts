@@ -293,6 +293,21 @@ export const deleteConversation = async (contactPhone: string): Promise<boolean>
   }
 };
 
+// Delete conversation by conversation id (more reliable than phone formatting)
+export const deleteConversationById = async (conversationId: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/messages/conversations/${encodeURIComponent(conversationId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error("Delete conversation by id error:", error);
+    return false;
+  }
+};
+
 // Update a single message
 export const updateMessage = async (
   messageId: string,

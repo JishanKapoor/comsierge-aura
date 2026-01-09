@@ -14,9 +14,11 @@ interface ApiResponse<T = any> {
 type ContactChangeListener = () => void;
 const contactChangeListeners: Set<ContactChangeListener> = new Set();
 
-export const onContactsChange = (listener: ContactChangeListener) => {
+export const onContactsChange = (listener: ContactChangeListener): (() => void) => {
   contactChangeListeners.add(listener);
-  return () => contactChangeListeners.delete(listener); // Return unsubscribe function
+  return () => {
+    contactChangeListeners.delete(listener);
+  };
 };
 
 const notifyContactsChanged = () => {

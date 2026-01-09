@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Contact from "../models/Contact.js";
@@ -250,6 +251,61 @@ router.get("/conversations", async (req, res) => {
   }
 });
 
+// @route   DELETE /api/messages/conversations/:conversationId
+// @desc    Delete a conversation by its id and all its messages
+// @access  Private
+router.delete("/conversations/:conversationId", async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid conversation id",
+      });
+    }
+
+    const conversation = await Conversation.findOne({ _id: conversationId, userId: req.user._id });
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found",
+      });
+    }
+
+    const phoneVariations = buildPhoneCandidates(conversation.contactPhone);
+    const deleteQuery = {
+      userId: req.user._id,
+      $or: [{ contactPhone: { $in: phoneVariations } }],
+    };
+    if (conversation.contactId) {
+      deleteQuery.$or.push({ contactId: conversation.contactId });
+    }
+
+    console.log(
+      `Deleting conversation by id: ${conversationId}, phone: ${conversation.contactPhone}, variations:`,
+      phoneVariations
+    );
+
+    const deleteResult = await Message.deleteMany(deleteQuery);
+    const convResult = await Conversation.deleteOne({ _id: conversationId, userId: req.user._id });
+
+    res.json({
+      success: convResult.deletedCount === 1,
+      message: "Conversation deleted",
+      deletedMessages: deleteResult.deletedCount,
+      deletedConversation: convResult.deletedCount === 1,
+    });
+  } catch (error) {
+    console.error("Delete conversation by id error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 // Helper to normalize phone numbers for comparison
 function normalizePhone(phone) {
   if (!phone) return "";
@@ -452,20 +508,31 @@ router.delete("/conversation/:contactPhone", async (req, res) => {
 
     console.log(`Deleting conversation for phone: ${rawPhone}, variations:`, phoneVariations);
 
-    const deleteResult = await Message.deleteMany({ 
-      userId: req.user._id, 
-      contactPhone: { $in: phoneVariations } 
-    });
-    
-    const convResult = await Conversation.findOneAndDelete({ 
-      userId: req.user._id, 
-      contactPhone: { $in: phoneVariations } 
+    const convMatch = await Conversation.findOne({
+      userId: req.user._id,
+      contactPhone: { $in: phoneVariations },
+    }).select("_id contactId contactPhone");
+
+    const deleteQuery = {
+      userId: req.user._id,
+      $or: [{ contactPhone: { $in: phoneVariations } }],
+    };
+    if (convMatch?.contactId) {
+      deleteQuery.$or.push({ contactId: convMatch.contactId });
+    }
+
+    const deleteResult = await Message.deleteMany(deleteQuery);
+    const convResult = await Conversation.findOneAndDelete({
+      userId: req.user._id,
+      contactPhone: { $in: phoneVariations },
     });
 
     console.log(`Deleted ${deleteResult.deletedCount} messages, conversation: ${convResult ? 'yes' : 'no'}`);
 
+    const success = !!convResult || deleteResult.deletedCount > 0;
+
     res.json({
-      success: true,
+      success,
       message: "Conversation deleted",
       deletedMessages: deleteResult.deletedCount,
       deletedConversation: !!convResult,

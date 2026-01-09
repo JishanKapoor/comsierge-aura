@@ -52,6 +52,7 @@ import {
   fetchThread, 
   updateConversation,
   deleteConversation,
+  deleteConversationById,
   searchMessages,
   type FilterType as ApiFilterType,
   type SentimentType,
@@ -2151,7 +2152,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
     // Delete via API
     try {
-      const success = await deleteConversation(phone);
+      const success = await deleteConversationById(conversationId);
       
       if (!success) {
         throw new Error("Delete failed");
