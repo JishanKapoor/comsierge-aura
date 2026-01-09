@@ -1004,6 +1004,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     // Clear input immediately for instant feel
     setNewMessage("");
     setPendingAttachment(null);
+    if (fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
     setShowEmojiPicker(false);
     setAiAssistOpen(false);
     setAiAssistMode(null);
@@ -1086,6 +1087,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           } catch (e) {
             console.error("Failed to convert image to base64:", e);
             toast.error("Failed to process image");
+            setIsSending(false);
+            // Remove optimistic bubbles on failure
+            setThreadsByContactId((prev) => {
+              const current = prev[selectedMessage.contactId] ?? [];
+              return {
+                ...prev,
+                [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
+              };
+            });
+            return;
           }
         }
 
@@ -3026,7 +3037,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </div>
                   <button
                     type="button"
-                    onClick={() => setPendingAttachment(null)}
+                    onClick={() => {
+                      setPendingAttachment(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
                     className="p-1.5 rounded hover:bg-gray-200"
                     aria-label="Remove attachment"
                   >
@@ -3127,6 +3141,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     }
 
                     setPendingAttachment(file);
+                    e.currentTarget.value = ""; // Reset so same file can be selected again
                     toast.success("Attachment added");
                   }}
                 />
