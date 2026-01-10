@@ -593,16 +593,26 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       // If media is provided, create a public URL for Twilio to fetch (Cloudinary if configured)
       if (mediaBase64) {
         console.log("📷 MMS requested - media type:", normalizedMediaType);
+        console.log("📷 hasCloudinaryConfig:", hasCloudinaryConfig);
+        console.log("📷 mediaBase64 length:", mediaBase64?.length || 0);
+        console.log("📷 mediaBase64 starts with:", mediaBase64?.substring(0, 50));
         
         try {
           let mediaUrl;
           if (hasCloudinaryConfig) {
-            const upload = await cloudinary.uploader.upload(mediaBase64, {
-              resource_type: "image",
-              folder: "comsierge/mms",
-            });
-            mediaUrl = upload?.secure_url;
-            console.log("📷 Cloudinary URL for Twilio:", mediaUrl);
+            console.log("📷 Attempting Cloudinary upload...");
+            try {
+              const upload = await cloudinary.uploader.upload(mediaBase64, {
+                resource_type: "image",
+                folder: "comsierge/mms",
+              });
+              mediaUrl = upload?.secure_url;
+              console.log("📷 Cloudinary upload success! URL:", mediaUrl);
+            } catch (cloudinaryError) {
+              console.error("❌ Cloudinary upload failed:", cloudinaryError.message);
+              console.error("❌ Cloudinary error details:", JSON.stringify(cloudinaryError, null, 2));
+              // Fall through to MongoDB fallback
+            }
           }
 
           if (!mediaUrl) {

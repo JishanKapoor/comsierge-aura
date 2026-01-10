@@ -1047,6 +1047,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         role: "outgoing",
         content: `[Image]`,
         timestamp,
+        // Show image preview immediately using the base64 data
+        attachments: [{
+          url: imageToSend.base64,
+          contentType: imageToSend.mimeType,
+          filename: imageToSend.filename,
+        }],
       });
     }
 
