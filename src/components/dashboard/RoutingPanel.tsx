@@ -656,8 +656,8 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <div className="space-y-1.5">
               {[
                 { id: "all" as MessageFilter, label: "All messages", desc: "Every incoming message" },
-                { id: "important" as MessageFilter, label: "Important", desc: "High + medium priority only" },
-                { id: "urgent" as MessageFilter, label: "Urgent only", desc: "Critical messages only" },
+                { id: "important" as MessageFilter, label: "Important", desc: "High + medium priority only (No spam)" },
+                { id: "urgent" as MessageFilter, label: "Urgent only", desc: "Critical messages only (No spam)" },
               ].map((opt) => (
                 <button
                   key={opt.id}
