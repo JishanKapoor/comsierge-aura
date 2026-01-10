@@ -81,6 +81,30 @@ const conversationSchema = new mongoose.Schema(
         default: 0,
       },
     },
+    // Time-aware priority context derived from message text (meeting/deadline expiry, emergency stickiness)
+    priorityContext: {
+      kind: {
+        type: String,
+        enum: ["emergency", "meeting", "deadline", "important"],
+        default: null,
+      },
+      eventAt: {
+        type: Date,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+      detectedAt: {
+        type: Date,
+        default: null,
+      },
+      source: {
+        type: String,
+        default: "heuristic",
+      },
+    },
     priority: {
       type: String,
       enum: ["normal", "high", "urgent"],

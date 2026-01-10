@@ -12,6 +12,7 @@ import Rule from "../models/Rule.js";
 import Media from "../models/Media.js";
 import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
+import { detectPriorityContext } from "../utils/priorityContext.js";
 
 const router = express.Router();
 
@@ -1452,6 +1453,21 @@ router.post("/webhook/sms", async (req, res) => {
         // Update conversation with analysis results
         // IMPORTANT: Only set isHeld=true on the conversation if message is SPAM
         // Non-spam messages should NEVER set the conversation to held
+        const allowPriority = !isHeld && messageStatus !== "spam";
+        const priorityContext = allowPriority
+          ? detectPriorityContext({
+              text: cleanBody,
+              category: aiAnalysis?.category,
+              aiPriority: aiAnalysis?.priority,
+            })
+          : null;
+
+        // AI remains the primary signal, but we also allow deterministic detection for obvious cases
+        // (emergency language, meeting/deadline phrases) to reduce LLM variability.
+        if (allowPriority && priorityContext?.kind) {
+          isPriority = true;
+        }
+
         const conversationUpdate = {
           isPriority: isPriority || undefined,
           lastAiAnalysis: aiAnalysis ? {
@@ -1459,6 +1475,9 @@ router.post("/webhook/sms", async (req, res) => {
             category: aiAnalysis.category,
             sentiment: aiAnalysis.sentiment,
           } : undefined,
+          // Set/update priorityContext when a message is treated as priority.
+          // This keeps emergencies sticky and meetings/deadlines time-aware.
+          priorityContext: priorityContext || undefined,
         };
         
         // Only update isHeld if it's spam (true) - never clear it here as user may have manually held it

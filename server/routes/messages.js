@@ -4,6 +4,7 @@ import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Contact from "../models/Contact.js";
 import { authMiddleware } from "./auth.js";
+import { detectPriorityContext, isPriorityActiveForList, shouldClearPriorityOnRead } from "../utils/priorityContext.js";
 
 const router = express.Router();
 
@@ -178,10 +179,84 @@ router.get("/conversations", async (req, res) => {
       query.isHeld = { $ne: true };
     }
 
-    const conversations = await Conversation.find(query).sort({ 
+    let conversations = await Conversation.find(query).sort({ 
       isPinned: -1,
       lastMessageAt: -1 
     });
+
+    // Priority should be time-aware (meetings/deadlines expire) and "important" should not stick after read.
+    // We filter (and auto-clear) stale items server-side so the Priority tab doesn't accumulate forever.
+    if (filter === "priority") {
+      const now = new Date();
+      const keep = [];
+      const toClearIds = [];
+      const toSetContext = [];
+
+      for (const conv of conversations) {
+        const unreadCount = conv.unreadCount || 0;
+        const ctx = conv.priorityContext || null;
+
+        let keepInPriority = false;
+        if (ctx?.kind) {
+          keepInPriority = isPriorityActiveForList(ctx, { unreadCount, now });
+        } else {
+          // No priorityContext means either:
+          // - manual priority (user-set) → should never auto-expire
+          // - legacy AI priority (older rows) → backfill context from lastMessage + lastAiAnalysis when possible
+          const aiPriority = conv.lastAiAnalysis?.priority || null;
+          const aiCategory = conv.lastAiAnalysis?.category || null;
+
+          if (aiPriority === "high") {
+            // Backfill AI-derived priority context so "important" clears after read and meetings/deadlines can expire.
+            const inferred = detectPriorityContext({
+              text: conv.lastMessage || "",
+              category: aiCategory,
+              aiPriority,
+              now,
+            });
+            if (inferred?.kind) {
+              toSetContext.push({ id: conv._id, ctx: inferred });
+              keepInPriority = isPriorityActiveForList(inferred, { unreadCount, now });
+            } else {
+              // AI marked high but we can't infer a context from preview text → treat as "important".
+              keepInPriority = unreadCount > 0;
+            }
+          } else {
+            // Assume manual priority; keep indefinitely.
+            keepInPriority = true;
+          }
+        }
+
+        if (keepInPriority) {
+          keep.push(conv);
+        } else {
+          // Only auto-clear when there are no unread messages (avoid losing visibility for new items).
+          if (unreadCount === 0) {
+            toClearIds.push(conv._id);
+          }
+        }
+      }
+
+      if (toClearIds.length) {
+        await Conversation.updateMany(
+          { userId: req.user._id, _id: { $in: toClearIds } },
+          { $set: { isPriority: false, priorityContext: null, priority: "normal" } }
+        );
+      }
+
+      if (toSetContext.length) {
+        await Conversation.bulkWrite(
+          toSetContext.map(({ id, ctx }) => ({
+            updateOne: {
+              filter: { userId: req.user._id, _id: id },
+              update: { $set: { priorityContext: ctx } },
+            },
+          }))
+        );
+      }
+
+      conversations = keep;
+    }
 
     // Resolve latest contact names for consistent UI.
     const conversationContactIds = Array.from(
@@ -363,6 +438,19 @@ router.get("/thread/:contactPhone", async (req, res) => {
       { userId: req.user._id, contactPhone: { $in: phoneVariations } },
       { unreadCount: 0 }
     );
+
+    // If this conversation was marked priority, clear it when appropriate:
+    // - "important" clears when read
+    // - meetings/deadlines clear only after expiry
+    // - emergencies stay until explicitly cleared
+    const conv = await Conversation.findOne({ userId: req.user._id, contactPhone: { $in: phoneVariations } });
+    if (conv?.isPriority) {
+      const now = new Date();
+      const ctx = conv.priorityContext || null;
+      if (ctx?.kind && shouldClearPriorityOnRead(ctx, { now })) {
+        await Conversation.findByIdAndUpdate(conv._id, { isPriority: false, priorityContext: null, priority: "normal" });
+      }
+    }
 
     res.json({
       success: true,
