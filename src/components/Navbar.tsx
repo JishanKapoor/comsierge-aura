@@ -122,13 +122,13 @@ const Navbar = () => {
         <nav
           style={{
             margin: "0 16px",
-            padding: scrolled && !isAuthPage ? "10px 16px" : "12px 16px",
-            backgroundColor: scrolled && !isAuthPage ? "rgba(26, 26, 26, 0.9)" : "transparent",
-            backdropFilter: scrolled && !isAuthPage ? "blur(16px)" : "none",
-            WebkitBackdropFilter: scrolled && !isAuthPage ? "blur(16px)" : "none",
-            border: scrolled && !isAuthPage ? "1px solid rgba(255,255,255,0.1)" : "1px solid transparent",
+            padding: scrolled && !isAuthPage ? "8px 14px" : "12px 16px",
+            backgroundColor: scrolled && !isAuthPage ? "rgba(26, 26, 26, 0.72)" : "transparent",
+            backdropFilter: scrolled && !isAuthPage ? "blur(12px)" : "none",
+            WebkitBackdropFilter: scrolled && !isAuthPage ? "blur(12px)" : "none",
+            border: scrolled && !isAuthPage ? "1px solid rgba(255,255,255,0.08)" : "1px solid transparent",
             borderRadius: 9999,
-            boxShadow: scrolled && !isAuthPage ? "0 10px 15px -3px rgba(0,0,0,0.2)" : "none",
+            boxShadow: scrolled && !isAuthPage ? "0 8px 18px -12px rgba(0,0,0,0.55)" : "none",
             transition: "all 0.3s ease",
           }}
         >
