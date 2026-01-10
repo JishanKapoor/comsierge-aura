@@ -632,7 +632,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     opts?: { silent?: boolean; targetLang?: string }
   ) => {
     const targetLang = opts?.targetLang ?? receiveLanguage;
-    if (targetLang === "en") return;
     if (translatingBubbles.has(bubbleId)) return;
     
     setTranslatingBubbles(prev => new Set(prev).add(bubbleId));
@@ -3236,9 +3235,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                            bubble.content !== "[Voice Note]" && 
                            bubble.content !== "[Audio]" && (
                             <>
-                              {/* If translated and NOT showing original, show translated first */}
-                              {hasTranslation && !showingOriginal.has(bubble.id) ? (
-                                <p className="text-sm">{bubble.translatedContent}</p>
+                              {/* If translated and showing original, show original; otherwise show translated if available */}
+                              {hasTranslation ? (
+                                <p className="text-sm">
+                                  {showingOriginal.has(bubble.id) ? bubble.content : bubble.translatedContent}
+                                </p>
                               ) : (
                                 <p className="text-sm">{bubble.content}</p>
                               )}
@@ -3249,9 +3250,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           {hasTranslation && (
                             <button
                               type="button"
-                              onClick={() => toggleShowOriginal(bubble.id)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleShowOriginal(bubble.id);
+                              }}
                               className={cn(
-                                "mt-1.5 flex items-center gap-1 text-[10px] transition-colors",
+                                "mt-1.5 flex items-center gap-1 text-[10px] transition-colors cursor-pointer",
                                 isOutgoing 
                                   ? "text-indigo-200 hover:text-white" 
                                   : "text-gray-400 hover:text-gray-600"
