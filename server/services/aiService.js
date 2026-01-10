@@ -305,11 +305,26 @@ async function classifySpam(state) {
       const hasUrl = /(https?:\/\/|www\.|\bbit\.ly\b|\bt\.co\b|\bgoo\.gl\b|\bwa\.me\b)/i.test(t);
       const hasOptOut = /(reply\s+stop|text\s+stop|unsubscribe|opt\s*out|stop\s+to\s+stop)/i.test(t);
       const hasPromoWords = /(free|deal|discount|offer|promo|promotion|limited\s*time|sale|coupon|win|winner|prize|giveaway|gift\s*card)/i.test(t);
-      const hasScamWords = /(verify\s+your|account\s+suspended|password|bank|wire\s+money|crypto|investment|loan|credit\s+score|bitcoin)/i.test(t);
+      const hasScamWords = /(verify\s+your|account\s+suspended|password|bank|wire\s+money|crypto|investment|loan|credit\s+score|bitcoin|security\s+alert|suspicious\s+activity)/i.test(t);
       const hasMoneyHook = /(\$\s?\d+|\b\d{2,}%\b|earn\s+\$|make\s+\$)/i.test(t);
+
+      // Common delivery/parcel phishing patterns (very frequent scam texts)
+      const hasDeliveryBrand = /(canada\s*post|usps|ups|fedex|dhl|purolator|royal\s*mail|post\s*office)/i.test(t);
+      const hasPackageTheme = /(package|parcel|shipment|delivery|courier|tracking)/i.test(t);
+      const hasAddressIssue = /(incomplete\s+address|incorrect\s+address|address\s+(?:is\s+)?(?:incomplete|incorrect)|unable\s+to\s+deliver|delivery\s+failed|delivery\s+attempt)/i.test(t);
+      const hasHoldLanguage = /(on\s+hold|held\s+at|held\s+due\s+to|pending\s+delivery|returned?\s+to\s+sender|avoid\s+return)/i.test(t);
+      const hasConfirmRequest = /(confirm|verify|update)\s+(?:your\s+)?(details|address|information)/i.test(t);
+      const hasUrgency = /(within\s+\d+\s*(?:hours|hrs|minutes|mins)|immediately|urgent|final\s+notice|last\s+chance|today\b)/i.test(t);
+
+      const looksLikeDeliveryPhishWithLink =
+        hasUrl && hasPackageTheme && (hasAddressIssue || hasHoldLanguage || hasConfirmRequest || hasUrgency || hasDeliveryBrand);
+
+      const looksLikeDeliveryPhishNoLink =
+        (hasDeliveryBrand || hasPackageTheme) && (hasAddressIssue || hasHoldLanguage) && (hasConfirmRequest || hasUrgency);
 
       if (hasOptOut) return true;
       if (hasUrl && (hasPromoWords || hasScamWords || hasMoneyHook)) return true;
+      if (looksLikeDeliveryPhishWithLink || looksLikeDeliveryPhishNoLink) return true;
       if (hasPromoWords && hasMoneyHook) return true;
 
       return false;
@@ -317,7 +332,7 @@ async function classifySpam(state) {
 
     const isSpam = looksPromotionalSpam(message);
     const reasoning = isSpam
-      ? "Unknown sender promotional/marketing pattern detected"
+      ? "Unknown sender spam/phishing pattern detected"
       : "Unknown sender but not promotional - defaulting to inbox";
 
     console.log(`   [FastClassify] First contact → ${isSpam ? "SPAM" : "INBOX"}: ${reasoning}`);
@@ -327,7 +342,7 @@ async function classifySpam(state) {
       spamAnalysis: {
         category: isSpam ? "SPAM" : "INBOX",
         senderTrust: isSpam ? "none" : "low",
-        intent: isSpam ? "promotional" : "conversational",
+        intent: isSpam ? "deceptive" : "conversational",
         behaviorPattern: isSpam ? "automated" : "normal",
         contentRiskLevel: isSpam ? "medium" : "none",
         spamProbability: isSpam ? 85 : 5,
