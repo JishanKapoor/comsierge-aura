@@ -77,6 +77,18 @@ async function saveMessageToDB(msgData) {
       ? msgData.contactName 
       : msgData.contactPhone || "Unknown";
     
+    // Determine lastMessage - show placeholder for media-only messages
+    let lastMessagePreview = msgData.body?.substring(0, 100) || "";
+    if (!lastMessagePreview && msgData.attachments && msgData.attachments.length > 0) {
+      const hasAudio = msgData.attachments.some(a => a.contentType?.startsWith("audio/"));
+      const hasImage = msgData.attachments.some(a => a.contentType?.startsWith("image/"));
+      if (hasAudio) {
+        lastMessagePreview = "🎙️ Voice note";
+      } else if (hasImage) {
+        lastMessagePreview = "📷 Image";
+      }
+    }
+    
     // Update or create conversation
     const conversationFilter = { 
       userId: msgData.userId, 
@@ -85,7 +97,7 @@ async function saveMessageToDB(msgData) {
 
     const conversationUpdate = {
       $set: {
-        lastMessage: msgData.body?.substring(0, 100) || "",
+        lastMessage: lastMessagePreview,
         lastMessageAt: new Date(),
         contactName: displayName,
         // Ensure these fields are set if a new document is created

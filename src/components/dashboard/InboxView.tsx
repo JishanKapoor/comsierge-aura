@@ -42,6 +42,8 @@ import {
   MailCheck,
   ShieldCheck,
   Forward,
+  Play,
+  Pause,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { languages } from "./mockData";
@@ -190,6 +192,132 @@ const compressImage = (file: File, maxWidth = 200, quality = 0.7): Promise<strin
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
+};
+
+// Voice note player component with custom UI
+const VoiceNotePlayer = ({ url, isOutgoing }: { url: string; isOutgoing: boolean }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+      setIsLoaded(true);
+    }
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current || !isLoaded) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    audioRef.current.currentTime = percent * duration;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className={cn(
+      "flex items-center gap-3 p-2 rounded-lg min-w-[200px]",
+      isOutgoing ? "bg-indigo-400/30" : "bg-gray-100"
+    )}>
+      <audio
+        ref={audioRef}
+        src={url}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+        preload="metadata"
+      />
+      
+      {/* Play/Pause button */}
+      <button
+        onClick={togglePlay}
+        className={cn(
+          "w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors",
+          isOutgoing 
+            ? "bg-white/90 text-indigo-600 hover:bg-white" 
+            : "bg-indigo-500 text-white hover:bg-indigo-600"
+        )}
+      >
+        {isPlaying ? (
+          <Pause className="w-5 h-5" />
+        ) : (
+          <Play className="w-5 h-5 ml-0.5" />
+        )}
+      </button>
+
+      {/* Waveform-like progress bar */}
+      <div className="flex-1 flex flex-col gap-1">
+        <div 
+          className="h-8 relative cursor-pointer flex items-center gap-[2px]"
+          onClick={handleSeek}
+        >
+          {/* Simulated waveform bars */}
+          {Array.from({ length: 30 }).map((_, i) => {
+            const barProgress = (i / 30) * 100;
+            const isActive = barProgress <= progress;
+            const height = 8 + Math.sin(i * 0.5) * 6 + Math.random() * 4;
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "w-[3px] rounded-full transition-colors",
+                  isActive
+                    ? isOutgoing ? "bg-white" : "bg-indigo-500"
+                    : isOutgoing ? "bg-white/40" : "bg-gray-300"
+                )}
+                style={{ height: `${height}px` }}
+              />
+            );
+          })}
+        </div>
+        
+        {/* Duration */}
+        <div className={cn(
+          "text-xs tabular-nums",
+          isOutgoing ? "text-white/80" : "text-gray-500"
+        )}>
+          {isLoaded ? (
+            <span>{formatTime(currentTime)} / {formatTime(duration)}</span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) => {
@@ -2955,30 +3083,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           )}
 
                           {/* Show voice note (audio) attachments */}
-                          {bubble.attachments && bubble.attachments.length > 0 && (
-                            <div className="mb-2">
+                          {bubble.attachments && bubble.attachments.length > 0 && 
+                            bubble.attachments.some((att) => att.contentType?.startsWith("audio/")) && (
+                            <div className="mb-2 space-y-2">
                               {bubble.attachments
                                 .filter((att) => att.contentType?.startsWith("audio/"))
                                 .map((att, idx) => (
-                                  <a
-                                    key={idx}
-                                    href={att.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="block"
-                                  >
-                                    <audio
-                                      controls
-                                      src={att.url}
-                                      className="w-full"
-                                    />
-                                  </a>
+                                  <VoiceNotePlayer key={idx} url={att.url} isOutgoing={isOutgoing} />
                                 ))}
                             </div>
                           )}
                           
-                          {/* Only show text content if it's not just "[Image]" placeholder */}
-                          {bubble.content && bubble.content !== "[Image]" && (
+                          {/* Only show text content if it's meaningful (not empty or placeholders) */}
+                          {bubble.content && 
+                           bubble.content.trim() !== "" && 
+                           bubble.content !== "[Image]" && 
+                           bubble.content !== "[Voice Note]" && 
+                           bubble.content !== "[Audio]" && (
                             <p className="text-sm">{bubble.content}</p>
                           )}
                           
