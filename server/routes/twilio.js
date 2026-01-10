@@ -1519,13 +1519,18 @@ router.post("/webhook/sms", async (req, res) => {
               const senderName = contact?.name || From;
               let forwardedBody;
               
+              console.log(`   📢 Translation check: translateEnabled=${translateEnabled}, receiveLanguage=${receiveLanguage}`);
+              
               // Translate the message if translation is enabled
               if (translateEnabled && receiveLanguage && receiveLanguage !== 'en') {
-                console.log(`   🌐 Translating message to ${receiveLanguage}...`);
+                console.log(`   🌐 TRANSLATING message to ${receiveLanguage}...`);
                 const translatedBody = await translateText(Body, receiveLanguage);
+                console.log(`   🌐 Translation result: "${translatedBody?.substring(0, 50)}..."`);
                 // Include both original and translated
                 forwardedBody = `[SMS from ${senderName}]\n${Body}\n\n[Translated]\n${translatedBody}`;
+                console.log(`   🌐 Final forwarded body length: ${forwardedBody.length}`);
               } else {
+                console.log(`   📢 NOT translating - translateEnabled=${translateEnabled}, lang=${receiveLanguage}`);
                 forwardedBody = `[SMS from ${senderName}]\n${Body}`;
               }
               
