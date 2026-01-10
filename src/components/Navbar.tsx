@@ -9,70 +9,81 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
-  const lastScrollY = useRef(0);
-  const upScrollAccumulated = useRef(0);
-  const mobileOpenRef = useRef(false);
 
+  // Fresh scroll detection implementation
   useEffect(() => {
-    mobileOpenRef.current = mobileOpen;
-  }, [mobileOpen]);
+    // Get scroll position from any source
+    const getScrollY = (): number => {
+      if (typeof window.pageYOffset !== "undefined") return window.pageYOffset;
+      if (typeof window.scrollY !== "undefined") return window.scrollY;
+      const doc = document.documentElement || document.body.parentNode || document.body;
+      return (doc as HTMLElement).scrollTop || 0;
+    };
 
-  useEffect(() => {
+    let prevY = getScrollY();
     let ticking = false;
-    
-    // Simplified, more robust logic
+
     const onScroll = () => {
       if (ticking) return;
       ticking = true;
-      
-      window.requestAnimationFrame(() => {
-        // Robust scroll detection (checks body/docElement too)
-        const currentScrollY = window.scrollY !== 0 ? window.scrollY : (document.documentElement.scrollTop || document.body.scrollTop || 0);
-        
-        // Background logic
-        setScrolled(currentScrollY > 20);
-        
-        if (mobileOpenRef.current) {
-          lastScrollY.current = currentScrollY;
+
+      requestAnimationFrame(() => {
+        const currentY = getScrollY();
+
+        // Background effect
+        setScrolled(currentY > 20);
+
+        // Skip hide/show if mobile menu open
+        if (mobileOpen) {
+          prevY = currentY;
           ticking = false;
           return;
         }
 
-        // At the very top? Always show
-        if (currentScrollY < 50) {
+        // Near top? Always show
+        if (currentY < 60) {
           setHidden(false);
-          lastScrollY.current = currentScrollY;
+          prevY = currentY;
           ticking = false;
           return;
         }
 
-        // Determine direction
-        const diff = currentScrollY - lastScrollY.current;
-        
-        // Only trigger if movement is significant
-        if (Math.abs(diff) > 2) {
-          setHidden(diff > 0); // Down = Hide(true), Up = Show(false)
+        // Direction check
+        const delta = currentY - prevY;
+        if (Math.abs(delta) > 5) {
+          setHidden(delta > 0); // Down = hide, Up = show
+          prevY = currentY;
         }
-        
-        lastScrollY.current = currentScrollY;
+
         ticking = false;
       });
     };
 
-    lastScrollY.current = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    setScrolled(lastScrollY.current > 20);
+    // Initialize
+    prevY = getScrollY();
+    setScrolled(prevY > 20);
 
-    // Use capture=true to catch scroll events from body if it's the scroll container
-    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
-    return () => window.removeEventListener("scroll", onScroll, { capture: true } as any);
-  }, []);
+    // Attach to multiple scroll sources
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("scroll", onScroll, { passive: true });
 
-  // Close mobile menu on route changes
+    // Also listen on <main> if it exists (for overflow:auto containers)
+    const mainEl = document.querySelector("main");
+    if (mainEl) mainEl.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("scroll", onScroll);
+      if (mainEl) mainEl.removeEventListener("scroll", onScroll);
+    };
+  }, [mobileOpen]);
+
+  // Close mobile menu on navigation
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // Lock body scroll when mobile menu is open
+  // Lock body scroll when mobile menu open
   useEffect(() => {
     if (!mobileOpen) return;
     const prev = document.body.style.overflow;
@@ -82,116 +93,159 @@ const Navbar = () => {
     };
   }, [mobileOpen]);
 
+  const shouldHide = hidden && !isAuthPage && !mobileOpen;
+
   return (
     <>
-      {/* Fixed container that handles the hide/show animation */}
-      <div
-        className={[
-          "fixed top-0 left-0 right-0 z-50 pt-3 sm:pt-4",
-          "transition-transform duration-500 ease-out transform will-change-transform",
-          hidden && !isAuthPage && !mobileOpen ? "-translate-y-full" : "translate-y-0",
-        ].join(" ")}
+      {/* Navbar */}
+      <header
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          paddingTop: 12,
+          transform: shouldHide ? "translateY(-100%)" : "translateY(0)",
+          transition: "transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
       >
-        {/* Inner nav with padding and conditional styling */}
         <nav
-          className={[
-            "mx-4 sm:mx-6 px-4 sm:px-6",
-            "transition-all duration-300 ease-out",
-            scrolled && !isAuthPage
-              ? "py-2.5 sm:py-3 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-full shadow-lg shadow-black/20"
-              : "py-3 sm:py-4 bg-transparent rounded-full",
-          ].join(" ")}
+          style={{
+            margin: "0 16px",
+            padding: scrolled && !isAuthPage ? "10px 16px" : "12px 16px",
+            backgroundColor: scrolled && !isAuthPage ? "rgba(26, 26, 26, 0.9)" : "transparent",
+            backdropFilter: scrolled && !isAuthPage ? "blur(16px)" : "none",
+            WebkitBackdropFilter: scrolled && !isAuthPage ? "blur(16px)" : "none",
+            border: scrolled && !isAuthPage ? "1px solid rgba(255,255,255,0.1)" : "1px solid transparent",
+            borderRadius: 9999,
+            boxShadow: scrolled && !isAuthPage ? "0 10px 15px -3px rgba(0,0,0,0.2)" : "none",
+            transition: "all 0.3s ease",
+          }}
         >
-          <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
-            {/* Left column (kept for balance) */}
-            <div className="justify-self-start" />
+          <div
+            style={{
+              maxWidth: "80rem",
+              margin: "0 auto",
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr",
+              alignItems: "center",
+            }}
+          >
+            {/* Left spacer */}
+            <div />
 
             {/* Center - Logo */}
-            <div className="justify-self-center">
-              <Link to="/" className="text-lg sm:text-xl">
-                <Logo />
-              </Link>
-            </div>
+            <Link to="/" style={{ fontSize: "1.25rem" }}>
+              <Logo />
+            </Link>
 
-            {/* Right - Desktop actions + Mobile toggle */}
-            <div className="justify-self-end flex items-center">
+            {/* Right - Actions */}
+            <div style={{ justifySelf: "end", display: "flex", alignItems: "center" }}>
               {!isAuthPage && (
-                <div className="hidden md:flex items-center gap-3">
-                  <Link
-                    to="/auth"
-                    className={[
-                      "px-4 py-2 rounded-full text-sm font-medium transition-all duration-200",
-                      scrolled
-                        ? "text-white/80 hover:text-white hover:bg-white/10"
-                        : "text-white/70 hover:text-white",
-                    ].join(" ")}
-                  >
-                    Log in
-                  </Link>
-                  <Link
-                    to="/auth?mode=signup"
-                    className={[
-                      "px-5 py-2 rounded-full text-sm font-medium transition-all duration-200",
-                      scrolled
-                        ? "bg-white/10 text-white border border-white/20 hover:bg-white/20"
-                        : "bg-white/5 text-white border border-white/10 hover:bg-white/10 hover:border-white/20",
-                    ].join(" ")}
-                  >
-                    Get Started
-                  </Link>
-                </div>
-              )}
+                <>
+                  {/* Desktop */}
+                  <div className="hidden md:flex items-center gap-3">
+                    <Link
+                      to="/auth"
+                      className="hover:text-white hover:bg-white/10"
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: 9999,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: scrolled ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.7)",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Log in
+                    </Link>
+                    <Link
+                      to="/auth?mode=signup"
+                      className="hover:bg-white/20"
+                      style={{
+                        padding: "8px 20px",
+                        borderRadius: 9999,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        backgroundColor: scrolled ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)",
+                        color: "white",
+                        border: scrolled ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(255,255,255,0.1)",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Get Started
+                    </Link>
+                  </div>
 
-              {!isAuthPage && (
-                <button
-                  onClick={() => setMobileOpen(!mobileOpen)}
-                  className="md:hidden text-foreground z-50 p-2 -mr-2"
-                  aria-label={mobileOpen ? "Close menu" : "Open menu"}
-                  type="button"
-                >
-                  {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
+                  {/* Mobile hamburger */}
+                  <button
+                    onClick={() => setMobileOpen(!mobileOpen)}
+                    className="md:hidden text-foreground p-2 -mr-2"
+                    style={{ zIndex: 50 }}
+                    aria-label={mobileOpen ? "Close menu" : "Open menu"}
+                    type="button"
+                  >
+                    {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                  </button>
+                </>
               )}
             </div>
           </div>
         </nav>
-      </div>
+      </header>
 
       {/* Mobile Menu */}
       {!isAuthPage && (
         <div
-          className={[
-            "fixed inset-0 z-40 md:hidden",
-            "bg-background/95 backdrop-blur-xl",
-            "transition-opacity duration-500 ease-out",
-            mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
-          ].join(" ")}
+          className="md:hidden"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 40,
+            backgroundColor: "rgba(8, 8, 8, 0.95)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            opacity: mobileOpen ? 1 : 0,
+            pointerEvents: mobileOpen ? "auto" : "none",
+            transition: "opacity 0.4s ease",
+          }}
           aria-hidden={!mobileOpen}
         >
           <div
-            className={[
-              "pt-24 px-6",
-              "transition-transform duration-500 ease-out",
-              mobileOpen ? "translate-y-0" : "-translate-y-2",
-            ].join(" ")}
+            style={{
+              paddingTop: 96,
+              padding: "96px 24px 24px",
+              transform: mobileOpen ? "translateY(0)" : "translateY(-8px)",
+              transition: "transform 0.4s ease",
+            }}
           >
-            <div className="flex flex-col items-center gap-8">
-              <div className="flex flex-col items-center gap-6">
-                <Link
-                  to="/auth"
-                  className="text-lg text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Log in
-                </Link>
-                <Link
-                  to="/auth?mode=signup"
-                  className="px-6 py-3 rounded-full text-base font-medium bg-white/10 text-white border border-white/20 hover:bg-white/20 transition-all duration-200"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  Get Started
-                </Link>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 32 }}>
+              <Link
+                to="/auth"
+                onClick={() => setMobileOpen(false)}
+                className="hover:text-white"
+                style={{ fontSize: 18, color: "rgba(255,255,255,0.6)", transition: "color 0.2s" }}
+              >
+                Log in
+              </Link>
+              <Link
+                to="/auth?mode=signup"
+                onClick={() => setMobileOpen(false)}
+                className="hover:bg-white/20"
+                style={{
+                  padding: "12px 24px",
+                  borderRadius: 9999,
+                  fontSize: 16,
+                  fontWeight: 500,
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  transition: "all 0.2s",
+                }}
+              >
+                Get Started
+              </Link>
             </div>
           </div>
         </div>
