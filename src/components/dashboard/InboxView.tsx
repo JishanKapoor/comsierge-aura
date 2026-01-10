@@ -578,30 +578,40 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     endDate: "",
   });
   
+  // Translation settings - initialize from user's server-side settings, fallback to localStorage
   const [receiveLanguage, setReceiveLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean; translateOutgoing?: boolean }>(
-      localStorage.getItem(STORAGE_KEYS.languages)
-    );
+    // Prefer server-side settings from user object
+    if (user?.translationSettings?.receiveLanguage) {
+      return user.translationSettings.receiveLanguage;
+    }
+    const saved = safeParseJson<{ receiveLanguage?: string }>( localStorage.getItem(STORAGE_KEYS.languages));
     return saved?.receiveLanguage || "en";
   });
   const [sendLanguage, setSendLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean; translateOutgoing?: boolean }>(
-      localStorage.getItem(STORAGE_KEYS.languages)
-    );
+    if (user?.translationSettings?.sendLanguage) {
+      return user.translationSettings.sendLanguage;
+    }
+    const saved = safeParseJson<{ sendLanguage?: string }>(localStorage.getItem(STORAGE_KEYS.languages));
     return saved?.sendLanguage || "en";
   });
   const [autoTranslateIncoming, setAutoTranslateIncoming] = useState(() => {
-    const saved = safeParseJson<{ autoTranslateIncoming?: boolean }>(
-      localStorage.getItem(STORAGE_KEYS.languages)
-    );
+    if (user?.translationSettings?.autoTranslateIncoming !== undefined) {
+      return user.translationSettings.autoTranslateIncoming;
+    }
+    const saved = safeParseJson<{ autoTranslateIncoming?: boolean }>(localStorage.getItem(STORAGE_KEYS.languages));
     return Boolean(saved?.autoTranslateIncoming);
   });
   const [translateOutgoing, setTranslateOutgoing] = useState(() => {
-    const saved = safeParseJson<{ translateOutgoing?: boolean }>(
-      localStorage.getItem(STORAGE_KEYS.languages)
-    );
+    if (user?.translationSettings?.translateOutgoing !== undefined) {
+      return user.translationSettings.translateOutgoing;
+    }
+    const saved = safeParseJson<{ translateOutgoing?: boolean }>(localStorage.getItem(STORAGE_KEYS.languages));
     return Boolean(saved?.translateOutgoing);
   });
+  
+  // Track previous receiveLanguage to detect changes
+  const prevReceiveLanguageRef = useRef(receiveLanguage);
+  
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // Track which message bubbles are currently being translated
@@ -810,12 +820,58 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     localStorage.setItem(STORAGE_KEYS.transferPrefs, JSON.stringify(transferPrefsByConversation));
   }, [transferPrefsByConversation]);
 
+  // Sync translation settings to server and localStorage
+  const syncTranslationSettingsRef = useRef(false);
   useEffect(() => {
+    // Save to localStorage immediately
     localStorage.setItem(
       STORAGE_KEYS.languages,
       JSON.stringify({ receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing })
     );
+    
+    // Sync to server (debounced, skip initial mount)
+    if (!syncTranslationSettingsRef.current) {
+      syncTranslationSettingsRef.current = true;
+      return;
+    }
+    
+    const token = localStorage.getItem("comsierge_token");
+    if (!token) return;
+    
+    const syncToServer = async () => {
+      try {
+        await fetch(`${API_BASE_URL}/api/auth/me/translation-settings`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing }),
+        });
+      } catch (err) {
+        console.error("Failed to sync translation settings:", err);
+      }
+    };
+    
+    const timeoutId = setTimeout(syncToServer, 500); // Debounce
+    return () => clearTimeout(timeoutId);
   }, [receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing]);
+  
+  // When receiveLanguage changes, clear existing translations
+  useEffect(() => {
+    if (prevReceiveLanguageRef.current !== receiveLanguage) {
+      prevReceiveLanguageRef.current = receiveLanguage;
+      
+      // Clear all existing translations when language changes
+      setThreadsByContactId(prev => {
+        const updated: typeof prev = {};
+        for (const [contactId, bubbles] of Object.entries(prev)) {
+          updated[contactId] = bubbles.map(b => ({ ...b, translatedContent: undefined }));
+        }
+        return updated;
+      });
+    }
+  }, [receiveLanguage]);
 
   // Close menus on outside click
   useEffect(() => {

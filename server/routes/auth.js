@@ -440,6 +440,12 @@ router.get("/me", async (req, res) => {
           forwardingNumber: user.forwardingNumber,
           plan: user.plan,
           createdAt: user.createdAt,
+          translationSettings: user.translationSettings || {
+            receiveLanguage: "en",
+            sendLanguage: "en",
+            autoTranslateIncoming: false,
+            translateOutgoing: false,
+          },
         },
       },
     });
@@ -604,6 +610,47 @@ router.put("/me/forwarding", async (req, res) => {
     });
   } catch (error) {
     console.error("Update forwarding for current user error:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired token" });
+  }
+});
+
+// @route   PUT /api/auth/me/translation-settings
+// @desc    Update translation settings for the current user (syncs across devices)
+router.put("/me/translation-settings", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ success: false, message: "No token provided" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const { receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing } = req.body;
+    
+    // Update only provided fields
+    if (!user.translationSettings) {
+      user.translationSettings = {};
+    }
+    if (receiveLanguage !== undefined) user.translationSettings.receiveLanguage = receiveLanguage;
+    if (sendLanguage !== undefined) user.translationSettings.sendLanguage = sendLanguage;
+    if (autoTranslateIncoming !== undefined) user.translationSettings.autoTranslateIncoming = autoTranslateIncoming;
+    if (translateOutgoing !== undefined) user.translationSettings.translateOutgoing = translateOutgoing;
+    
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Translation settings updated",
+      data: {
+        translationSettings: user.translationSettings,
+      },
+    });
+  } catch (error) {
+    console.error("Update translation settings error:", error);
     return res.status(401).json({ success: false, message: "Invalid or expired token" });
   }
 });

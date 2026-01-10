@@ -96,6 +96,13 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Translation preferences (synced across devices)
+    translationSettings: {
+      receiveLanguage: { type: String, default: "en" },
+      sendLanguage: { type: String, default: "en" },
+      autoTranslateIncoming: { type: Boolean, default: false },
+      translateOutgoing: { type: Boolean, default: false },
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt

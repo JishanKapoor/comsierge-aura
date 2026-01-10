@@ -4,6 +4,13 @@ import { API_BASE_URL } from "@/config";
 
 export type UserRole = "user" | "admin";
 
+export interface TranslationSettings {
+  receiveLanguage: string;
+  sendLanguage: string;
+  autoTranslateIncoming: boolean;
+  translateOutgoing: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -15,6 +22,7 @@ export interface User {
   personalPhoneNumber?: string | null;
   forwardingNumber?: string | null;
   createdAt?: string;
+  translationSettings?: TranslationSettings;
 }
 
 interface SignupResult {
