@@ -3377,23 +3377,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 marginBottom: 'env(safe-area-inset-bottom, 0px)'
               }}
             >
-              {/* Outgoing translation indicator - shown when translateOutgoing is enabled */}
-              {translateOutgoing && sendLanguage !== "en" && (
-                <div className="mb-2 px-2 py-1.5 rounded bg-green-50 border border-green-100 text-[11px] flex items-center gap-2">
-                  <ArrowUpFromLine className="w-3 h-3 text-green-600" />
-                  <span className="text-green-700">
-                    Sending in {languages.find(l => l.code === sendLanguage)?.name || sendLanguage}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowTranslateModal(true)}
-                    className="ml-auto text-green-600 hover:text-green-700 underline"
-                  >
-                    Change
-                  </button>
-                </div>
-              )}
-
               {/* AI assist output - subtle, above composer */}
               {aiAssistOpen &&
                 aiAssistMode &&
