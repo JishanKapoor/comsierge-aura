@@ -4054,9 +4054,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               setShowTranslateModal(false);
             }}
           />
-          <div className="fixed inset-0 flex items-start justify-center pt-20 z-50 pointer-events-none">
+          <div className="fixed inset-0 flex items-center justify-center p-4 z-50 pointer-events-none">
             <div
-              className="bg-[#F5F5F5] rounded-xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden flex flex-col"
+              className="bg-[#F5F5F5] rounded-xl shadow-2xl w-full max-w-md max-h-[calc(100vh-2rem)] pointer-events-auto overflow-hidden flex flex-col"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -4070,7 +4070,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </button>
               </div>
               
-              <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
+              <div className="px-6 py-5 space-y-5 flex-1 min-h-0 overflow-y-auto">
                 {/* Incoming Translation Section */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -4150,7 +4150,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       />
                     </button>
                   </div>
-                  
+
                   {translateOutgoing && (
                     <div>
                       <p className="text-[11px] text-gray-600 mb-1.5">Send in:</p>
