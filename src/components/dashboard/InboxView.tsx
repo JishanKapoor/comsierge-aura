@@ -665,10 +665,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         };
       });
 
-      if (!opts?.silent) toast.success("Message translated");
     } catch (error) {
       console.error("Translation failed:", error);
-      if (!opts?.silent) toast.error("Translation failed");
     } finally {
       setTranslatingBubbles(prev => {
         const next = new Set(prev);
@@ -680,7 +678,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   
   // Translate all incoming messages in the current thread
   const translateAllIncoming = async (opts?: { showToasts?: boolean; silentBubbles?: boolean }) => {
-    const showToasts = opts?.showToasts !== false;
     const silentBubbles = opts?.silentBubbles !== false;
     if (!selectedMessage) return;
     const thread = threadsByContactId[selectedMessage.contactId];
@@ -696,17 +693,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         !b.translatedContent
     );
     if (incomingBubbles.length === 0) {
-      if (showToasts) toast.info("All messages already translated");
       return;
     }
-    
-    if (showToasts) toast.info(`Translating ${incomingBubbles.length} messages...`);
-    
+
     for (const bubble of incomingBubbles) {
       await translateBubble(bubble.id, bubble.content, { silent: silentBubbles, targetLang: receiveLanguage });
     }
-
-    if (showToasts) toast.success("Translation complete");
   };
 
   type AiChatMessage = {
@@ -1409,7 +1401,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         }
       } catch (e) {
         console.error("Translation failed, sending original:", e);
-        toast.error("Couldn't translate. Sent original instead.");
       }
     }
     
@@ -3200,6 +3191,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const isLeftAligned = isIncoming;
                   const isTranslating = translatingBubbles.has(bubble.id);
                   const hasTranslation = !!bubble.translatedContent;
+                  const shouldPreferTranslated =
+                    isIncoming &&
+                    autoTranslateIncoming &&
+                    receiveLanguage !== "en" &&
+                    !showingOriginal.has(bubble.id);
                   
                   return (
                     <div
@@ -3291,13 +3287,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                            bubble.content !== "[Voice Note]" && 
                            bubble.content !== "[Audio]" && (
                             <>
-                              {/* If translated and showing original, show original; otherwise show translated if available */}
-                              {hasTranslation ? (
-                                <p className="text-sm">
-                                  {showingOriginal.has(bubble.id) ? bubble.content : bubble.translatedContent}
-                                </p>
+                              {/* Avoid flicker: if user prefers translated but it's not ready yet, show a placeholder */}
+                              {shouldPreferTranslated && !hasTranslation ? (
+                                <p className={cn("text-sm text-gray-400", isTranslating && "animate-pulse")}>Translating…</p>
                               ) : (
-                                <p className="text-sm">{bubble.content}</p>
+                                <p className="text-sm">
+                                  {hasTranslation
+                                    ? (showingOriginal.has(bubble.id) ? bubble.content : bubble.translatedContent)
+                                    : bubble.content}
+                                </p>
                               )}
                             </>
                           )}
@@ -4193,7 +4191,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   <Button
                     variant="outline"
                     onClick={() => {
-                      translateAllIncoming();
+                      translateAllIncoming({ showToasts: false, silentBubbles: true });
                     }}
                     className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                   >
@@ -4211,7 +4209,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      toast.success("Translation settings saved");
                       setShowTranslateModal(false);
 
                       // If auto-translate incoming is enabled, kick off a quiet pass for the current chat
