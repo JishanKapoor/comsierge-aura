@@ -871,7 +871,7 @@ router.post("/webhook/sms", async (req, res) => {
     console.log(`   MessageSid: ${MessageSid}`);
     console.log(`   NumMedia: ${NumMedia || 0}`);
     
-    // Parse MMS attachments (images only)
+    // Parse MMS attachments (images only) - download and upload to Cloudinary for public access
     const attachments = [];
     const numMedia = parseInt(NumMedia || 0, 10);
     if (numMedia > 0) {
@@ -881,8 +881,26 @@ router.post("/webhook/sms", async (req, res) => {
         const mediaContentType = req.body[`MediaContentType${i}`];
         if (mediaUrl && String(mediaContentType || "").toLowerCase().startsWith("image/")) {
           console.log(`   📎 Media ${i}: ${mediaContentType} - ${mediaUrl}`);
+          
+          // Download from Twilio and upload to Cloudinary for public access
+          let publicUrl = mediaUrl;
+          try {
+            if (hasCloudinaryConfig) {
+              console.log(`   📎 Uploading to Cloudinary...`);
+              const upload = await cloudinary.uploader.upload(mediaUrl, {
+                resource_type: "image",
+                folder: "comsierge/mms-inbound",
+              });
+              publicUrl = upload?.secure_url || mediaUrl;
+              console.log(`   📎 Cloudinary URL: ${publicUrl}`);
+            }
+          } catch (uploadErr) {
+            console.error(`   ❌ Failed to upload to Cloudinary:`, uploadErr.message);
+            // Keep original Twilio URL as fallback (may not work for display)
+          }
+          
           attachments.push({
-            url: mediaUrl,
+            url: publicUrl,
             contentType: mediaContentType,
             filename: `media_${i}_${MessageSid}`,
           });

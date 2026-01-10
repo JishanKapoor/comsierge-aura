@@ -9,7 +9,7 @@ import {
   Send,
   Mic,
   StopCircle,
-  File,
+  Paperclip,
   Smile,
   MessageSquare,
   Shield,
@@ -3134,7 +3134,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 />
                 {pendingImage ? (
                   <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
-                    <File className="w-4 h-4 text-blue-600" />
+                    <Paperclip className="w-4 h-4 text-blue-600" />
                     <span className="text-sm text-blue-600">Image ready</span>
                     <button
                       className="p-1 rounded hover:bg-blue-100 transition-colors"
@@ -3152,7 +3152,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     onClick={() => messageAttachmentInputRef.current?.click()}
                     type="button"
                   >
-                    <File className="w-4 h-4 text-gray-500" />
+                    <Paperclip className="w-4 h-4 text-gray-500" />
                   </button>
                 )}
                 <div className="flex-1 relative">
