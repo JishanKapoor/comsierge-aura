@@ -495,7 +495,9 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       "audio/aac",
       "audio/wav",
       "audio/webm",
+      "audio/webm;codecs=opus",
       "audio/ogg",
+      "audio/ogg;codecs=opus",
       "audio/opus",
     ]);
     const normalizedMediaType = String(mediaType || "").toLowerCase();
@@ -514,7 +516,9 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           message: `Unsupported image type: ${normalizedMediaType}`,
         });
       }
-      if (isAudioMedia && !allowedAudioTypes.has(normalizedMediaType)) {
+      // For audio, also check base type without codec params
+      const baseAudioType = normalizedMediaType.split(";")[0];
+      if (isAudioMedia && !allowedAudioTypes.has(normalizedMediaType) && !allowedAudioTypes.has(baseAudioType)) {
         return res.status(400).json({
           success: false,
           message: `Unsupported audio type: ${normalizedMediaType}`,

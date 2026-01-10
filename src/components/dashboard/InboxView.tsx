@@ -3463,11 +3463,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       )}
                     </button>
                     <button
-                      onClick={handleAiRewrite}
+                      onClick={() => { if (!voiceModeActive) handleAiRewrite(); }}
                       title="Rewrite (suggestion)"
                       className={cn(
                         "inline-flex items-center justify-center w-8 h-8 rounded transition-colors",
-                        aiAssistOpen && aiAssistMode === "rewrite" ? "bg-purple-100" : "hover:bg-gray-100"
+                        aiAssistOpen && aiAssistMode === "rewrite" ? "bg-purple-100" : "hover:bg-gray-100",
+                        voiceModeActive && "opacity-50 cursor-not-allowed"
                       )}
                       type="button"
                       disabled={voiceModeActive}
@@ -3475,11 +3476,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       <Wand2 className="w-4 h-4 text-purple-600" />
                     </button>
                     <button
-                      onClick={handleAiSuggestion}
+                      onClick={() => { if (!voiceModeActive) handleAiSuggestion(); }}
                       title="Reply ideas"
                       className={cn(
                         "inline-flex items-center justify-center w-8 h-8 rounded transition-colors",
-                        aiAssistOpen && aiAssistMode === "suggest" ? "bg-purple-100" : "hover:bg-gray-100"
+                        aiAssistOpen && aiAssistMode === "suggest" ? "bg-purple-100" : "hover:bg-gray-100",
+                        voiceModeActive && "opacity-50 cursor-not-allowed"
                       )}
                       type="button"
                       disabled={voiceModeActive}
