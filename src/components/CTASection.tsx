@@ -59,9 +59,14 @@ const CTASection = () => {
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-4 h-4 text-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
             </span>
-            Request early access
+            Get in touch
           </Link>
-          {/* Intentionally no public email link in prototype */}
+          <a
+            href="mailto:jishan.kapoor@mail.utoronto.ca"
+            className="pill-button-ghost"
+          >
+            jishan.kapoor@mail.utoronto.ca
+          </a>
         </div>
       </div>
     </section>
