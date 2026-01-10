@@ -382,11 +382,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setContacts(data);
   }, []);
 
+  // Prevent stale conversation fetches (e.g., rapid filter switching) from flashing old data
+  const conversationsRequestId = useRef(0);
+
   // Reusable function to load conversations from API
-  const loadConversations = useCallback(async (showLoading = false) => {
-    if (showLoading) setIsLoadingMessages(true);
-    try {
-      const conversations = await fetchConversations(activeFilter as ApiFilterType);
+  const loadConversations = useCallback(
+    async (opts?: { showLoading?: boolean; replace?: boolean }) => {
+      const showLoading = Boolean(opts?.showLoading);
+      const replace = Boolean(opts?.replace);
+
+      const requestId = ++conversationsRequestId.current;
+      if (showLoading) setIsLoadingMessages(true);
+
+      try {
+        const conversations = await fetchConversations(activeFilter as ApiFilterType);
+
+        // Ignore stale responses (older filter / older request)
+        if (requestId !== conversationsRequestId.current) return;
       // Convert API conversations to Message format for UI compatibility
       // Look up contact names from saved contacts
       const msgs: Message[] = conversations
@@ -436,31 +448,43 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         phonesInApi.add(key);
         dedupedMsgs.push(m);
       }
-      
-      setMessages(prev => {
-        // Preserve any local "new" conversations that haven't been saved to DB yet
-        const localNewConversations = prev
-          .filter(m => m.id.startsWith("new-"))
-          // If API has the conversation now, don't show the local placeholder too
-          .filter(m => !phonesInApi.has(normalizePhone(m.contactPhone)));
 
-        const localDeduped: Message[] = [];
-        const localPhones = new Set<string>();
-        for (const m of localNewConversations) {
-          const key = normalizePhone(m.contactPhone);
-          if (!key || localPhones.has(key)) continue;
-          localPhones.add(key);
-          localDeduped.push(m);
+        if (replace) {
+          // Atomic update (used for initial load and filter changes) to avoid flicker
+          setMessages(dedupedMsgs);
+        } else {
+          setMessages((prev) => {
+            // Preserve any local "new" conversations that haven't been saved to DB yet
+            const localNewConversations = prev
+              .filter((m) => m.id.startsWith("new-"))
+              // If API has the conversation now, don't show the local placeholder too
+              .filter((m) => !phonesInApi.has(normalizePhone(m.contactPhone)));
+
+            const localDeduped: Message[] = [];
+            const localPhones = new Set<string>();
+            for (const m of localNewConversations) {
+              const key = normalizePhone(m.contactPhone);
+              if (!key || localPhones.has(key)) continue;
+              localPhones.add(key);
+              localDeduped.push(m);
+            }
+
+            return [...localDeduped, ...dedupedMsgs];
+          });
         }
-
-        return [...localDeduped, ...dedupedMsgs];
-      });
-    } catch (error) {
-      // Don't wipe the inbox list on transient errors; keep last known state.
-      console.error("Failed to load conversations:", error);
-    }
-    if (showLoading) setIsLoadingMessages(false);
-  }, [activeFilter, contacts]);
+      } catch (error) {
+        // Ignore stale errors; otherwise keep last known state.
+        if (requestId !== conversationsRequestId.current) return;
+        console.error("Failed to load conversations:", error);
+      } finally {
+        // Only resolve loading for the latest request
+        if (showLoading && requestId === conversationsRequestId.current) {
+          setIsLoadingMessages(false);
+        }
+      }
+    },
+    [activeFilter, contacts, normalizePhone]
+  );
 
   // Track if this is the initial load and current filter for transition handling
   const hasInitiallyLoaded = useRef(false);
@@ -469,19 +493,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Fetch conversations from MongoDB API on filter change
   useEffect(() => {
-    // Check if this is a filter change (not initial load)
-    if (hasInitiallyLoaded.current && previousFilter.current !== activeFilter) {
-      isFilterTransition.current = true;
-    }
+    const isFilterChange = hasInitiallyLoaded.current && previousFilter.current !== activeFilter;
     previousFilter.current = activeFilter;
-    
-    // Only show loading skeleton on very first load, not on filter changes
-    const shouldShowLoading = !hasInitiallyLoaded.current;
-    loadConversations(shouldShowLoading).then(() => {
-      isFilterTransition.current = false;
-    });
+
+    if (isFilterChange) {
+      // Make filter changes atomic: clear list + selection and show skeleton until new data arrives.
+      setSelectedMessageId(null);
+      setMessages([]);
+      setIsLoadingMessages(true);
+    }
+
+    const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
+    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading });
     hasInitiallyLoaded.current = true;
-  }, [loadConversations]); // Refetch when filter changes
+    isFilterTransition.current = false;
+  }, [activeFilter, loadConversations]);
 
   // Poll for new messages every 5 seconds
   useEffect(() => {
