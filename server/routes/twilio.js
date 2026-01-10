@@ -1311,16 +1311,19 @@ router.post("/webhook/sms", async (req, res) => {
 
         // Track the receive language for translation (from the message-notify rule)
         let receiveLanguage = "en"; // Default to English
+        console.log(`   📢 Found ${messageNotifyRules.length} message-notify rules`);
 
         // Evaluate message notification rules
         for (const rule of messageNotifyRules) {
           const conditions = rule.conditions || {};
+          console.log(`   📢 Rule conditions:`, JSON.stringify(conditions));
           const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
           const notifyTags = conditions.notifyTags || [];
           
           // Get receive language from rule conditions
           if (conditions.receiveLanguage) {
             receiveLanguage = conditions.receiveLanguage;
+            console.log(`   📢 Set receiveLanguage to: ${receiveLanguage}`);
           }
           
           console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter}, lang: ${receiveLanguage})`);
@@ -1468,6 +1471,7 @@ router.post("/webhook/sms", async (req, res) => {
         console.log(`   Saved to MongoDB for user ${user.email}`);
         console.log(`   Final status: ${messageStatus}, held: ${isHeld}, priority: ${isPriority}, notify: ${shouldNotify}`);
         console.log(`   User's forwardingNumber: ${user.forwardingNumber || "NOT SET"}`);
+        console.log(`   📢 receiveLanguage at forward time: "${receiveLanguage}"`);
         
         // FORWARD SMS to user's personal phone if shouldNotify is true
         // But skip if the sender IS the user's personal number (no point forwarding to yourself)
