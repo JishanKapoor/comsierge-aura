@@ -8,7 +8,6 @@ import BusinessSection from "@/components/BusinessSection";
 import StatsSection from "@/components/StatsSection";
 import FAQSection from "@/components/FAQSection";
 import CTASection from "@/components/CTASection";
-import Footer from "@/components/Footer";
 
 const Index = () => {
   return (
@@ -23,7 +22,6 @@ const Index = () => {
       <StatsSection />
       <FAQSection />
       <CTASection />
-      <Footer />
     </main>
   );
 };

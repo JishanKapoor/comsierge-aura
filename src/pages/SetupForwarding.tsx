@@ -7,7 +7,6 @@ import { isValidUsPhoneNumber, normalizeUsPhoneDigits } from "@/lib/validations"
 import Logo from "@/components/Logo";
 import { toast } from "sonner";
 import { API_BASE_URL } from "@/config";
-import AppFooter from "@/components/AppFooter";
 
 const API_URL = `${API_BASE_URL}/api`;
 
@@ -140,7 +139,7 @@ const SetupForwarding = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-background flex flex-col">
+    <div className="min-h-screen relative overflow-hidden bg-background">
       {/* Background with fade-in */}
       <div className={`absolute inset-0 z-0 transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}>
         <img
@@ -160,7 +159,7 @@ const SetupForwarding = () => {
       )}
 
       {/* Content */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 sm:py-12">
         {/* Logo */}
         <div className="w-full max-w-md mb-6 sm:mb-8 flex justify-center">
           <Link to="/" className="text-xl sm:text-2xl">
@@ -325,8 +324,6 @@ const SetupForwarding = () => {
           </div>
         )}
       </div>
-
-      <AppFooter />
     </div>
   );
 };
