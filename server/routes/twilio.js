@@ -1301,14 +1301,14 @@ router.post("/webhook/sms", async (req, res) => {
         let forwardedTo = null;
         
         // Save message to database with analysis results
-        // Filter out raw media filenames from body (Twilio sometimes puts these in Body)
+        // Filter out raw media placeholders from body (Twilio sometimes puts these in Body)
         let cleanBody = Body || "";
         if (attachments.length > 0) {
-          // Remove media_X_MMXXXX patterns from body (Twilio media placeholders)
-          cleanBody = cleanBody.replace(/media_\d+_MM[a-f0-9]+/gi, "").trim();
-        }
-        if (!cleanBody && attachments.length > 0) {
-          cleanBody = `[Media message: ${attachments.length} attachment(s)]`;
+          // Remove media_X_MMXXXX patterns and generic Twilio MMS placeholders
+          cleanBody = cleanBody
+            .replace(/media_\d+_MM[a-f0-9]+/gi, "")
+            .replace(/\[Media message:\s*\d+\s*attachment\(s\)\]/gi, "")
+            .trim();
         }
         
         const savedMessage = await saveMessageToDB({
