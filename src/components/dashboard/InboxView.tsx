@@ -3191,10 +3191,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const isLeftAligned = isIncoming;
                   const isTranslating = translatingBubbles.has(bubble.id);
                   const hasTranslation = !!bubble.translatedContent;
+                  const isIncomingTranslationOn =
+                    autoTranslateIncoming && receiveLanguage !== "en";
                   const shouldPreferTranslated =
                     isIncoming &&
-                    autoTranslateIncoming &&
-                    receiveLanguage !== "en" &&
+                    isIncomingTranslationOn &&
                     !showingOriginal.has(bubble.id);
                   
                   return (
@@ -3293,7 +3294,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                               ) : (
                                 <p className="text-sm">
                                   {hasTranslation
-                                    ? (showingOriginal.has(bubble.id) ? bubble.content : bubble.translatedContent)
+                                    ? (isIncoming && !isIncomingTranslationOn)
+                                      ? bubble.content
+                                      : (showingOriginal.has(bubble.id) ? bubble.content : bubble.translatedContent)
                                     : bubble.content}
                                 </p>
                               )}
@@ -3301,7 +3304,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           )}
                           
                           {/* Show translation indicator with View original toggle */}
-                          {hasTranslation && (
+                          {hasTranslation && (!isIncoming || isIncomingTranslationOn) && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -4149,39 +4152,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     </div>
                   )}
                 </div>
-                
-                {/* Summary when both enabled */}
-                {(autoTranslateIncoming || translateOutgoing) && (
-                  <>
-                    <div className="border-t border-gray-200" />
-                    <div className="bg-indigo-50 rounded-lg px-3 py-2.5 border border-indigo-100">
-                      <p className="text-[11px] text-indigo-800 font-medium mb-1">Active translation:</p>
-                      <div className="text-[11px] text-indigo-700 space-y-0.5">
-                        {autoTranslateIncoming && (
-                          <p>• Incoming → {languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}</p>
-                        )}
-                        {translateOutgoing && (
-                          <p>• Outgoing → {languages.find(l => l.code === sendLanguage)?.name || sendLanguage}</p>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
               
               <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
-                {selectedMessage && autoTranslateIncoming && receiveLanguage !== "en" && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      translateAllIncoming({ showToasts: false, silentBubbles: true });
-                    }}
-                    className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                  >
-                    <Languages className="w-4 h-4 mr-2" />
-                    Translate existing messages
-                  </Button>
-                )}
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
