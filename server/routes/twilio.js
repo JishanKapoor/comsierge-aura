@@ -1234,11 +1234,10 @@ router.post("/webhook/sms", async (req, res) => {
         
         console.log(`   Found ${messageNotifyRules.length} active message notification rules`);
         
-        // SPAM should never notify/forward (even if tags would match).
-        // This prevents accidentally forwarding spam/phishing to the user's personal phone.
-        if (messageStatus === "spam" || spamAnalysis?.isSpam === true) {
-          shouldNotify = false;
-        }
+        // NOTE: Held/spam message forwarding is controlled by priorityFilter:
+        // - "all" = forward ALL messages INCLUDING held/spam
+        // - "important" or "urgent" = do NOT forward held/spam messages
+        // Blocked contacts NEVER get forwarded (already handled above with early return)
 
         // Compute a deterministic effective priority for notification filtering.
         // This reduces reliance on LLM variability for obvious cases.
@@ -1280,13 +1279,14 @@ router.post("/webhook/sms", async (req, res) => {
           console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter})`);
           
           // Check "Always notify for messages from:" tags first
+          // If sender has a matching tag, ALWAYS notify (even if held/spam)
           if (notifyTags.length > 0) {
             const hasMatchingTag = notifyTags.some(tag => senderContext.tags.includes(tag));
             if (hasMatchingTag) {
-              console.log(`   Tag match found - always notify`);
-              // Still never notify for spam
-              shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
-              if (isHeld && !spamAnalysis?.isSpam) {
+              console.log(`   Tag match found - always notify (overrides spam/held status)`);
+              shouldNotify = true;
+              // Also release from held if it was incorrectly flagged
+              if (isHeld) {
                 isHeld = false;
                 messageStatus = "received";
               }
@@ -1295,36 +1295,41 @@ router.post("/webhook/sms", async (req, res) => {
           }
           
           // Apply priority filter
-          // all = notify for all messages
-          // important = notify only for high + medium priority
-          // urgent = notify only for high priority
+          // all = notify for ALL messages INCLUDING held/spam (user wants to see everything)
+          // important = notify only for high + medium priority (NO held/spam)
+          // urgent = notify only for high priority (NO held/spam)
           // 
-          // Priority is determined by AI analysis for ALL messages (including saved contacts)
-          // Saved contacts are NOT spam, but they can still send non-urgent messages
+          // Held messages are considered spam - they should only be forwarded if user selects "all"
           const messagePriority = computeEffectivePriority(Body, aiAnalysis?.priority);
+          const isSpamOrHeld = isHeld || messageStatus === "spam" || spamAnalysis?.isSpam === true;
           
-          console.log(`   Message priority: ${messagePriority} (AI-determined, isSavedContact: ${senderContext.isSavedContact})`);
+          console.log(`   Message priority: ${messagePriority}, isSpamOrHeld: ${isSpamOrHeld}, isSavedContact: ${senderContext.isSavedContact}`);
           
-          // Priority filter controls SMS FORWARDING to personal phone, NOT held status.
-          // Messages go to "held" ONLY if they are spam. Non-spam messages stay in inbox
-          // but just don't get forwarded to personal phone if priority is too low.
           switch (priorityFilter) {
             case "all":
-              shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
+              // Forward ALL messages including held/spam
+              shouldNotify = true;
+              console.log(`   All messages selected - forwarding (even if held/spam)`);
               break;
             case "important":
-              // Forward only high and medium priority
-              if (messagePriority === "high" || messagePriority === "medium") {
-                shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
+              // Forward only high and medium priority - NEVER forward held/spam
+              if (isSpamOrHeld) {
+                shouldNotify = false;
+                console.log(`   Held/spam message - skipping notification (filter: important)`);
+              } else if (messagePriority === "high" || messagePriority === "medium") {
+                shouldNotify = true;
               } else {
                 shouldNotify = false;
                 console.log(`   Low priority message - skipping notification (filter: important)`);
               }
               break;
             case "urgent":
-              // Forward only high priority
-              if (messagePriority === "high") {
-                shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
+              // Forward only high priority - NEVER forward held/spam
+              if (isSpamOrHeld) {
+                shouldNotify = false;
+                console.log(`   Held/spam message - skipping notification (filter: urgent)`);
+              } else if (messagePriority === "high") {
+                shouldNotify = true;
               } else {
                 shouldNotify = false;
                 console.log(`   Non-urgent message - skipping notification (filter: urgent)`);
@@ -1334,7 +1339,7 @@ router.post("/webhook/sms", async (req, res) => {
           break; // Only process first active rule
         }
         
-        // If no message-notify rules exist, default to notify all
+        // If no message-notify rules exist, default to notify all (including held/spam)
         if (messageNotifyRules.length === 0) {
           console.log(`   No message notification rules - defaulting to notify all`);
           shouldNotify = true;
