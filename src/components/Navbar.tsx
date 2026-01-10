@@ -26,7 +26,8 @@ const Navbar = () => {
       ticking = true;
       
       window.requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY;
+        // Robust scroll detection (checks body/docElement too)
+        const currentScrollY = window.scrollY !== 0 ? window.scrollY : (document.documentElement.scrollTop || document.body.scrollTop || 0);
         
         // Background logic
         setScrolled(currentScrollY > 20);
@@ -46,19 +47,11 @@ const Navbar = () => {
         }
 
         // Determine direction
-        // > 0 means scrolling DOWN
-        // < 0 means scrolling UP
         const diff = currentScrollY - lastScrollY.current;
         
-        // Only trigger if movement is significant to avoid jitter
+        // Only trigger if movement is significant
         if (Math.abs(diff) > 2) {
-          if (diff > 0) {
-            // Scrolling DOWN -> Hide
-            setHidden(true);
-          } else {
-            // Scrolling UP -> Show
-            setHidden(false);
-          }
+          setHidden(diff > 0); // Down = Hide(true), Up = Show(false)
         }
         
         lastScrollY.current = currentScrollY;
@@ -66,11 +59,12 @@ const Navbar = () => {
       });
     };
 
-    lastScrollY.current = window.scrollY;
-    setScrolled(window.scrollY > 20);
+    lastScrollY.current = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    setScrolled(lastScrollY.current > 20);
 
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    // Use capture=true to catch scroll events from body if it's the scroll container
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
+    return () => window.removeEventListener("scroll", onScroll, { capture: true } as any);
   }, []);
 
   // Close mobile menu on route changes
