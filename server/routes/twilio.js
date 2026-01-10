@@ -934,21 +934,37 @@ router.post("/webhook/sms", async (req, res) => {
       }
     }
     
-    // Parse MMS attachments (images only) - download with auth and upload to Cloudinary
+    // Parse MMS attachments (images AND audio) - download with auth and upload to Cloudinary
     const attachments = [];
     const numMedia = parseInt(NumMedia || 0, 10);
+    
+    // Re-check Cloudinary config at runtime
+    const cloudinaryReady = !!process.env.CLOUDINARY_CLOUD_NAME && !!process.env.CLOUDINARY_API_KEY && !!process.env.CLOUDINARY_API_SECRET;
+    if (cloudinaryReady) {
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+        secure: true,
+      });
+    }
+    
     if (numMedia > 0) {
       console.log(`   📎 Processing ${numMedia} media attachment(s)...`);
       for (let i = 0; i < numMedia; i++) {
         const mediaUrl = req.body[`MediaUrl${i}`];
         const mediaContentType = req.body[`MediaContentType${i}`];
-        if (mediaUrl && String(mediaContentType || "").toLowerCase().startsWith("image/")) {
+        const contentTypeLower = String(mediaContentType || "").toLowerCase();
+        const isImage = contentTypeLower.startsWith("image/");
+        const isAudio = contentTypeLower.startsWith("audio/");
+        
+        if (mediaUrl && (isImage || isAudio)) {
           console.log(`   📎 Media ${i}: ${mediaContentType} - ${mediaUrl}`);
           
           let publicUrl = null;
           
           try {
-            // Step 1: Download image from Twilio (requires Basic Auth)
+            // Step 1: Download from Twilio (requires Basic Auth)
             console.log(`   📎 Downloading from Twilio with auth...`);
             const authHeader = 'Basic ' + Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
             const response = await fetch(mediaUrl, {
@@ -959,16 +975,16 @@ router.post("/webhook/sms", async (req, res) => {
               throw new Error(`Twilio download failed: ${response.status} ${response.statusText}`);
             }
             
-            const imageBuffer = await response.arrayBuffer();
-            const base64Image = `data:${mediaContentType};base64,${Buffer.from(imageBuffer).toString('base64')}`;
-            console.log(`   📎 Downloaded ${imageBuffer.byteLength} bytes`);
+            const mediaBuffer = await response.arrayBuffer();
+            const base64Media = `data:${mediaContentType};base64,${Buffer.from(mediaBuffer).toString('base64')}`;
+            console.log(`   📎 Downloaded ${mediaBuffer.byteLength} bytes`);
             
             // Step 2: Upload to Cloudinary
-            if (hasCloudinaryConfig) {
+            if (cloudinaryReady) {
               console.log(`   📎 Uploading to Cloudinary...`);
-              const upload = await cloudinary.uploader.upload(base64Image, {
-                resource_type: "image",
-                folder: "comsierge/mms-inbound",
+              const upload = await cloudinary.uploader.upload(base64Media, {
+                resource_type: isAudio ? "video" : "image",
+                folder: isAudio ? "comsierge/voice-notes-inbound" : "comsierge/mms-inbound",
               });
               publicUrl = upload?.secure_url;
               console.log(`   📎 ✅ Cloudinary URL: ${publicUrl}`);
@@ -976,7 +992,7 @@ router.post("/webhook/sms", async (req, res) => {
               // Fallback: store in MongoDB
               console.log(`   📎 No Cloudinary config, storing in MongoDB...`);
               const media = new Media({
-                data: base64Image,
+                data: base64Media,
                 mimeType: mediaContentType,
               });
               await media.save();
@@ -989,14 +1005,15 @@ router.post("/webhook/sms", async (req, res) => {
           }
           
           if (publicUrl) {
+            const ext = isAudio ? (mediaContentType.split('/')[1] || 'mp3') : (mediaContentType.split('/')[1] || 'jpg');
             attachments.push({
               url: publicUrl,
               contentType: mediaContentType,
-              filename: `image_${i + 1}.${mediaContentType.split('/')[1] || 'jpg'}`,
+              filename: isAudio ? `voice_note_${i + 1}.${ext}` : `image_${i + 1}.${ext}`,
             });
           }
         } else if (mediaUrl) {
-          console.log(`   📎 Skipping non-image media ${i}: ${mediaContentType}`);
+          console.log(`   📎 Skipping unsupported media ${i}: ${mediaContentType}`);
         }
       }
     }
