@@ -1254,12 +1254,22 @@ router.post("/webhook/sms", async (req, res) => {
         let forwardedTo = null;
         
         // Save message to database with analysis results
+        // Filter out raw media filenames from body (Twilio sometimes puts these in Body)
+        let cleanBody = Body || "";
+        if (attachments.length > 0) {
+          // Remove media_X_MMXXXX patterns from body (Twilio media placeholders)
+          cleanBody = cleanBody.replace(/media_\d+_MM[a-f0-9]+/gi, "").trim();
+        }
+        if (!cleanBody && attachments.length > 0) {
+          cleanBody = `[Media message: ${attachments.length} attachment(s)]`;
+        }
+        
         const savedMessage = await saveMessageToDB({
           userId: user._id,
           contactPhone: normalizeToE164ish(From),
           contactName: contact?.name || normalizeToE164ish(From),
           direction: "incoming",
-          body: Body || (attachments.length > 0 ? `[Media message: ${attachments.length} attachment(s)]` : ""),
+          body: cleanBody,
           status: messageStatus,
           twilioSid: MessageSid,
           fromNumber: normalizeToE164ish(From),
