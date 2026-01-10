@@ -7,7 +7,9 @@ import {
   PhoneCall,
   MoreHorizontal,
   Send,
-  Paperclip,
+  Mic,
+  StopCircle,
+  File,
   Smile,
   MessageSquare,
   Shield,
@@ -491,29 +493,75 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Voice note recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [pendingVoiceNote, setPendingVoiceNote] = useState<Blob | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const processedMessageIds = useRef<Set<string>>(new Set());
 
-  const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-  const isAllowedAttachment = (file: File) => {
-    const type = (file.type || "").toLowerCase();
-    const name = (file.name || "").toLowerCase();
-
-    // Only allow images (for MMS)
-    const byMime =
-      type === "image/jpeg" ||
-      type === "image/png" ||
-      type === "image/gif";
-
-    const byExt =
-      name.endsWith(".jpg") ||
-      name.endsWith(".jpeg") ||
-      name.endsWith(".png") ||
-      name.endsWith(".gif");
-
-    return byMime || byExt;
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setPendingVoiceNote(audioBlob);
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      
+      // Start duration timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+      
+      toast.info("Recording started...");
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+      toast.error("Could not access microphone. Please allow microphone access.");
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      toast.success("Voice note recorded");
+    }
+  };
+  
+  const cancelVoiceNote = () => {
+    setPendingVoiceNote(null);
+    setRecordingDuration(0);
+  };
+  
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const insertEmoji = (emoji: string) => {
@@ -828,6 +876,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
+            attachments: m.attachments || [],
           }));
           
           // Only update if messages have changed
@@ -995,13 +1044,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (isMobile) setMobilePane("chat");
   };
 
-  // Convert file to base64 for sending
-  const fileToBase64 = (file: File): Promise<string> => {
+  // Convert blob to base64 for sending
+  const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(blob);
     });
   };
 
@@ -1009,16 +1058,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (!selectedMessage) return;
 
     const trimmed = newMessage.trim();
-    if (!trimmed && !pendingAttachment) return;
+    if (!trimmed && !pendingVoiceNote) return;
     if (isSending) return;
 
-    // Capture attachment before clearing (for MMS)
-    const attachmentToSend = pendingAttachment;
+    // Capture voice note before clearing
+    const voiceNoteToSend = pendingVoiceNote;
 
     // Clear input immediately for instant feel
     setNewMessage("");
-    setPendingAttachment(null);
-    if (fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
+    setPendingVoiceNote(null);
+    setRecordingDuration(0);
     setShowEmojiPicker(false);
     setAiAssistOpen(false);
     setAiAssistMode(null);
@@ -1048,11 +1097,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         timestamp,
       });
     }
-    if (attachmentToSend) {
+    if (voiceNoteToSend) {
       optimisticBubbles.push({
-        id: `${optimisticId}-file`,
+        id: `${optimisticId}-voice`,
         role: "outgoing",
-        content: `📷 ${attachmentToSend.name}`,
+        content: `🎤 Voice note`,
         timestamp,
       });
     }
@@ -1093,14 +1142,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       
       setIsSending(true);
       try {
-        // Convert image to base64 if present
+        // Convert voice note to base64 if present
         let mediaBase64: string | undefined;
-        if (attachmentToSend) {
+        let mediaType: string | undefined;
+        if (voiceNoteToSend) {
           try {
-            mediaBase64 = await fileToBase64(attachmentToSend);
+            mediaBase64 = await blobToBase64(voiceNoteToSend);
+            mediaType = "audio/webm";
           } catch (e) {
-            console.error("Failed to convert image to base64:", e);
-            toast.error("Failed to process image");
+            console.error("Failed to convert voice note to base64:", e);
+            toast.error("Failed to process voice note");
             setIsSending(false);
             // Remove optimistic bubbles on failure
             setThreadsByContactId((prev) => {
@@ -1124,16 +1175,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           mediaType?: string;
         } = {
           toNumber: recipientPhone,
-          body: messageToSend || (attachmentToSend ? "" : ""),
+          body: messageToSend || (voiceNoteToSend ? "🎤 Voice note" : ""),
           fromNumber: userPhone,
           contactName: selectedMessage.contactName,
         };
 
         if (mediaBase64) {
           requestBody.mediaBase64 = mediaBase64;
-          requestBody.mediaType = attachmentToSend?.type || "image/jpeg";
-          console.log("📷 Sending MMS with media type:", requestBody.mediaType);
-          console.log("📷 Media base64 length:", mediaBase64.length);
+          requestBody.mediaType = mediaType || "audio/webm";
+          console.log("🎤 Sending MMS with voice note, media type:", requestBody.mediaType);
+          console.log("🎤 Media base64 length:", mediaBase64.length);
         }
         
         console.log("📤 Sending message request:", {
@@ -1221,6 +1272,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
+            attachments: m.attachments || [],
           }));
           setThreadsByContactId((prev) => {
             const current = prev[selectedMessage.contactId] ?? [];
@@ -2974,6 +3026,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                                       loading="lazy"
                                     />
                                   </a>
+                                ) : att.contentType?.startsWith("audio/") ? (
+                                  <div key={idx} className="flex flex-col gap-1">
+                                    <audio 
+                                      controls 
+                                      src={att.url} 
+                                      className="max-w-full h-10"
+                                    />
+                                    <span className="flex items-center gap-1 text-xs opacity-70">
+                                      <Mic className="w-3 h-3" />
+                                      Voice note
+                                    </span>
+                                  </div>
                                 ) : (
                                   <a 
                                     key={idx} 
@@ -2985,7 +3049,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                                       isOutgoing ? "text-indigo-100" : "text-indigo-600"
                                     )}
                                   >
-                                    <Paperclip className="w-3 h-3" />
+                                    <File className="w-3 h-3" />
                                     {att.filename || "Attachment"}
                                   </a>
                                 )
@@ -3067,26 +3131,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               }}
             >
 
-              {pendingAttachment && (
-                <div className="mb-2 flex items-center justify-between gap-2 px-3 py-2 rounded border border-gray-200 bg-gray-50">
-                  <div className="min-w-0">
-                    <p className="text-xs text-gray-700 truncate">{pendingAttachment.name}</p>
-                    <p className="text-[11px] text-gray-500">{Math.round(pendingAttachment.size / 1024)} KB</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPendingAttachment(null);
-                      if (fileInputRef.current) fileInputRef.current.value = "";
-                    }}
-                    className="p-1.5 rounded hover:bg-gray-200"
-                    aria-label="Remove attachment"
-                  >
-                    <X className="w-4 h-4 text-gray-500" />
-                  </button>
-                </div>
-              )}
-
               {/* AI assist output - subtle, above composer */}
               {aiAssistOpen &&
                 aiAssistMode &&
@@ -3157,39 +3201,45 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 )}
 
               <div className="flex items-end gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept="image/jpeg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    if (file.size > MAX_ATTACHMENT_BYTES) {
-                      toast.error("File must be under 5 MB");
-                      e.currentTarget.value = "";
-                      return;
-                    }
-
-                    if (!isAllowedAttachment(file)) {
-                      toast.error("Only images allowed (JPEG, PNG, GIF)");
-                      e.currentTarget.value = "";
-                      return;
-                    }
-
-                    setPendingAttachment(file);
-                    e.currentTarget.value = ""; // Reset so same file can be selected again
-                    toast.success("Attachment added");
-                  }}
-                />
-                <button
-                  className="p-2 rounded hover:bg-gray-100 transition-colors shrink-0"
-                  aria-label="Attach"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Paperclip className="w-4 h-4 text-gray-500" />
-                </button>
+                {/* Voice Recording Button */}
+                {isRecording ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-lg border border-red-200">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-sm text-red-600 font-medium">
+                      {formatRecordingTime(recordingDuration)}
+                    </span>
+                    <button
+                      className="p-1.5 rounded-full hover:bg-red-100 transition-colors"
+                      aria-label="Stop recording"
+                      onClick={stopRecording}
+                      type="button"
+                    >
+                      <StopCircle className="w-5 h-5 text-red-600" />
+                    </button>
+                  </div>
+                ) : pendingVoiceNote ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                    <Mic className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-blue-600">Voice note ready</span>
+                    <button
+                      className="p-1 rounded hover:bg-blue-100 transition-colors"
+                      aria-label="Remove voice note"
+                      onClick={cancelVoiceNote}
+                      type="button"
+                    >
+                      <X className="w-4 h-4 text-blue-600" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="p-2 rounded hover:bg-gray-100 transition-colors shrink-0"
+                    aria-label="Record voice note"
+                    onClick={startRecording}
+                    type="button"
+                  >
+                    <Mic className="w-4 h-4 text-gray-500" />
+                  </button>
+                )}
                 <div className="flex-1 relative">
                   <input
                     type="text"

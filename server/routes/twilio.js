@@ -792,17 +792,37 @@ router.post("/configure-webhooks", async (req, res) => {
 });
 
 // @route   POST /api/twilio/webhook/sms
-// @desc    Handle incoming SMS messages with AI analysis and routing rules
+// @desc    Handle incoming SMS/MMS messages with AI analysis and routing rules
 // @access  Public (Twilio webhook)
 router.post("/webhook/sms", async (req, res) => {
   try {
-    const { From, To, Body, MessageSid, AccountSid } = req.body;
+    const { From, To, Body, MessageSid, AccountSid, NumMedia } = req.body;
     
-    console.log("📨 Incoming SMS:");
+    console.log("📨 Incoming SMS/MMS:");
     console.log(`   From: ${From}`);
     console.log(`   To: ${To}`);
     console.log(`   Body: ${Body}`);
     console.log(`   MessageSid: ${MessageSid}`);
+    console.log(`   NumMedia: ${NumMedia || 0}`);
+    
+    // Parse MMS attachments
+    const attachments = [];
+    const numMedia = parseInt(NumMedia || 0, 10);
+    if (numMedia > 0) {
+      console.log(`   📎 Processing ${numMedia} media attachment(s)...`);
+      for (let i = 0; i < numMedia; i++) {
+        const mediaUrl = req.body[`MediaUrl${i}`];
+        const mediaContentType = req.body[`MediaContentType${i}`];
+        if (mediaUrl) {
+          console.log(`   📎 Media ${i}: ${mediaContentType} - ${mediaUrl}`);
+          attachments.push({
+            url: mediaUrl,
+            contentType: mediaContentType,
+            filename: `media_${i}_${MessageSid}`,
+          });
+        }
+      }
+    }
 
     // Store the message in memory (for backwards compat)
     storeIncomingMessage({
@@ -1153,12 +1173,14 @@ router.post("/webhook/sms", async (req, res) => {
           contactPhone: normalizeToE164ish(From),
           contactName: contact?.name || normalizeToE164ish(From),
           direction: "incoming",
-          body: Body,
+          body: Body || (attachments.length > 0 ? `[Media message: ${attachments.length} attachment(s)]` : ""),
           status: messageStatus,
           twilioSid: MessageSid,
           fromNumber: normalizeToE164ish(From),
           toNumber: normalizeToE164ish(To),
           isRead: false,
+          // MMS attachments
+          attachments: attachments.length > 0 ? attachments : undefined,
           // AI analysis fields
           aiAnalysis: aiAnalysis ? {
             priority: aiAnalysis.priority,

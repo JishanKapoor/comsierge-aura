@@ -222,6 +222,8 @@ export const fetchThread = async (contactPhone: string, limit = 50): Promise<Mes
     isRead: m.isRead,
     metadata: m.metadata,
     createdAt: m.createdAt,
+    // Include attachments for MMS/voice notes
+    attachments: m.attachments || [],
   }));
 };
 
