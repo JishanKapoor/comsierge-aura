@@ -79,6 +79,8 @@ type ChatBubble = {
   role: "incoming" | "outgoing" | "ai";
   content: string;
   timestamp: string;
+  status?: string;
+  twilioErrorCode?: string | number | null;
   translatedContent?: string; // For storing translated text
   wasForwarded?: boolean;
   forwardedTo?: string;
@@ -822,6 +824,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             role: m.direction === 'incoming' ? 'incoming' as const : 'outgoing' as const,
             content: m.body,
             timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase(),
+            status: m.status,
+            twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
           }));
@@ -1213,6 +1217,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             role: m.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const),
             content: m.body,
             timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+            status: m.status,
+            twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
           }));
@@ -3027,7 +3033,20 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           )}
                         </div>
                         <p className={cn("text-[11px] text-gray-500 mt-1", isLeftAligned ? "ml-1" : "text-right mr-1")}>
-                          {bubble.timestamp}
+                          {(() => {
+                            if (!isOutgoing) return bubble.timestamp;
+                            const s = (bubble.status || "").toLowerCase();
+                            const label =
+                              s === "pending" ? "sending…" :
+                              s === "sent" ? "sent" :
+                              s === "delivered" ? "delivered" :
+                              s === "failed" ? "not delivered" :
+                              null;
+                            const detail = s === "failed" && bubble.twilioErrorCode != null
+                              ? ` (${bubble.twilioErrorCode})`
+                              : "";
+                            return label ? `${bubble.timestamp} · ${label}${detail}` : bubble.timestamp;
+                          })()}
                         </p>
                       </div>
                     </div>

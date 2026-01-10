@@ -63,6 +63,14 @@ export interface Message {
     filename: string;
     size: number;
   }>;
+  metadata?: {
+    [key: string]: any;
+    twilioStatusRaw?: string | null;
+    twilioErrorCode?: string | number | null;
+    twilioErrorMessage?: string | null;
+    twilioFrom?: string | null;
+    twilioTo?: string | null;
+  };
   createdAt: string;
 }
 
@@ -212,6 +220,7 @@ export const fetchThread = async (contactPhone: string, limit = 50): Promise<Mes
     fromNumber: m.fromNumber,
     toNumber: m.toNumber,
     isRead: m.isRead,
+    metadata: m.metadata,
     createdAt: m.createdAt,
   }));
 };

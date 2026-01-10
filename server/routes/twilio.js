@@ -2450,23 +2450,22 @@ router.post("/webhook/status", async (req, res) => {
 
       const mapped = mapMessageStatus(rawStatus);
       if (mapped) {
-        const update = {
+        const setUpdate = {
           status: mapped,
+          "metadata.twilioStatusRaw": rawStatus || null,
         };
 
         // Keep error details for debugging when Twilio/carrier rejects delivery
-        if (mapped === "failed" && (ErrorCode || ErrorMessage)) {
-          update.metadata = {
-            twilioErrorCode: ErrorCode || null,
-            twilioErrorMessage: ErrorMessage || null,
-            twilioFrom: From || null,
-            twilioTo: To || null,
-          };
+        if (mapped === "failed") {
+          if (ErrorCode) setUpdate["metadata.twilioErrorCode"] = ErrorCode;
+          if (ErrorMessage) setUpdate["metadata.twilioErrorMessage"] = ErrorMessage;
+          if (From) setUpdate["metadata.twilioFrom"] = From;
+          if (To) setUpdate["metadata.twilioTo"] = To;
         }
 
         const updated = await Message.findOneAndUpdate(
           { twilioSid: MessageSid },
-          { $set: update },
+          { $set: setUpdate },
           { new: true }
         );
 
