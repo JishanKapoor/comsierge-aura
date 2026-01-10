@@ -500,6 +500,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     filename: string;
   } | null>(null);
   const messageAttachmentInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Voice note state
+  const [pendingVoiceNote, setPendingVoiceNote] = useState<{
+    base64: string;
+    mimeType: string;
+    filename: string;
+    previewUrl: string;
+    durationMs: number;
+  } | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isProcessingVoiceNote, setIsProcessingVoiceNote] = useState(false);
+  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+  const voiceStartAtRef = useRef<number>(0);
+  const voiceTimerRef = useRef<number | null>(null);
   
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -507,6 +524,154 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const cancelImageAttachment = () => {
     setPendingImage(null);
     if (messageAttachmentInputRef.current) messageAttachmentInputRef.current.value = "";
+  };
+
+  const voiceModeActive = isRecordingVoice || isProcessingVoiceNote || !!pendingVoiceNote;
+
+  const cleanupVoiceResources = () => {
+    if (voiceTimerRef.current) {
+      window.clearInterval(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+    voiceRecorderRef.current = null;
+    if (voiceStreamRef.current) {
+      voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+      voiceStreamRef.current = null;
+    }
+    voiceChunksRef.current = [];
+    voiceStartAtRef.current = 0;
+    setVoiceElapsedMs(0);
+  };
+
+  const cancelVoiceNote = () => {
+    try {
+      if (voiceRecorderRef.current && voiceRecorderRef.current.state !== "inactive") {
+        voiceRecorderRef.current.stop();
+      }
+    } catch {
+      // ignore
+    }
+    setIsRecordingVoice(false);
+    setIsProcessingVoiceNote(false);
+    if (pendingVoiceNote?.previewUrl) {
+      try {
+        URL.revokeObjectURL(pendingVoiceNote.previewUrl);
+      } catch {
+        // ignore
+      }
+    }
+    setPendingVoiceNote(null);
+    cleanupVoiceResources();
+  };
+
+  const pickSupportedAudioMimeType = () => {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/ogg;codecs=opus",
+      "audio/ogg",
+      "audio/mp4",
+    ];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const MR: any = typeof MediaRecorder !== "undefined" ? MediaRecorder : null;
+    if (!MR?.isTypeSupported) return "";
+    for (const t of candidates) {
+      try {
+        if (MR.isTypeSupported(t)) return t;
+      } catch {
+        // ignore
+      }
+    }
+    return "";
+  };
+
+  const startVoiceRecording = async () => {
+    if (voiceModeActive) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Voice recording is not supported in this browser.");
+      return;
+    }
+
+    setShowEmojiPicker(false);
+    setAiAssistOpen(false);
+    setAiAssistMode(null);
+    setAiAssistRewrite("");
+    setAiAssistSuggestions([]);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+      voiceChunksRef.current = [];
+
+      const mimeType = pickSupportedAudioMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      voiceRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (evt) => {
+        if (evt.data && evt.data.size > 0) voiceChunksRef.current.push(evt.data);
+      };
+
+      recorder.onstop = async () => {
+        const endAt = Date.now();
+        const durationMs = Math.max(0, endAt - (voiceStartAtRef.current || endAt));
+        const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        cleanupVoiceResources();
+        setIsProcessingVoiceNote(true);
+        try {
+          const base64 = await blobToBase64(blob);
+          const previewUrl = URL.createObjectURL(blob);
+          setPendingVoiceNote({
+            base64,
+            mimeType: blob.type || "audio/webm",
+            filename: "voice-note",
+            previewUrl,
+            durationMs,
+          });
+        } catch (e) {
+          console.error("Failed to process voice note:", e);
+          toast.error("Failed to process voice note.");
+        } finally {
+          setIsProcessingVoiceNote(false);
+        }
+      };
+
+      voiceStartAtRef.current = Date.now();
+      setVoiceElapsedMs(0);
+      voiceTimerRef.current = window.setInterval(() => {
+        if (!voiceStartAtRef.current) return;
+        setVoiceElapsedMs(Date.now() - voiceStartAtRef.current);
+      }, 250);
+
+      recorder.start();
+      setIsRecordingVoice(true);
+    } catch (err) {
+      console.error("Voice recording error:", err);
+      toast.error("Microphone permission denied or unavailable.");
+      cancelVoiceNote();
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    const recorder = voiceRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    try {
+      recorder.stop();
+    } catch (e) {
+      console.error("Failed to stop recorder:", e);
+    } finally {
+      setIsRecordingVoice(false);
+      if (voiceTimerRef.current) {
+        window.clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+    }
+  };
+
+  const formatMsAsClock = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
   };
 
   const insertEmoji = (emoji: string) => {
@@ -1003,15 +1168,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (!selectedMessage) return;
 
     const trimmed = newMessage.trim();
-    if (!trimmed && !pendingImage) return;
-    if (isSending) return;
+    const voiceToSend = pendingVoiceNote;
+    const imageToSendNow = pendingImage;
+    if (!trimmed && !imageToSendNow && !voiceToSend) return;
+    if (isSending || isRecordingVoice || isProcessingVoiceNote) return;
 
-    // Capture image before clearing
-    const imageToSend = pendingImage;
+    // Capture attachments before clearing
+    const imageToSend = voiceToSend ? null : imageToSendNow;
+    const voiceNoteToSend = voiceToSend;
+    const voicePreviewUrlToRevoke = voiceNoteToSend?.previewUrl;
 
-    // Clear input immediately for instant feel
-    setNewMessage("");
+    // Clear UI immediately for instant feel
+    if (!voiceNoteToSend) setNewMessage("");
     setPendingImage(null);
+    if (voiceNoteToSend?.previewUrl) {
+      // Keep preview URL for optimistic bubble; we'll revoke on refresh/cancel instead.
+    }
+    setPendingVoiceNote(null);
     setShowEmojiPicker(false);
     setAiAssistOpen(false);
     setAiAssistMode(null);
@@ -1033,7 +1206,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const optimisticContent = trimmed;
     
     const optimisticBubbles: ChatBubble[] = [];
-    if (optimisticContent) {
+    if (optimisticContent && !voiceNoteToSend) {
       optimisticBubbles.push({
         id: optimisticId,
         role: "outgoing",
@@ -1055,6 +1228,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         }],
       });
     }
+    if (voiceNoteToSend) {
+      optimisticBubbles.push({
+        id: `${optimisticId}-voice`,
+        role: "outgoing",
+        content: "",
+        timestamp,
+        attachments: [
+          {
+            url: voiceNoteToSend.previewUrl,
+            contentType: voiceNoteToSend.mimeType,
+            filename: voiceNoteToSend.filename,
+          },
+        ],
+      });
+    }
 
     if (optimisticBubbles.length) {
       setThreadsByContactId((prev) => ({
@@ -1065,7 +1253,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
     // Translate message if sendLanguage is not English
     let messageToSend = trimmed;
-    if (trimmed && sendLanguage !== "en") {
+    if (trimmed && sendLanguage !== "en" && !voiceNoteToSend) {
       setIsSending(true);
       try {
         messageToSend = await translateText(trimmed, sendLanguage);
@@ -1075,7 +1263,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
     
     // Send via Twilio using user's assigned phone number
-    if (messageToSend && recipientPhone) {
+    if ((messageToSend || imageToSend || voiceNoteToSend) && recipientPhone) {
       // Must have an assigned phone number to send
       if (!userPhone) {
         toast.error("No phone number assigned to your account. Contact admin to assign a Twilio number.");
@@ -1099,6 +1287,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           mediaBase64 = imageToSend.base64;
           mediaType = imageToSend.mimeType;
         }
+        if (voiceNoteToSend) {
+          mediaBase64 = voiceNoteToSend.base64;
+          mediaType = voiceNoteToSend.mimeType;
+        }
 
         // Send with user's assigned phone - backend will use env creds + validate the number
         const requestBody: {
@@ -1110,7 +1302,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           mediaType?: string;
         } = {
           toNumber: recipientPhone,
-          body: messageToSend || (imageToSend ? "[Image]" : ""),
+          body: voiceNoteToSend ? "" : (messageToSend || (imageToSend ? "[Image]" : "")),
           fromNumber: userPhone,
           contactName: selectedMessage.contactName,
         };
@@ -1118,7 +1310,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         if (mediaBase64) {
           requestBody.mediaBase64 = mediaBase64;
           requestBody.mediaType = mediaType || "image/jpeg";
-          console.log("📎 Sending MMS with image, media type:", requestBody.mediaType);
+          console.log("📎 Sending media, media type:", requestBody.mediaType);
         }
         
         console.log("📤 Sending message request:", {
@@ -1234,6 +1426,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         } catch (e) {
           // If refresh fails, keep optimistic bubble; polling will reconcile later.
           console.error("Failed to refresh thread after send:", e);
+        }
+
+        if (voicePreviewUrlToRevoke) {
+          try {
+            URL.revokeObjectURL(voicePreviewUrlToRevoke);
+          } catch {
+            // ignore
+          }
         }
 
         // Update conversation preview locally for snappy UI
@@ -2964,6 +3164,29 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                                   ))}
                             </div>
                           )}
+
+                          {/* Show voice note (audio) attachments */}
+                          {bubble.attachments && bubble.attachments.length > 0 && (
+                            <div className="mb-2">
+                              {bubble.attachments
+                                .filter((att) => att.contentType?.startsWith("audio/"))
+                                .map((att, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block"
+                                  >
+                                    <audio
+                                      controls
+                                      src={att.url}
+                                      className="w-full"
+                                    />
+                                  </a>
+                                ))}
+                            </div>
+                          )}
                           
                           {/* Only show text content if it's not just "[Image]" placeholder */}
                           {bubble.content && bubble.content !== "[Image]" && (
@@ -3115,7 +3338,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   type="file"
                   accept="image/*"
                   className="hidden"
+                  disabled={voiceModeActive}
                   onChange={async (e) => {
+                    if (voiceModeActive) return;
                     const file = e.target.files?.[0];
                     if (!file) return;
                     try {
@@ -3147,13 +3372,50 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </div>
                 ) : (
                   <button
-                    className="p-2 rounded hover:bg-gray-100 transition-colors shrink-0"
+                    className={cn(
+                      "p-2 rounded hover:bg-gray-100 transition-colors shrink-0",
+                      voiceModeActive && "opacity-50 cursor-not-allowed"
+                    )}
                     aria-label="Attach image"
-                    onClick={() => messageAttachmentInputRef.current?.click()}
+                    onClick={() => {
+                      if (voiceModeActive) return;
+                      messageAttachmentInputRef.current?.click();
+                    }}
                     type="button"
+                    disabled={voiceModeActive}
                   >
                     <Paperclip className="w-4 h-4 text-gray-500" />
                   </button>
+                )}
+
+                {/* Voice note status */}
+                {isRecordingVoice && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-lg border border-red-200">
+                    <Mic className="w-4 h-4 text-red-600" />
+                    <span className="text-sm text-red-600">Recording {formatMsAsClock(voiceElapsedMs)}</span>
+                    <button
+                      className="p-1 rounded hover:bg-red-100 transition-colors"
+                      aria-label="Cancel voice note"
+                      onClick={cancelVoiceNote}
+                      type="button"
+                    >
+                      <X className="w-4 h-4 text-red-600" />
+                    </button>
+                  </div>
+                )}
+                {!isRecordingVoice && pendingVoiceNote && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg border border-purple-200">
+                    <Mic className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm text-purple-700">Voice note ready</span>
+                    <button
+                      className="p-1 rounded hover:bg-purple-100 transition-colors"
+                      aria-label="Remove voice note"
+                      onClick={cancelVoiceNote}
+                      type="button"
+                    >
+                      <X className="w-4 h-4 text-purple-600" />
+                    </button>
+                  </div>
                 )}
                 <div className="flex-1 relative">
                   <input
@@ -3172,9 +3434,34 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       }
                     }}
                     ref={messageInputRef}
+                    disabled={voiceModeActive}
                     className="w-full pl-4 pr-28 py-2 rounded text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
                   />
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        if (voiceModeActive) {
+                          if (isRecordingVoice) stopVoiceRecording();
+                          return;
+                        }
+                        startVoiceRecording();
+                      }}
+                      title={isRecordingVoice ? "Stop recording" : "Voice note"}
+                      className={cn(
+                        "inline-flex items-center justify-center w-8 h-8 rounded transition-colors",
+                        isRecordingVoice ? "bg-red-50" : "hover:bg-gray-100",
+                        (isProcessingVoiceNote || (!!pendingVoiceNote && !isRecordingVoice)) && "opacity-50 cursor-not-allowed"
+                      )}
+                      type="button"
+                      disabled={isProcessingVoiceNote || (!!pendingVoiceNote && !isRecordingVoice)}
+                      aria-label="Voice note"
+                    >
+                      {isRecordingVoice ? (
+                        <StopCircle className="w-4 h-4 text-red-600" />
+                      ) : (
+                        <Mic className="w-4 h-4 text-gray-500" />
+                      )}
+                    </button>
                     <button
                       onClick={handleAiRewrite}
                       title="Rewrite (suggestion)"
@@ -3183,6 +3470,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         aiAssistOpen && aiAssistMode === "rewrite" ? "bg-purple-100" : "hover:bg-gray-100"
                       )}
                       type="button"
+                      disabled={voiceModeActive}
                     >
                       <Wand2 className="w-4 h-4 text-purple-600" />
                     </button>
@@ -3194,14 +3482,22 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         aiAssistOpen && aiAssistMode === "suggest" ? "bg-purple-100" : "hover:bg-gray-100"
                       )}
                       type="button"
+                      disabled={voiceModeActive}
                     >
                       <Lightbulb className="w-4 h-4 text-purple-600" />
                     </button>
                     <button
-                      className="inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100 transition-colors"
-                      onClick={() => setShowEmojiPicker((v) => !v)}
+                      className={cn(
+                        "inline-flex items-center justify-center w-8 h-8 rounded hover:bg-gray-100 transition-colors",
+                        voiceModeActive && "opacity-50 cursor-not-allowed"
+                      )}
+                      onClick={() => {
+                        if (voiceModeActive) return;
+                        setShowEmojiPicker((v) => !v);
+                      }}
                       aria-label="Emoji"
                       type="button"
+                      disabled={voiceModeActive}
                     >
                       <Smile className="w-4 h-4 text-gray-400" />
                     </button>
@@ -3255,11 +3551,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 <button
                   className={cn(
                     "p-2 rounded bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shrink-0",
-                    isSending && "opacity-50 cursor-not-allowed"
+                    (isSending || isRecordingVoice || isProcessingVoiceNote) && "opacity-50 cursor-not-allowed"
                   )}
                   aria-label="Send"
                   onClick={handleSend}
-                  disabled={isSending}
+                  disabled={
+                    isSending ||
+                    isRecordingVoice ||
+                    isProcessingVoiceNote ||
+                    (!pendingVoiceNote && !pendingImage && newMessage.trim().length === 0)
+                  }
                 >
                   {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
