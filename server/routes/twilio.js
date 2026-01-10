@@ -100,6 +100,13 @@ async function saveMessageToDB(msgData) {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     console.log("✅ Conversation updated/created:", conv._id);
+
+    // Outgoing messages must never be effectively "filtered" by a stale held flag.
+    // If the user is actively sending a message, treat the thread as released from hold.
+    // Keep hold if the user explicitly muted the conversation (mute uses held as a UI grouping).
+    if (msgData.direction !== "incoming" && conv?.isHeld && !conv?.isMuted) {
+      await Conversation.findByIdAndUpdate(conv._id, { isHeld: false });
+    }
     
     return message;
   } catch (error) {
