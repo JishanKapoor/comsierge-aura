@@ -7,8 +7,6 @@ import {
   Users,
   Tag,
   PhoneCall,
-  Languages,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,7 +74,6 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   
   // Receive language for translations
   const [receiveLanguage, setReceiveLanguage] = useState<string>("en");
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
   const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
 
@@ -715,37 +712,18 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                 <p className="text-xs text-gray-600">Receive messages in:</p>
                 <p className="text-[10px] text-gray-400">Messages will be auto-translated to this language</p>
               </div>
-              <div className="relative mt-1">
-                <button
-                  onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                  className="w-full flex items-center justify-between px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 hover:bg-gray-100 transition-colors"
+              <div className="mt-1">
+                <select
+                  value={receiveLanguage}
+                  onChange={(e) => setReceiveLanguage(e.target.value)}
+                  className="w-full h-8 px-3 text-xs bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-gray-300 text-gray-700"
                 >
-                  <div className="flex items-center gap-2">
-                    <Languages className="w-4 h-4 text-indigo-500" />
-                    <span>{languages.find(l => l.code === receiveLanguage)?.name || "English"}</span>
-                  </div>
-                  <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showLanguageDropdown && "rotate-180")} />
-                </button>
-                
-                {showLanguageDropdown && (
-                  <div className="absolute z-10 w-full bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                    {languages.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={() => {
-                          setReceiveLanguage(lang.code);
-                          setShowLanguageDropdown(false);
-                        }}
-                        className={cn(
-                          "w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors",
-                          receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
-                        )}
-                      >
-                        {lang.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  {languages.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </>
