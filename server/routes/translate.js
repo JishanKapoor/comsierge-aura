@@ -64,6 +64,34 @@ const translateWithLibreTranslate = async (text, sourceLang, targetLang) => {
   }
 };
 
+// Google Translate free endpoint (most reliable fallback)
+const translateWithGoogle = async (text, sourceLang, targetLang) => {
+  try {
+    const sl = sourceLang === 'auto' ? 'auto' : sourceLang;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Google translation request failed');
+    
+    const data = await response.json();
+    if (data && data[0] && Array.isArray(data[0])) {
+      const translated = data[0].map(item => item?.[0]).join('');
+      if (translated) {
+        return {
+          success: true,
+          translatedText: translated,
+          detectedLanguage: data[2] || sourceLang,
+          provider: 'google'
+        };
+      }
+    }
+    throw new Error('Google translation returned empty result');
+  } catch (error) {
+    console.error('Google Translate error:', error);
+    throw error;
+  }
+};
+
 // Main translation endpoint
 router.post('/', async (req, res) => {
   try {
@@ -83,7 +111,15 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Try MyMemory first (more reliable free tier)
+    // Try Google first (most reliable)
+    try {
+      const result = await translateWithGoogle(text, sourceLang, targetLang);
+      return res.json(result);
+    } catch (googleError) {
+      console.log('Google failed, trying MyMemory...');
+    }
+
+    // Fallback to MyMemory
     try {
       const result = await translateWithMyMemory(text, sourceLang, targetLang);
       return res.json(result);
