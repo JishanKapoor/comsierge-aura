@@ -1001,17 +1001,17 @@ router.post("/webhook/sms", async (req, res) => {
           }
         } catch (aiError) {
           console.error(`   AI analysis failed:`, aiError.message);
-          // On AI error: still notify for saved contacts, hold unknown senders
+          // On AI error: deliver to inbox but skip forwarding for unknown senders
           if (senderContext.isSavedContact) {
             console.log(`   AI failed but sender is saved contact - still notifying`);
             messageStatus = "received";
             isHeld = false;
             shouldNotify = true;
           } else {
-            console.log(`   AI failed for unknown sender - holding for safety`);
-            messageStatus = "held";
-            isHeld = true;
-            shouldNotify = true; // Still forward held messages to personal phone
+            console.log(`   AI failed for unknown sender - inbox but skip forwarding`);
+            messageStatus = "received";
+            isHeld = false;
+            shouldNotify = false; // Don't forward to personal phone on error
           }
         }
         
@@ -1057,30 +1057,29 @@ router.post("/webhook/sms", async (req, res) => {
           
           console.log(`   Message priority: ${messagePriority} (AI-determined, isSavedContact: ${senderContext.isSavedContact})`);
           
+          // Priority filter controls SMS FORWARDING to personal phone, NOT held status.
+          // Messages go to "held" ONLY if they are spam. Non-spam messages stay in inbox
+          // but just don't get forwarded to personal phone if priority is too low.
           switch (priorityFilter) {
             case "all":
               shouldNotify = true;
               break;
             case "important":
-              // Notify for high and medium priority
+              // Forward only high and medium priority
               if (messagePriority === "high" || messagePriority === "medium") {
                 shouldNotify = true;
               } else {
                 shouldNotify = false;
-                isHeld = true;
-                messageStatus = "held";
-                console.log(`   Low priority message - holding (filter: important)`);
+                console.log(`   Low priority message - skipping notification (filter: important)`);
               }
               break;
             case "urgent":
-              // Notify only for high priority
+              // Forward only high priority
               if (messagePriority === "high") {
                 shouldNotify = true;
               } else {
                 shouldNotify = false;
-                isHeld = true;
-                messageStatus = "held";
-                console.log(`   Non-urgent message - holding (filter: urgent)`);
+                console.log(`   Non-urgent message - skipping notification (filter: urgent)`);
               }
               break;
           }
