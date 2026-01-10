@@ -1,31 +1,59 @@
+import { MapPin, Mail } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Footer = () => {
   return (
-    <footer className="py-6 px-6 md:px-16 bg-background border-t border-border">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Link to="/" className="text-sm font-medium tracking-tight text-foreground">
-            comsierge.
-          </Link>
-          <p className="text-xs text-muted-foreground">
-            New York, NY <span className="mx-2">•</span> © 2026 Comsierge Inc. All rights reserved.
-          </p>
+    <footer className="py-16 px-6 md:px-16 bg-background border-t border-border">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
+          <div className="col-span-2 md:col-span-1">
+            <Link to="/" className="text-xl font-medium tracking-tight text-foreground">
+              comsierge.
+            </Link>
+            <div className="mt-4 flex items-center gap-1.5 text-muted-foreground">
+              <MapPin className="w-3.5 h-3.5" />
+              <span className="text-xs">New York, NY</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Product</h4>
+            <ul className="space-y-3">
+              <li><span className="text-sm text-muted-foreground">Features</span></li>
+              <li><span className="text-sm text-muted-foreground">Integrations</span></li>
+              <li><span className="text-sm text-muted-foreground">Pricing</span></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Company</h4>
+            <ul className="space-y-3">
+              <li><span className="text-sm text-muted-foreground">About</span></li>
+              <li><span className="text-sm text-muted-foreground">Research</span></li>
+              <li><span className="text-sm text-muted-foreground">Careers</span></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Legal</h4>
+            <ul className="space-y-3">
+              <li><span className="text-sm text-muted-foreground">Privacy</span></li>
+              <li><span className="text-sm text-muted-foreground">Terms</span></li>
+              <li><span className="text-sm text-muted-foreground">Cookies</span></li>
+            </ul>
+          </div>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 text-sm">
+        <div className="mt-16 pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-muted-foreground">
+            © {new Date().getFullYear()} Comsierge Inc. All rights reserved.
+          </p>
           <a
             href="mailto:jishan.kapoor@mail.utoronto.ca"
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
+            <Mail className="w-4 h-4" />
             jishan.kapoor@mail.utoronto.ca
-          </a>
-          <span className="hidden md:inline text-muted-foreground">•</span>
-          <a
-            href="tel:+14372392448"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            +14372392448
           </a>
         </div>
       </div>
