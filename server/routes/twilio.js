@@ -14,6 +14,32 @@ import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiSer
 
 const router = express.Router();
 
+// Translation helper using MyMemory API
+async function translateText(text, targetLang, sourceLang = 'auto') {
+  // Skip if target is English and source is likely English
+  if (targetLang === 'en') return text;
+  if (!text || text.trim().length === 0) return text;
+  
+  try {
+    const langPair = sourceLang === 'auto' ? `auto|${targetLang}` : `${sourceLang}|${targetLang}`;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      console.log(`   🌐 Translated to ${targetLang}: "${data.responseData.translatedText.substring(0, 50)}..."`);
+      return data.responseData.translatedText;
+    }
+    
+    console.log(`   ⚠️ Translation failed, using original text`);
+    return text;
+  } catch (error) {
+    console.error('Translation error:', error.message);
+    return text;
+  }
+}
+
 const hasCloudinaryConfig =
   !!process.env.CLOUDINARY_CLOUD_NAME &&
   !!process.env.CLOUDINARY_API_KEY &&
@@ -1270,13 +1296,21 @@ router.post("/webhook/sms", async (req, res) => {
           return "medium";
         };
 
+        // Track the receive language for translation (from the message-notify rule)
+        let receiveLanguage = "en"; // Default to English
+
         // Evaluate message notification rules
         for (const rule of messageNotifyRules) {
           const conditions = rule.conditions || {};
           const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
           const notifyTags = conditions.notifyTags || [];
           
-          console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter})`);
+          // Get receive language from rule conditions
+          if (conditions.receiveLanguage) {
+            receiveLanguage = conditions.receiveLanguage;
+          }
+          
+          console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter}, lang: ${receiveLanguage})`);
           
           // Check "Always notify for messages from:" tags first
           // If sender has a matching tag, ALWAYS notify (even if held/spam)
@@ -1460,9 +1494,16 @@ router.post("/webhook/sms", async (req, res) => {
               console.log(`   Found TwilioAccount for ${To}: ${twilioAccount.accountSid.slice(0, 8)}...`);
               const forwardClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
               
+              // Translate the message if receiveLanguage is not English
+              let translatedBody = Body;
+              if (receiveLanguage && receiveLanguage !== 'en') {
+                console.log(`   🌐 Translating message to ${receiveLanguage}...`);
+                translatedBody = await translateText(Body, receiveLanguage);
+              }
+              
               // Build forwarded message with sender info
               const senderName = contact?.name || From;
-              const forwardedBody = `[SMS from ${senderName}]\n${Body}`;
+              const forwardedBody = `[SMS from ${senderName}]\n${translatedBody}`;
               
               // Use the normalized To number
               const fromNumber = normalizedTo;

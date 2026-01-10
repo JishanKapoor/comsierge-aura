@@ -239,6 +239,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           if (msgRule.conditions?.notifyTags) {
             setSelectedMessageTags(msgRule.conditions.notifyTags);
           }
+          if (msgRule.conditions?.receiveLanguage) {
+            setReceiveLanguage(msgRule.conditions.receiveLanguage);
+          }
         }
         
         console.log("📜 Loaded routing rules from backend:", { callRule, msgRule });
@@ -350,7 +353,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           // Map message filter to priority requirement
           // all = notify for all, important = high+medium, urgent = high only
           priorityFilter: messageFilter,
-          notifyTags: selectedMessageTags
+          notifyTags: selectedMessageTags,
+          // Language to translate incoming messages to before forwarding
+          receiveLanguage: receiveLanguage || "en"
         }
       };
       
@@ -428,15 +433,17 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   return (
     <div className="space-y-4 pb-4">
       {/* Forwarding Destination */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
         <div className="flex items-center gap-2">
           <ArrowRight className="w-4 h-4 text-gray-500" />
           <h3 className="font-medium text-gray-900 text-sm">Forward To</h3>
         </div>
 
-        <p className="text-xs text-gray-500">Choose the number that should ring when a call matches your rules.</p>
+        <p className="text-[11px] leading-snug text-gray-500">
+          Choose the number that should ring when a call matches your rules.
+        </p>
 
-        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+        <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
           <div className="text-center flex-1 min-w-0">
             <p className="text-[10px] text-gray-500 uppercase tracking-wide">From</p>
             <p className="text-xs font-mono text-gray-800 truncate">{phoneNumber}</p>
@@ -459,7 +466,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             onBlur={handleForwardingBlur}
             placeholder="+1 (555) 123-4567"
             className={cn(
-              "w-full px-3 py-2 bg-gray-50 border rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-gray-300",
+              "w-full px-3 py-1.5 bg-gray-50 border rounded text-gray-700 text-xs font-mono focus:outline-none focus:border-gray-300",
               forwardingNumberError ? "border-red-300" : "border-gray-200"
             )}
           />
@@ -704,11 +711,14 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             
             {/* Receive messages in language */}
             <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs text-gray-600 mb-2">Receive messages in:</p>
-              <div className="relative">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-gray-600">Receive messages in:</p>
+                <p className="text-[10px] text-gray-400">Messages will be auto-translated to this language</p>
+              </div>
+              <div className="relative mt-1">
                 <button
                   onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <Languages className="w-4 h-4 text-indigo-500" />
@@ -718,7 +728,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                 </button>
                 
                 {showLanguageDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  <div className="absolute z-10 w-full bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
                     {languages.map((lang) => (
                       <button
                         key={lang.code}
@@ -727,7 +737,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                           setShowLanguageDropdown(false);
                         }}
                         className={cn(
-                          "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
+                          "w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors",
                           receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
                         )}
                       >
@@ -737,7 +747,6 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                   </div>
                 )}
               </div>
-              <p className="text-[10px] text-gray-400 mt-1">Messages will be auto-translated to this language</p>
             </div>
           </>
         )}
