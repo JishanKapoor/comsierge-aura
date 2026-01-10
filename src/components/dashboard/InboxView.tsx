@@ -123,31 +123,21 @@ type TransferType = "all" | "high-priority";
 type PriorityFilter = "all" | "emergency" | "meetings" | "deadlines" | "important";
 type ScheduleMode = "always" | "duration" | "custom";
 
-// Translation via API (with fallback)
+// Translation via Google Translate (free endpoint)
 const translateText = async (text: string, targetLang: string, sourceLang: string = 'auto'): Promise<string> => {
-  if (!text.trim() || targetLang === "en" && sourceLang === "en") return text;
+  if (!text.trim()) return text;
+  if (targetLang === "en" && sourceLang === "en") return text;
   
   try {
-    // Try backend API first
-    const res = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, sourceLang, targetLang })
-    });
-    
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.translatedText) {
-        return data.translatedText;
-      }
-    }
-    
-    // Fallback to direct MyMemory call
-    const langPair = sourceLang === 'auto' ? `auto|${targetLang}` : `${sourceLang}|${targetLang}`;
-    const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`);
+    // Use Google Translate free endpoint directly
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    const response = await fetch(url);
     const data = await response.json();
-    if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      return data.responseData.translatedText;
+    
+    // Google returns nested arrays: [[["translated text","original text",null,null,10]],null,"en",...]
+    if (data && data[0] && Array.isArray(data[0])) {
+      const translated = data[0].map((item: any) => item[0]).join('');
+      return translated;
     }
     return text;
   } catch (error) {
@@ -965,14 +955,28 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           
           // Only update if messages have changed
           const currentBubbles = threadsByContactId[selectedMessage.contactId];
-          // Always update to ensure we have the latest, but preserve optimistic messages
+          // Always update to ensure we have the latest, but preserve optimistic messages and translations
           setThreadsByContactId((prev) => {
             const current = prev[selectedMessage.contactId] ?? [];
             let optimistic = current.filter((b) => String(b.id).includes("-local-"));
             
+            // Build a map of existing translations to preserve them
+            const translationMap = new Map<string, string>();
+            for (const b of current) {
+              if (b.translatedContent) {
+                translationMap.set(b.id, b.translatedContent);
+              }
+            }
+            
+            // Apply preserved translations to new bubbles
+            const bubblesWithTranslations = bubbles.map(b => ({
+              ...b,
+              translatedContent: translationMap.get(b.id) || b.translatedContent,
+            }));
+            
             // Filter out optimistic messages that are now present in the real list (deduplication)
             // We check the last few messages for a match to avoid scanning the whole history
-            const recentReal = bubbles.slice(-5); 
+            const recentReal = bubblesWithTranslations.slice(-5); 
             optimistic = optimistic.filter(opt => {
               const isSynced = recentReal.some(real => 
                 real.role === opt.role && 
@@ -982,7 +986,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             });
 
             // Sort all messages by timestamp to ensure correct order
-            const allMessages = [...bubbles, ...optimistic].sort((a, b) => {
+            const allMessages = [...bubblesWithTranslations, ...optimistic].sort((a, b) => {
                // Convert timestamps to comparable values if possible, or rely on order
                // Since optimistic messages are "now", they should generally be last
                // But if we have real timestamps, use them.
@@ -1004,7 +1008,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
             // Check if we really need to update to avoid unnecessary renders
             const currentReal = current.filter(b => !String(b.id).includes("-local-"));
-            if (JSON.stringify(currentReal) === JSON.stringify(bubbles) && 
+            if (JSON.stringify(currentReal) === JSON.stringify(bubblesWithTranslations) && 
                 optimistic.length === current.filter(b => String(b.id).includes("-local-")).length) {
                return prev;
             }
