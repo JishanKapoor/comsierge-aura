@@ -2019,40 +2019,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
-  const handleMute = async () => {
-    if (!selectedMessage) return;
-    const isMuted = selectedMessage.isMuted || false;
-    const phone = selectedMessage.contactPhone;
-    
-    // Update in API - when muting, also set isHeld to true so it goes to held filter
-    // when unmuting, also set isHeld to false
-    const success = await updateConversation(phone, { 
-      isMuted: !isMuted,
-      isHeld: !isMuted // If muting (isMuted is false), set isHeld to true
-    });
-    
-    if (success) {
-      // Update local state immediately for responsive UI
-      setMessages(prev => prev.map(m => 
-        m.id === selectedMessage.id ? { 
-          ...m, 
-          isMuted: !isMuted,
-          isHeld: !isMuted,
-          status: !isMuted ? "held" : "normal"
-        } : m
-      ));
-      toast.success(isMuted ? "Conversation unmuted" : "Conversation muted and moved to Held");
-      
-      // If we just muted and we're not in the held filter, refresh to remove from current list
-      if (!isMuted && activeFilter !== "held") {
-        await loadConversations();
-      }
-    } else {
-      toast.error("Failed to update mute status");
-    }
-    setShowMoreMenu(false);
-  };
-
   const handleTransferSubmit = () => {
     if (!transferTo) {
       toast.error("Please select a contact or enter a number to transfer to");
@@ -2211,23 +2177,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
-  const handleMarkPriority = async () => {
+  const handleToggleFavorite = async () => {
     if (!selectedMessage) return;
-    const phone = selectedMessage.contactPhone;
-    const isCurrentlyPriority = selectedMessage.isPriority || false;
-    const success = await updateConversation(phone, { isPriority: !isCurrentlyPriority });
-    if (success) {
-      // Update local state immediately for responsive UI
-      setMessages(prev => prev.map(m => 
-        m.id === selectedMessage.id ? { 
-          ...m, 
-          isPriority: !isCurrentlyPriority,
-          status: !isCurrentlyPriority ? "priority" : "normal"
-        } : m
-      ));
-      toast.success(isCurrentlyPriority ? "Removed from priority" : "Marked as priority");
+    const isCurrentlyFavorite = selectedSavedContact?.isFavorite || false;
+    
+    if (selectedSavedContact) {
+      // Contact exists - update the favorite status
+      const { updateContact } = await import("./contactsApi");
+      const { success, error } = await updateContact(selectedSavedContact.id, { 
+        isFavorite: !isCurrentlyFavorite 
+      });
+      
+      if (success) {
+        // Update local contacts state
+        setContacts(prev => prev.map(c => 
+          c.id === selectedSavedContact.id ? { ...c, isFavorite: !isCurrentlyFavorite } : c
+        ));
+        toast.success(isCurrentlyFavorite ? "Removed from favorites" : "Added to favorites");
+      } else {
+        toast.error(error || "Failed to update favorite");
+      }
     } else {
-      toast.error("Failed to update priority");
+      // No saved contact - prompt to save first
+      toast.error("Save this contact first to add to favorites");
+      openContactEditor();
     }
     setShowMoreMenu(false);
   };
@@ -2902,34 +2875,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         )}
                       </button>
                       <button
-                        onClick={handleMute}
+                        onClick={handleToggleFavorite}
                         className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
-                        {selectedMessage.isMuted ? (
+                        {selectedSavedContact?.isFavorite ? (
                           <>
-                            <Bell className="w-4 h-4 mr-2.5 text-green-500" />
-                            Unmute
+                            <Star className="w-4 h-4 mr-2.5 text-red-500 fill-red-500" />
+                            Remove from Favorites
                           </>
                         ) : (
-                          <>
-                            <BellOff className="w-4 h-4 mr-2.5 text-orange-500" />
-                            Mute
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={handleMarkPriority}
-                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                      >
-                        {selectedMessage?.isPriority ? (
                           <>
                             <Star className="w-4 h-4 mr-2.5 text-gray-400" />
-                            Remove Priority
-                          </>
-                        ) : (
-                          <>
-                            <Star className="w-4 h-4 mr-2.5 text-pink-500 fill-pink-500" />
-                            Mark Priority
+                            Add to Favorites
                           </>
                         )}
                       </button>
