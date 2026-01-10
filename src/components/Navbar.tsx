@@ -9,6 +9,8 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const isAuthPage = location.pathname === "/auth";
+  const isHomePage = location.pathname === "/";
+  const showAuthCtas = !isAuthPage && !isHomePage;
   const lastScrollY = useRef(0);
   const upScrollAccumulated = useRef(0);
   const rafId = useRef<number | null>(null);
@@ -124,7 +126,7 @@ const Navbar = () => {
 
             {/* Right - Desktop actions + Mobile toggle */}
             <div className="justify-self-end flex items-center">
-              {!isAuthPage && (
+              {showAuthCtas && (
                 <div className="hidden md:flex items-center gap-3">
                   <Link
                     to="/auth"
@@ -151,7 +153,7 @@ const Navbar = () => {
                 </div>
               )}
 
-              {!isAuthPage && (
+              {showAuthCtas && (
                 <button
                   onClick={() => setMobileOpen(!mobileOpen)}
                   className="md:hidden text-foreground z-50 p-2 -mr-2"
@@ -167,7 +169,7 @@ const Navbar = () => {
       </div>
 
       {/* Mobile Menu */}
-      {!isAuthPage && (
+      {showAuthCtas && (
         <div
           className={[
             "fixed inset-0 z-40 md:hidden",
