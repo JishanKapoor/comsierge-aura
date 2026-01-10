@@ -19,27 +19,58 @@ const Footer = () => {
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Product</h4>
             <ul className="space-y-3">
-              <li><span className="text-sm text-muted-foreground">Features</span></li>
-              <li><span className="text-sm text-muted-foreground">Integrations</span></li>
-              <li><span className="text-sm text-muted-foreground">Pricing</span></li>
+              <li>
+                <Link to="/features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Features
+                </Link>
+              </li>
+              <li>
+                <Link to="/integrations" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Integrations
+                </Link>
+              </li>
+              <li>
+                <Link to="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Pricing
+                </Link>
+              </li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Company</h4>
             <ul className="space-y-3">
-              <li><span className="text-sm text-muted-foreground">About</span></li>
-              <li><span className="text-sm text-muted-foreground">Research</span></li>
-              <li><span className="text-sm text-muted-foreground">Careers</span></li>
+              <li>
+                <Link to="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  About
+                </Link>
+              </li>
+              <li>
+                <Link to="/careers" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Careers
+                </Link>
+              </li>
             </ul>
           </div>
 
           <div>
             <h4 className="text-xs font-medium text-foreground uppercase tracking-wider mb-4">Legal</h4>
             <ul className="space-y-3">
-              <li><span className="text-sm text-muted-foreground">Privacy</span></li>
-              <li><span className="text-sm text-muted-foreground">Terms</span></li>
-              <li><span className="text-sm text-muted-foreground">Cookies</span></li>
+              <li>
+                <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Privacy
+                </Link>
+              </li>
+              <li>
+                <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Terms
+                </Link>
+              </li>
+              <li>
+                <Link to="/cookies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Cookies
+                </Link>
+              </li>
             </ul>
           </div>
         </div>

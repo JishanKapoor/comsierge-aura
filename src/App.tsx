@@ -12,6 +12,14 @@ import SelectNumber from "./pages/SelectNumber";
 import SetupForwarding from "./pages/SetupForwarding";
 import Dashboard from "./pages/Dashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import Features from "./pages/Features";
+import Integrations from "./pages/Integrations";
+import Pricing from "./pages/Pricing";
+import About from "./pages/About";
+import Careers from "./pages/Careers";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
+import Cookies from "./pages/Cookies";
 import NotFound from "./pages/NotFound";
 import ElectricGlow from "./components/ElectricGlow";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -32,6 +40,14 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/" element={<Index />} />
+      <Route path="/features" element={<Features />} />
+      <Route path="/integrations" element={<Integrations />} />
+      <Route path="/pricing" element={<Pricing />} />
+      <Route path="/about" element={<About />} />
+      <Route path="/careers" element={<Careers />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/cookies" element={<Cookies />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
