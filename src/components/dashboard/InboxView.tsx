@@ -19,6 +19,8 @@ import {
   Sparkles,
   Languages,
   ArrowRightLeft,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Pin,
   PinOff,
   BellOff,
@@ -577,10 +579,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   });
   
   const [receiveLanguage, setReceiveLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean }>(
+    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean; translateOutgoing?: boolean }>(
       localStorage.getItem(STORAGE_KEYS.languages)
     );
     return saved?.receiveLanguage || "en";
+  });
+  const [sendLanguage, setSendLanguage] = useState(() => {
+    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean; translateOutgoing?: boolean }>(
+      localStorage.getItem(STORAGE_KEYS.languages)
+    );
+    return saved?.sendLanguage || "en";
   });
   const [autoTranslateIncoming, setAutoTranslateIncoming] = useState(() => {
     const saved = safeParseJson<{ autoTranslateIncoming?: boolean }>(
@@ -588,10 +596,31 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     );
     return Boolean(saved?.autoTranslateIncoming);
   });
+  const [translateOutgoing, setTranslateOutgoing] = useState(() => {
+    const saved = safeParseJson<{ translateOutgoing?: boolean }>(
+      localStorage.getItem(STORAGE_KEYS.languages)
+    );
+    return Boolean(saved?.translateOutgoing);
+  });
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // Track which message bubbles are currently being translated
   const [translatingBubbles, setTranslatingBubbles] = useState<Set<string>>(new Set());
+  
+  // Track which bubbles are showing original vs translated (for "View original" toggle)
+  const [showingOriginal, setShowingOriginal] = useState<Set<string>>(new Set());
+  
+  const toggleShowOriginal = (bubbleId: string) => {
+    setShowingOriginal(prev => {
+      const next = new Set(prev);
+      if (next.has(bubbleId)) {
+        next.delete(bubbleId);
+      } else {
+        next.add(bubbleId);
+      }
+      return next;
+    });
+  };
 
   const autoTranslateInFlight = useRef(false);
   const autoTranslatePending = useRef(false);
@@ -785,11 +814,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.languages,
-      // Keep backward compatibility with older saved shape (sendLanguage), even though
-      // we now use a single unified language setting in the UI.
-      JSON.stringify({ receiveLanguage, sendLanguage: receiveLanguage, autoTranslateIncoming })
+      JSON.stringify({ receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing })
     );
-  }, [receiveLanguage, autoTranslateIncoming]);
+  }, [receiveLanguage, sendLanguage, autoTranslateIncoming, translateOutgoing]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -1313,14 +1340,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       }));
     }
 
-    // Translate outgoing message (unified language setting)
+    // Translate outgoing message if enabled and sendLanguage differs from English
     let messageToSend = trimmed;
-    if (trimmed && receiveLanguage !== "en") {
+    let originalOutgoing = trimmed; // Keep original for "View original" on sent messages
+    let translatedOutgoing = false;
+    if (trimmed && translateOutgoing && sendLanguage !== "en") {
       setIsSending(true);
       try {
-        messageToSend = await translateText(trimmed, receiveLanguage);
+        const translated = await translateText(trimmed, sendLanguage, "en");
+        if (translated && translated !== trimmed) {
+          messageToSend = translated;
+          translatedOutgoing = true;
+        }
       } catch (e) {
         console.error("Translation failed, sending original:", e);
+        toast.error("Couldn't translate. Sent original instead.");
       }
     }
     
@@ -2903,9 +2937,29 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       <BellOff className="w-3 h-3 text-orange-400" />
                     )}
                   </div>
-                  <p className="text-xs text-gray-500">
-                    {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-500">
+                      {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
+                    </p>
+                    {/* Translation indicator */}
+                    {(autoTranslateIncoming || translateOutgoing) && (
+                      <button
+                        onClick={() => setShowTranslateModal(true)}
+                        className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-600 transition-colors"
+                        title="Translation active"
+                      >
+                        <Languages className="w-3 h-3" />
+                        <span>
+                          {autoTranslateIncoming && translateOutgoing
+                            ? `${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"} ↔ ${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"}`
+                            : autoTranslateIncoming
+                              ? `→ ${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"}`
+                              : `${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"} →`
+                          }
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -3181,21 +3235,33 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                            bubble.content !== "[Image]" && 
                            bubble.content !== "[Voice Note]" && 
                            bubble.content !== "[Audio]" && (
-                            <p className="text-sm">{bubble.content}</p>
+                            <>
+                              {/* If translated and NOT showing original, show translated first */}
+                              {hasTranslation && !showingOriginal.has(bubble.id) ? (
+                                <p className="text-sm">{bubble.translatedContent}</p>
+                              ) : (
+                                <p className="text-sm">{bubble.content}</p>
+                              )}
+                            </>
                           )}
                           
-                          {/* Show translated content if available */}
+                          {/* Show translation indicator with View original toggle */}
                           {hasTranslation && (
-                            <div className={cn(
-                              "mt-2 pt-2 border-t",
-                              isOutgoing ? "border-indigo-400" : "border-gray-200"
-                            )}>
-                              <div className="flex items-center gap-1 mb-1">
-                                <Languages className="w-3 h-3" />
-                                <span className="text-[10px] font-medium opacity-70">Translated</span>
-                              </div>
-                              <p className="text-sm">{bubble.translatedContent}</p>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleShowOriginal(bubble.id)}
+                              className={cn(
+                                "mt-1.5 flex items-center gap-1 text-[10px] transition-colors",
+                                isOutgoing 
+                                  ? "text-indigo-200 hover:text-white" 
+                                  : "text-gray-400 hover:text-gray-600"
+                              )}
+                            >
+                              <Languages className="w-3 h-3" />
+                              <span>
+                                {showingOriginal.has(bubble.id) ? "View translated" : "View original"}
+                              </span>
+                            </button>
                           )}
                           
                           {/* Translate button - show on hover for non-AI messages with actual text content */}
@@ -3252,6 +3318,22 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 marginBottom: 'env(safe-area-inset-bottom, 0px)'
               }}
             >
+              {/* Outgoing translation indicator - shown when translateOutgoing is enabled */}
+              {translateOutgoing && sendLanguage !== "en" && (
+                <div className="mb-2 px-2 py-1.5 rounded bg-green-50 border border-green-100 text-[11px] flex items-center gap-2">
+                  <ArrowUpFromLine className="w-3 h-3 text-green-600" />
+                  <span className="text-green-700">
+                    Sending in {languages.find(l => l.code === sendLanguage)?.name || sendLanguage}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowTranslateModal(true)}
+                    className="ml-auto text-green-600 hover:text-green-700 underline"
+                  >
+                    Change
+                  </button>
+                </div>
+              )}
 
               {/* AI assist output - subtle, above composer */}
               {aiAssistOpen &&
@@ -3918,7 +4000,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-                <h2 className="text-sm font-semibold text-gray-800">Translate</h2>
+                <h2 className="text-sm font-semibold text-gray-800">Translation Settings</h2>
                 <button
                   onClick={() => setShowTranslateModal(false)}
                   className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"
@@ -3926,49 +4008,127 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="px-6 py-5 space-y-4">
-                <div>
-                  <p className="text-xs font-medium text-gray-800 mb-1">Language</p>
-                  <p className="text-[11px] text-gray-500 mb-2">Used for incoming translations and sending replies.</p>
-                  <select
-                    value={receiveLanguage}
-                    onChange={(e) => setReceiveLanguage(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                  >
-                    {languages.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div>
-                    <p className="text-xs font-medium text-gray-800">Auto-translate incoming</p>
-                    <p className="text-[11px] text-gray-500">Shows translation under the original.</p>
+              
+              <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
+                {/* Incoming Translation Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
+                      <ArrowDownToLine className="w-3 h-3 text-blue-600" />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-800">Incoming Messages</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setAutoTranslateIncoming((v) => !v)}
-                    className={cn(
-                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                      autoTranslateIncoming ? "bg-indigo-500" : "bg-gray-300"
-                    )}
-                    aria-label="Toggle auto-translate incoming"
-                  >
-                    <span
+                  <p className="text-[11px] text-gray-500 -mt-1">Show received messages in your language.</p>
+                  
+                  <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="text-xs font-medium text-gray-700">Translate incoming</p>
+                    <button
+                      type="button"
+                      onClick={() => setAutoTranslateIncoming((v) => !v)}
                       className={cn(
-                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                        autoTranslateIncoming ? "translate-x-4" : "translate-x-1"
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                        autoTranslateIncoming ? "bg-indigo-500" : "bg-gray-300"
                       )}
-                    />
-                  </button>
+                      aria-label="Toggle auto-translate incoming"
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          autoTranslateIncoming ? "translate-x-4" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  
+                  {autoTranslateIncoming && (
+                    <div>
+                      <p className="text-[11px] text-gray-600 mb-1.5">Translate to:</p>
+                      <select
+                        value={receiveLanguage}
+                        onChange={(e) => setReceiveLanguage(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      >
+                        {languages.map((lang) => (
+                          <option key={lang.code} value={lang.code}>
+                            {lang.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
-
+                
+                <div className="border-t border-gray-200" />
+                
+                {/* Outgoing Translation Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                      <ArrowUpFromLine className="w-3 h-3 text-green-600" />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-800">Outgoing Messages</p>
+                  </div>
+                  <p className="text-[11px] text-gray-500 -mt-1">Send your replies in their language.</p>
+                  
+                  <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="text-xs font-medium text-gray-700">Translate outgoing</p>
+                    <button
+                      type="button"
+                      onClick={() => setTranslateOutgoing((v) => !v)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                        translateOutgoing ? "bg-indigo-500" : "bg-gray-300"
+                      )}
+                      aria-label="Toggle translate outgoing"
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          translateOutgoing ? "translate-x-4" : "translate-x-1"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  
+                  {translateOutgoing && (
+                    <div>
+                      <p className="text-[11px] text-gray-600 mb-1.5">Send in:</p>
+                      <select
+                        value={sendLanguage}
+                        onChange={(e) => setSendLanguage(e.target.value)}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      >
+                        {languages.map((lang) => (
+                          <option key={lang.code} value={lang.code}>
+                            {lang.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Summary when both enabled */}
+                {(autoTranslateIncoming || translateOutgoing) && (
+                  <>
+                    <div className="border-t border-gray-200" />
+                    <div className="bg-indigo-50 rounded-lg px-3 py-2.5 border border-indigo-100">
+                      <p className="text-[11px] text-indigo-800 font-medium mb-1">Active translation:</p>
+                      <div className="text-[11px] text-indigo-700 space-y-0.5">
+                        {autoTranslateIncoming && (
+                          <p>• Incoming → {languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}</p>
+                        )}
+                        {translateOutgoing && (
+                          <p>• Outgoing → {languages.find(l => l.code === sendLanguage)?.name || sendLanguage}</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
+              
               <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
-                {selectedMessage && receiveLanguage !== "en" && (
+                {selectedMessage && autoTranslateIncoming && receiveLanguage !== "en" && (
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -3977,7 +4137,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
                   >
                     <Languages className="w-4 h-4 mr-2" />
-                    Translate existing messages in this chat
+                    Translate existing messages
                   </Button>
                 )}
                 <div className="flex gap-3">
@@ -3990,20 +4150,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      const label = languages.find((l) => l.code === receiveLanguage)?.name || receiveLanguage;
-                      toast.success(
-                        `Translation updated: ${label}`
-                      );
+                      toast.success("Translation settings saved");
                       setShowTranslateModal(false);
 
-                      // If auto-translate is enabled, kick off a quiet pass for the current chat
+                      // If auto-translate incoming is enabled, kick off a quiet pass for the current chat
                       if (autoTranslateIncoming && receiveLanguage !== "en") {
                         translateAllIncoming({ showToasts: false, silentBubbles: true });
                       }
                     }}
                     className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
                   >
-                    Apply
+                    Save
                   </Button>
                 </div>
               </div>
