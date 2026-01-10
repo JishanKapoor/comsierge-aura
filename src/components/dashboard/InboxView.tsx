@@ -2318,24 +2318,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
         {/* Search */}
         <div className="p-3 border-b border-gray-200">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search conversations"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
-              />
-            </div>
-            <button
-              onClick={() => setShowAdvancedSearch(true)}
-              className="px-2.5 py-2 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
-              title="Advanced Search"
-            >
-              <SlidersHorizontal className="w-4 h-4 text-gray-500" />
-            </button>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search conversations"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
+            />
           </div>
         </div>
 

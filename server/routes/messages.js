@@ -481,6 +481,16 @@ router.put("/conversation/:contactPhone", async (req, res) => {
       { new: true, upsert: true }
     );
 
+    // Also update Contact's isBlocked status so calls get blocked too
+    if (isBlocked !== undefined) {
+      const phoneVariations = buildPhoneCandidates(contactPhone);
+      await Contact.updateMany(
+        { userId: req.user._id, phone: { $in: phoneVariations } },
+        { isBlocked }
+      );
+      console.log(`Updated Contact isBlocked=${isBlocked} for phone ${contactPhone}`);
+    }
+
     res.json({
       success: true,
       message: "Conversation updated",
