@@ -298,13 +298,12 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
     };
   };
 
-  // Auto-trigger call when navigating from contacts
+  // When navigating from contacts, just filter to show that contact's call history
   useEffect(() => {
     if (selectedContactPhone) {
       const contact = contacts.find(c => c.phone === selectedContactPhone);
-      // Set search to show the number, then trigger call
-      setSearchQuery(selectedContactPhone);
-      makeCall(selectedContactPhone, contact?.name);
+      // Set search to filter to this contact's call history
+      setSearchQuery(contact?.name || selectedContactPhone);
       onClearSelection?.();
     }
   }, [selectedContactPhone, contacts]);
@@ -1524,11 +1523,6 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
                       <>
                         <Voicemail className="w-3 h-3 text-amber-500" />
                         {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}
-                      </>
-                    ) : call.status === "transferred" ? (
-                      <>
-                        <Clock className="w-3 h-3 text-blue-500" />
-                        {parseInt(call.duration || "0", 10) > 0 ? call.duration : "-"}
                       </>
                     ) : call.status === "completed" ? (
                       <>
