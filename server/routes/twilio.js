@@ -1,6 +1,7 @@
 import express from "express";
 import twilio from "twilio";
 import { v2 as cloudinary } from "cloudinary";
+import fetch from "node-fetch";
 import TwilioAccount from "../models/TwilioAccount.js";
 import User from "../models/User.js";
 import Message from "../models/Message.js";
@@ -16,26 +17,38 @@ const router = express.Router();
 
 // Translation helper using MyMemory API
 async function translateText(text, targetLang, sourceLang = 'auto') {
+  console.log(`   🌐 translateText called: targetLang=${targetLang}, text="${text?.substring(0, 30)}..."`);
+  
   // Skip if target is English and source is likely English
-  if (targetLang === 'en') return text;
-  if (!text || text.trim().length === 0) return text;
+  if (targetLang === 'en') {
+    console.log(`   🌐 Skipping translation - target is English`);
+    return text;
+  }
+  if (!text || text.trim().length === 0) {
+    console.log(`   🌐 Skipping translation - empty text`);
+    return text;
+  }
   
   try {
-    const langPair = sourceLang === 'auto' ? `auto|${targetLang}` : `${sourceLang}|${targetLang}`;
+    const langPair = sourceLang === 'auto' ? `en|${targetLang}` : `${sourceLang}|${targetLang}`;
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
+    console.log(`   🌐 Calling MyMemory API: ${langPair}`);
     
     const response = await fetch(url);
     const data = await response.json();
     
+    console.log(`   🌐 MyMemory response status: ${data.responseStatus}`);
+    
     if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      console.log(`   🌐 Translated to ${targetLang}: "${data.responseData.translatedText.substring(0, 50)}..."`);
-      return data.responseData.translatedText;
+      const translated = data.responseData.translatedText;
+      console.log(`   🌐 Translation success: "${translated.substring(0, 50)}..."`);
+      return translated;
     }
     
-    console.log(`   ⚠️ Translation failed, using original text`);
+    console.log(`   ⚠️ Translation failed, responseData:`, JSON.stringify(data.responseData));
     return text;
   } catch (error) {
-    console.error('Translation error:', error.message);
+    console.error('   ❌ Translation error:', error.message);
     return text;
   }
 }
