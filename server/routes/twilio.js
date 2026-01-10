@@ -617,13 +617,25 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       // If media is provided, create a public URL for Twilio to fetch (Cloudinary if configured)
       if (mediaBase64) {
         console.log("📷 Media requested - media type:", normalizedMediaType);
-        console.log("📷 hasCloudinaryConfig:", hasCloudinaryConfig);
         console.log("📷 mediaBase64 length:", mediaBase64?.length || 0);
-        console.log("📷 mediaBase64 starts with:", mediaBase64?.substring(0, 50));
+        
+        // Re-check Cloudinary config at runtime (env vars may have been set after startup)
+        const cloudinaryReady = !!process.env.CLOUDINARY_CLOUD_NAME && !!process.env.CLOUDINARY_API_KEY && !!process.env.CLOUDINARY_API_SECRET;
+        console.log("📷 Cloudinary ready:", cloudinaryReady);
+        
+        if (cloudinaryReady) {
+          // Ensure Cloudinary is configured with current env vars
+          cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+            secure: true,
+          });
+        }
         
         try {
           let mediaUrl;
-          if (hasCloudinaryConfig) {
+          if (cloudinaryReady) {
             console.log("📷 Attempting Cloudinary upload...");
             try {
               const upload = await cloudinary.uploader.upload(mediaBase64, {
@@ -656,7 +668,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           
           // For voice notes, always send as SMS link (carriers strip audio MMS)
           if (isAudioMedia) {
-            messageOptions.body = `🎤 Voice note: ${mediaUrl}`;
+            messageOptions.body = mediaUrl;
             // Don't attach as MMS - carriers remove audio attachments
           } else {
             // Add image media URL to message options
@@ -710,7 +722,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactPhone: cleanTo,
           contactName: contactName || "Unknown",
           direction: "outgoing",
-          body: isAudioMedia ? `🎤 Voice note: ${resolvedMediaUrl}` : (body || (outboundAttachment ? "[Image]" : "")),
+          body: isAudioMedia ? resolvedMediaUrl : (body || (outboundAttachment ? "[Image]" : "")),
           // Delivery is async; start as pending and update via status callbacks
           status: "pending",
           twilioSid: twilioMessage.sid,
