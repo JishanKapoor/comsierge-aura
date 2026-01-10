@@ -61,7 +61,7 @@ const CTASection = () => {
             </span>
             Request early access
           </Link>
-          <a href="mailto:hello@comsierge.ai" className="pill-button-ghost">
+           <a href="mailto:jishan.kapoor@mail.utoronto.ca" className="pill-button-ghost">
             Get in touch
           </a>
         </div>
