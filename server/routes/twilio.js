@@ -1037,6 +1037,43 @@ router.post("/webhook/sms", async (req, res) => {
         
         console.log(`   Found ${messageNotifyRules.length} active message notification rules`);
         
+        // SPAM should never notify/forward (even if tags would match).
+        // This prevents accidentally forwarding spam/phishing to the user's personal phone.
+        if (messageStatus === "spam" || spamAnalysis?.isSpam === true) {
+          shouldNotify = false;
+        }
+
+        // Compute a deterministic effective priority for notification filtering.
+        // This reduces reliance on LLM variability for obvious cases.
+        const computeEffectivePriority = (text, aiPriority) => {
+          const t = String(text || "").trim().toLowerCase();
+          const p = String(aiPriority || "").toLowerCase();
+
+          // Obvious short greetings should not page you unless you choose "All messages".
+          if (
+            t.length > 0 &&
+            t.length <= 32 &&
+            /^(me|hey|hi|hello|hiya|yo|sup|whats up|what's up)[!?.\s]*$/.test(t)
+          ) {
+            return "low";
+          }
+
+          // Urgent/emergency language should always be treated as high.
+          if (/(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\b)/i.test(t)) {
+            return "high";
+          }
+
+          // Scheduling/time-sensitive messages should be treated as high.
+          if (
+            /(\bmeeting\b|\bappointment\b|\bschedule\b|\breschedule\b|\bcall\s+me\b|\bdeadline\b|\bdue\b|\btoday\b|\btomorrow\b|\btonight\b|\bnext\s+week\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)/i.test(t)
+          ) {
+            return "high";
+          }
+
+          if (p === "high" || p === "medium" || p === "low") return p;
+          return "medium";
+        };
+
         // Evaluate message notification rules
         for (const rule of messageNotifyRules) {
           const conditions = rule.conditions || {};
@@ -1050,7 +1087,8 @@ router.post("/webhook/sms", async (req, res) => {
             const hasMatchingTag = notifyTags.some(tag => senderContext.tags.includes(tag));
             if (hasMatchingTag) {
               console.log(`   Tag match found - always notify`);
-              shouldNotify = true;
+              // Still never notify for spam
+              shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
               if (isHeld && !spamAnalysis?.isSpam) {
                 isHeld = false;
                 messageStatus = "received";
@@ -1066,7 +1104,7 @@ router.post("/webhook/sms", async (req, res) => {
           // 
           // Priority is determined by AI analysis for ALL messages (including saved contacts)
           // Saved contacts are NOT spam, but they can still send non-urgent messages
-          const messagePriority = aiAnalysis?.priority || "medium";
+          const messagePriority = computeEffectivePriority(Body, aiAnalysis?.priority);
           
           console.log(`   Message priority: ${messagePriority} (AI-determined, isSavedContact: ${senderContext.isSavedContact})`);
           
@@ -1075,12 +1113,12 @@ router.post("/webhook/sms", async (req, res) => {
           // but just don't get forwarded to personal phone if priority is too low.
           switch (priorityFilter) {
             case "all":
-              shouldNotify = true;
+              shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
               break;
             case "important":
               // Forward only high and medium priority
               if (messagePriority === "high" || messagePriority === "medium") {
-                shouldNotify = true;
+                shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
               } else {
                 shouldNotify = false;
                 console.log(`   Low priority message - skipping notification (filter: important)`);
@@ -1089,7 +1127,7 @@ router.post("/webhook/sms", async (req, res) => {
             case "urgent":
               // Forward only high priority
               if (messagePriority === "high") {
-                shouldNotify = true;
+                shouldNotify = !(messageStatus === "spam" || spamAnalysis?.isSpam === true);
               } else {
                 shouldNotify = false;
                 console.log(`   Non-urgent message - skipping notification (filter: urgent)`);
