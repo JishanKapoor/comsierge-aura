@@ -7,6 +7,8 @@ import {
   Users,
   Tag,
   PhoneCall,
+  Languages,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { isValidUsPhoneNumber, normalizeUsPhoneDigits } from "@/lib/validations";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchContacts } from "./contactsApi";
+import { languages } from "./mockData";
 
 type CallFilter = "all" | "favorites" | "contacts" | "tagged";
 type MessageFilter = "all" | "important" | "urgent";
@@ -70,6 +73,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   // Message filters
   const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
   const [selectedMessageTags, setSelectedMessageTags] = useState<string[]>([]);
+  
+  // Receive language for translations
+  const [receiveLanguage, setReceiveLanguage] = useState<string>("en");
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
   const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
 
@@ -180,6 +187,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       selectedCallTags?: string[];
       messageFilter?: MessageFilter;
       selectedMessageTags?: string[];
+      receiveLanguage?: string;
     }>(localStorage.getItem(STORAGE_KEY));
 
     if (saved) {
@@ -189,6 +197,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
       if (saved.messageFilter) setMessageFilter(saved.messageFilter);
       if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
+      if (saved.receiveLanguage) setReceiveLanguage(saved.receiveLanguage);
     }
     
     // Then load from backend to ensure we're in sync
@@ -291,6 +300,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         selectedCallTags,
         messageFilter,
         selectedMessageTags,
+        receiveLanguage,
       })
     );
 
@@ -691,6 +701,44 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                 </div>
               </div>
             )}
+            
+            {/* Receive messages in language */}
+            <div className="pt-3 border-t border-gray-200">
+              <p className="text-xs text-gray-600 mb-2">Receive messages in:</p>
+              <div className="relative">
+                <button
+                  onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Languages className="w-4 h-4 text-indigo-500" />
+                    <span>{languages.find(l => l.code === receiveLanguage)?.name || "English"}</span>
+                  </div>
+                  <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showLanguageDropdown && "rotate-180")} />
+                </button>
+                
+                {showLanguageDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {languages.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => {
+                          setReceiveLanguage(lang.code);
+                          setShowLanguageDropdown(false);
+                        }}
+                        className={cn(
+                          "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
+                          receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
+                        )}
+                      >
+                        {lang.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Messages will be auto-translated to this language</p>
+            </div>
           </>
         )}
       </div>
