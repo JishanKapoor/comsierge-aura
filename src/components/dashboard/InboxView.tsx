@@ -2881,12 +2881,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         {selectedSavedContact?.isFavorite ? (
                           <>
                             <Star className="w-4 h-4 mr-2.5 text-red-500 fill-red-500" />
-                            Remove from Favorites
+                            Unfavorite
                           </>
                         ) : (
                           <>
                             <Star className="w-4 h-4 mr-2.5 text-gray-400" />
-                            Add to Favorites
+                            Favorite
                           </>
                         )}
                       </button>
