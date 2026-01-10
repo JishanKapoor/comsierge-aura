@@ -1308,7 +1308,8 @@ router.post("/webhook/sms", async (req, res) => {
           return "medium";
         };
 
-        // Track the receive language for translation (from the message-notify rule)
+        // Track translation settings (from the message-notify rule)
+        let translateEnabled = false;
         let receiveLanguage = "en"; // Default to English
         console.log(`   📢 Found ${messageNotifyRules.length} message-notify rules`);
 
@@ -1319,13 +1320,17 @@ router.post("/webhook/sms", async (req, res) => {
           const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
           const notifyTags = conditions.notifyTags || [];
           
-          // Get receive language from rule conditions
-          if (conditions.receiveLanguage) {
+          // Get translation settings from rule conditions
+          if (conditions.translateEnabled) {
+            translateEnabled = true;
+            console.log(`   📢 Translation is ENABLED`);
+          }
+          if (conditions.receiveLanguage && conditions.receiveLanguage !== 'en') {
             receiveLanguage = conditions.receiveLanguage;
             console.log(`   📢 Set receiveLanguage to: ${receiveLanguage}`);
           }
           
-          console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter}, lang: ${receiveLanguage})`);
+          console.log(`   Checking message rule: "${rule.rule}" (filter: ${priorityFilter}, translate: ${translateEnabled}, lang: ${receiveLanguage})`);
           
           // Check "Always notify for messages from:" tags first
           // If sender has a matching tag, ALWAYS notify (even if held/spam)
@@ -1510,16 +1515,19 @@ router.post("/webhook/sms", async (req, res) => {
               console.log(`   Found TwilioAccount for ${To}: ${twilioAccount.accountSid.slice(0, 8)}...`);
               const forwardClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
               
-              // Translate the message if receiveLanguage is not English
-              let translatedBody = Body;
-              if (receiveLanguage && receiveLanguage !== 'en') {
-                console.log(`   🌐 Translating message to ${receiveLanguage}...`);
-                translatedBody = await translateText(Body, receiveLanguage);
-              }
-              
               // Build forwarded message with sender info
               const senderName = contact?.name || From;
-              const forwardedBody = `[SMS from ${senderName}]\n${translatedBody}`;
+              let forwardedBody;
+              
+              // Translate the message if translation is enabled
+              if (translateEnabled && receiveLanguage && receiveLanguage !== 'en') {
+                console.log(`   🌐 Translating message to ${receiveLanguage}...`);
+                const translatedBody = await translateText(Body, receiveLanguage);
+                // Include both original and translated
+                forwardedBody = `[SMS from ${senderName}]\n${Body}\n\n[Translated]\n${translatedBody}`;
+              } else {
+                forwardedBody = `[SMS from ${senderName}]\n${Body}`;
+              }
               
               // Use the normalized To number
               const fromNumber = normalizedTo;

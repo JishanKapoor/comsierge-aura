@@ -74,8 +74,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
   const [selectedMessageTags, setSelectedMessageTags] = useState<string[]>([]);
   
-  // Receive language for translations
-  const [receiveLanguage, setReceiveLanguage] = useState<string>("en");
+  // Translation settings
+  const [translateEnabled, setTranslateEnabled] = useState(false);
+  const [receiveLanguage, setReceiveLanguage] = useState<string>("es");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
   const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
@@ -187,6 +188,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       selectedCallTags?: string[];
       messageFilter?: MessageFilter;
       selectedMessageTags?: string[];
+      translateEnabled?: boolean;
       receiveLanguage?: string;
     }>(localStorage.getItem(STORAGE_KEY));
 
@@ -197,6 +199,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
       if (saved.messageFilter) setMessageFilter(saved.messageFilter);
       if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
+      if (typeof saved.translateEnabled === "boolean") setTranslateEnabled(saved.translateEnabled);
       if (saved.receiveLanguage) setReceiveLanguage(saved.receiveLanguage);
     }
     
@@ -239,7 +242,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           if (msgRule.conditions?.notifyTags) {
             setSelectedMessageTags(msgRule.conditions.notifyTags);
           }
-          if (msgRule.conditions?.receiveLanguage) {
+          if (msgRule.conditions?.translateEnabled) {
+            setTranslateEnabled(true);
+          }
+          if (msgRule.conditions?.receiveLanguage && msgRule.conditions.receiveLanguage !== 'en') {
             setReceiveLanguage(msgRule.conditions.receiveLanguage);
           }
         }
@@ -303,6 +309,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         selectedCallTags,
         messageFilter,
         selectedMessageTags,
+        translateEnabled,
         receiveLanguage,
       })
     );
@@ -354,8 +361,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           // all = notify for all, important = high+medium, urgent = high only
           priorityFilter: messageFilter,
           notifyTags: selectedMessageTags,
-          // Language to translate incoming messages to before forwarding
-          receiveLanguage: receiveLanguage || "en"
+          // Translation settings
+          translateEnabled: translateEnabled,
+          receiveLanguage: translateEnabled ? receiveLanguage : "en"
         }
       };
       
@@ -709,44 +717,65 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
               </div>
             )}
             
-            {/* Receive messages in language */}
-            <div className="pt-3 border-t border-gray-200">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-gray-600">Receive messages in:</p>
-                <p className="text-[10px] text-gray-400">Auto-translated</p>
-              </div>
-              <div className="relative mt-1">
-                <button
-                  onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-                  className="w-full flex items-center justify-between px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Languages className="w-4 h-4 text-indigo-500" />
-                    <span>{languages.find(l => l.code === receiveLanguage)?.name || "English"}</span>
-                  </div>
-                  <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showLanguageDropdown && "rotate-180")} />
-                </button>
-                
-                {showLanguageDropdown && (
-                  <div className="absolute z-10 w-full bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                    {languages.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={() => {
-                          setReceiveLanguage(lang.code);
-                          setShowLanguageDropdown(false);
-                        }}
-                        className={cn(
-                          "w-full px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors",
-                          receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
-                        )}
-                      >
-                        {lang.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+          </>
+        )}
+      </div>
+
+      {/* Translation */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Languages className="w-4 h-4 text-gray-600" />
+            <h3 className="font-medium text-gray-900 text-sm">Translation</h3>
+          </div>
+          <button
+            onClick={() => setTranslateEnabled(!translateEnabled)}
+            className={cn(
+              "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+              translateEnabled ? "bg-indigo-500" : "bg-gray-200"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm",
+                translateEnabled ? "translate-x-[18px]" : "translate-x-0.5"
+              )}
+            />
+          </button>
+        </div>
+
+        {translateEnabled && (
+          <>
+            <p className="text-xs text-gray-500">Forwarded messages will show original text + translation</p>
+
+            <div className="relative">
+              <button
+                onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <span>{languages.find(l => l.code === receiveLanguage)?.name || "Spanish"}</span>
+                <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showLanguageDropdown && "rotate-180")} />
+              </button>
+              
+              {showLanguageDropdown && (
+                <div className="absolute z-10 w-full bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                  {languages.filter(l => l.code !== 'en').map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => {
+                        setReceiveLanguage(lang.code);
+                        setShowLanguageDropdown(false);
+                      }}
+                      className={cn(
+                        "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
+                        receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
+                      )}
+                    >
+                      {lang.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
