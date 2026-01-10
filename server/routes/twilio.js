@@ -479,7 +479,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       });
     }
 
-    // Attachments: images (MMS) + voice notes (audio)
+    // Attachments: images only (MMS)
     const allowedImageTypes = new Set([
       "image/jpeg",
       "image/jpg",
@@ -487,41 +487,18 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       "image/gif",
       "image/webp",
     ]);
-    const allowedAudioTypes = new Set([
-      "audio/mpeg",
-      "audio/mp3",
-      "audio/mp4",
-      "audio/x-m4a",
-      "audio/aac",
-      "audio/wav",
-      "audio/webm",
-      "audio/webm;codecs=opus",
-      "audio/ogg",
-      "audio/ogg;codecs=opus",
-      "audio/opus",
-    ]);
     const normalizedMediaType = String(mediaType || "").toLowerCase();
-    const isImageMedia = normalizedMediaType.startsWith("image/");
-    const isAudioMedia = normalizedMediaType.startsWith("audio/");
     if (mediaBase64) {
-      if (!normalizedMediaType || (!isImageMedia && !isAudioMedia)) {
+      if (!normalizedMediaType || !normalizedMediaType.startsWith("image/")) {
         return res.status(400).json({
           success: false,
-          message: "Only image and audio attachments are supported.",
+          message: "Only image attachments are supported.",
         });
       }
-      if (isImageMedia && !allowedImageTypes.has(normalizedMediaType)) {
+      if (!allowedImageTypes.has(normalizedMediaType)) {
         return res.status(400).json({
           success: false,
           message: `Unsupported image type: ${normalizedMediaType}`,
-        });
-      }
-      // For audio, also check base type without codec params
-      const baseAudioType = normalizedMediaType.split(";")[0];
-      if (isAudioMedia && !allowedAudioTypes.has(normalizedMediaType) && !allowedAudioTypes.has(baseAudioType)) {
-        return res.status(400).json({
-          success: false,
-          message: `Unsupported audio type: ${normalizedMediaType}`,
         });
       }
     }
@@ -639,8 +616,8 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
             console.log("📷 Attempting Cloudinary upload...");
             try {
               const upload = await cloudinary.uploader.upload(mediaBase64, {
-                resource_type: isAudioMedia ? "video" : "image",
-                folder: isAudioMedia ? "comsierge/voice-notes" : "comsierge/mms",
+                resource_type: "image",
+                folder: "comsierge/mms",
               });
               mediaUrl = upload?.secure_url;
               console.log("📷 Cloudinary upload success! URL:", mediaUrl);
@@ -655,7 +632,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
             // Fallback: Store media in MongoDB
             const media = new Media({
               data: mediaBase64,
-              mimeType: normalizedMediaType || (isAudioMedia ? "audio/webm" : "image/jpeg"),
+              mimeType: normalizedMediaType || "image/jpeg",
               userId: req.user._id,
             });
             await media.save();
@@ -666,22 +643,16 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
             console.log("📷 Media URL for Twilio:", mediaUrl);
           }
           
-          // For voice notes, always send as SMS link (carriers strip audio MMS)
-          if (isAudioMedia) {
-            messageOptions.body = mediaUrl;
-            // Don't attach as MMS - carriers remove audio attachments
-          } else {
-            // Add image media URL to message options
-            messageOptions.mediaUrl = [mediaUrl];
-          }
+          // Add image media URL to message options
+          messageOptions.mediaUrl = [mediaUrl];
 
           resolvedMediaUrl = mediaUrl;
           
           // Store attachment info for the message record
           outboundAttachment = {
             url: mediaUrl,
-            contentType: normalizedMediaType || (isAudioMedia ? "audio/webm" : "image/jpeg"),
-            filename: isAudioMedia ? "voice_note" : "sent_image",
+            contentType: normalizedMediaType || "image/jpeg",
+            filename: "sent_image",
           };
         } catch (mediaError) {
           console.error("❌ Failed to save media:", mediaError);
@@ -722,7 +693,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactPhone: cleanTo,
           contactName: contactName || "Unknown",
           direction: "outgoing",
-          body: isAudioMedia ? resolvedMediaUrl : (body || (outboundAttachment ? "[Image]" : "")),
+          body: body || (outboundAttachment ? "[Image]" : ""),
           // Delivery is async; start as pending and update via status callbacks
           status: "pending",
           twilioSid: twilioMessage.sid,
