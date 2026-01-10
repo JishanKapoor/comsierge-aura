@@ -123,27 +123,46 @@ type TransferType = "all" | "high-priority";
 type PriorityFilter = "all" | "emergency" | "meetings" | "deadlines" | "important";
 type ScheduleMode = "always" | "duration" | "custom";
 
-// Translation via Google Translate (free endpoint)
-const translateText = async (text: string, targetLang: string, sourceLang: string = 'auto'): Promise<string> => {
+// Translation via backend (more reliable) with Google Translate fallback
+const translateText = async (text: string, targetLang: string, sourceLang: string = "auto"): Promise<string> => {
   if (!text.trim()) return text;
+  if (!targetLang || targetLang === sourceLang) return text;
   if (targetLang === "en" && sourceLang === "en") return text;
 
+  // Prefer backend proxy to avoid client-side CORS/rate-limit issues
   try {
-    // Use Google Translate free endpoint directly
+    const token = localStorage.getItem("comsierge_token");
+    const resp = await fetch(`${API_BASE_URL}/api/translate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ text, sourceLang, targetLang }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const translated = data?.translatedText;
+      if (typeof translated === "string" && translated.trim()) return translated;
+    }
+  } catch (error) {
+    console.error("Backend translation failed:", error);
+  }
+
+  // Fallback: Google Translate free endpoint
+  try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
     const response = await fetch(url);
     if (!response.ok) return text;
 
     const data = await response.json();
-
-    // Google returns nested arrays: [[["translated text","original text",null,null,10]],null,"en",...]
     if (data && data[0] && Array.isArray(data[0])) {
-      const translated = data[0].map((item: any) => item[0]).join('');
-      return translated;
+      const translated = data[0].map((item: any) => item?.[0]).join("");
+      return translated || text;
     }
     return text;
   } catch (error) {
-    console.error("Translation failed:", error);
+    console.error("Google translation failed:", error);
     return text;
   }
 };
@@ -512,7 +531,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   // Poll for new messages every 5 seconds
   useEffect(() => {
     const pollInterval = setInterval(() => {
-      loadConversations(false); // Silently refresh
+      loadConversations({ showLoading: false, replace: false }); // Silently refresh
     }, 5000);
     return () => clearInterval(pollInterval);
   }, [loadConversations]);
@@ -521,7 +540,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   useEffect(() => {
     const unsubscribe = onContactsChange(() => {
       refreshContacts();
-      loadConversations(false); // Refresh to update contact names
+      loadConversations({ showLoading: false, replace: false }); // Refresh to update contact names
     });
     return unsubscribe;
   }, [refreshContacts, loadConversations]);
@@ -1640,7 +1659,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
       if (shouldRefreshNames) {
         await refreshContacts();
-        await loadConversations(false);
+        await loadConversations({ showLoading: false, replace: false });
       }
 
       const aiMsg: AiChatMessage = {
@@ -3930,7 +3949,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     
                     {showReceiveLanguageDropdown && (
                       <div className="absolute z-10 w-full top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                        {languages.filter(l => l.code !== 'en').map((lang) => (
+                        {languages.map((lang) => (
                           <button
                             key={lang.code}
                             onClick={() => {
@@ -3949,6 +3968,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     )}
                   </div>
                 </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div>
+                    <p className="text-xs font-medium text-gray-800">Auto-translate incoming</p>
+                    <p className="text-[11px] text-gray-500">Shows translation under the original.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAutoTranslateIncoming((v) => !v)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      autoTranslateIncoming ? "bg-indigo-500" : "bg-gray-300"
+                    )}
+                    aria-label="Toggle auto-translate incoming"
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                        autoTranslateIncoming ? "translate-x-4" : "translate-x-1"
+                      )}
+                    />
+                  </button>
+                </div>
+
                 <div>
                   <p className="text-xs font-medium text-gray-800 mb-2">Send in</p>
                   <div className="relative">
@@ -3986,17 +4029,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    translateAllIncoming();
-                    setShowTranslateModal(false);
-                  }}
-                  className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                >
-                  <Languages className="w-4 h-4 mr-2" />
-                  Translate All Incoming Messages
-                </Button>
+                {selectedMessage && receiveLanguage !== "en" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      translateAllIncoming();
+                    }}
+                    className="w-full h-9 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                  >
+                    <Languages className="w-4 h-4 mr-2" />
+                    Translate existing messages in this chat
+                  </Button>
+                )}
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
@@ -4007,15 +4051,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      // Enable auto-translate for incoming messages (shows original + translated)
-                      setAutoTranslateIncoming(true);
                       toast.success(
-                        `Translation enabled: Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`
+                        `Translation updated: Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`
                       );
                       setShowTranslateModal(false);
 
-                      // Kick off a quiet pass for the current thread
-                      translateAllIncoming({ showToasts: false, silentBubbles: true });
+                      // If auto-translate is enabled, kick off a quiet pass for the current chat
+                      if (autoTranslateIncoming && receiveLanguage !== "en") {
+                        translateAllIncoming({ showToasts: false, silentBubbles: true });
+                      }
                     }}
                     className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
                   >
