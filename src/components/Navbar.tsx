@@ -12,12 +12,14 @@ const Navbar = () => {
 
   // Fresh scroll detection implementation
   useEffect(() => {
-    // Get scroll position from any source
     const getScrollY = (): number => {
-      if (typeof window.pageYOffset !== "undefined") return window.pageYOffset;
-      if (typeof window.scrollY !== "undefined") return window.scrollY;
-      const doc = document.documentElement || document.body.parentNode || document.body;
-      return (doc as HTMLElement).scrollTop || 0;
+      // If the page is scrolling on <body> (common when body has overflow-y-auto),
+      // window.scrollY can stay 0. Read all common sources and take the max.
+      const yWindow = typeof window.pageYOffset !== "undefined" ? window.pageYOffset : window.scrollY || 0;
+      const yDocEl = document.documentElement?.scrollTop || 0;
+      const yBody = document.body?.scrollTop || 0;
+      const yScrollingEl = (document.scrollingElement as HTMLElement | null)?.scrollTop || 0;
+      return Math.max(yWindow, yDocEl, yBody, yScrollingEl);
     };
 
     let prevY = getScrollY();
@@ -30,17 +32,14 @@ const Navbar = () => {
       requestAnimationFrame(() => {
         const currentY = getScrollY();
 
-        // Background effect
         setScrolled(currentY > 20);
 
-        // Skip hide/show if mobile menu open
         if (mobileOpen) {
           prevY = currentY;
           ticking = false;
           return;
         }
 
-        // Near top? Always show
         if (currentY < 60) {
           setHidden(false);
           prevY = currentY;
@@ -48,10 +47,9 @@ const Navbar = () => {
           return;
         }
 
-        // Direction check
         const delta = currentY - prevY;
         if (Math.abs(delta) > 5) {
-          setHidden(delta > 0); // Down = hide, Up = show
+          setHidden(delta > 0);
           prevY = currentY;
         }
 
@@ -63,18 +61,29 @@ const Navbar = () => {
     prevY = getScrollY();
     setScrolled(prevY > 20);
 
-    // Attach to multiple scroll sources
-    window.addEventListener("scroll", onScroll, { passive: true });
-    document.addEventListener("scroll", onScroll, { passive: true });
-
-    // Also listen on <main> if it exists (for overflow:auto containers)
+    // Scroll events don't reliably bubble; attach to likely scroll containers.
+    const targets: Array<EventTarget> = [window, document, document.documentElement, document.body];
+    const scrollingEl = document.scrollingElement;
+    if (scrollingEl) targets.push(scrollingEl);
     const mainEl = document.querySelector("main");
-    if (mainEl) mainEl.addEventListener("scroll", onScroll, { passive: true });
+    if (mainEl) targets.push(mainEl);
+
+    for (const t of targets) {
+      try {
+        (t as any).addEventListener?.("scroll", onScroll, { passive: true, capture: true });
+      } catch {
+        // ignore
+      }
+    }
 
     return () => {
-      window.removeEventListener("scroll", onScroll);
-      document.removeEventListener("scroll", onScroll);
-      if (mainEl) mainEl.removeEventListener("scroll", onScroll);
+      for (const t of targets) {
+        try {
+          (t as any).removeEventListener?.("scroll", onScroll, { capture: true } as any);
+        } catch {
+          // ignore
+        }
+      }
     };
   }, [mobileOpen]);
 
