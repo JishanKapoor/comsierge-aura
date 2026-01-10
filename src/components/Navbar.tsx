@@ -11,7 +11,6 @@ const Navbar = () => {
   const isAuthPage = location.pathname === "/auth";
   const lastScrollY = useRef(0);
   const upScrollAccumulated = useRef(0);
-  const rafId = useRef<number | null>(null);
   const mobileOpenRef = useRef(false);
 
   useEffect(() => {
@@ -19,11 +18,13 @@ const Navbar = () => {
   }, [mobileOpen]);
 
   useEffect(() => {
+    let ticking = false;
+    
     const onScroll = () => {
-      if (rafId.current != null) return;
-      rafId.current = window.requestAnimationFrame(() => {
-        rafId.current = null;
-
+      if (ticking) return;
+      
+      ticking = true;
+      window.requestAnimationFrame(() => {
         const currentScrollY = window.scrollY;
 
         // Add background when scrolled past threshold
@@ -32,6 +33,7 @@ const Navbar = () => {
         // If mobile menu is open, keep header visible.
         if (mobileOpenRef.current) {
           lastScrollY.current = currentScrollY;
+          ticking = false;
           return;
         }
 
@@ -40,25 +42,28 @@ const Navbar = () => {
           setHidden(false);
           upScrollAccumulated.current = 0;
           lastScrollY.current = currentScrollY;
+          ticking = false;
           return;
         }
 
-        // Micro1-style behavior: hide on scroll down, show on scroll up.
-        // Use direction-based detection so it still works with slow/trackpad scrolling.
-        if (currentScrollY > lastScrollY.current && currentScrollY > 120) {
+        // Hide on scroll down, show on scroll up
+        const scrollDelta = currentScrollY - lastScrollY.current;
+        
+        if (scrollDelta > 5 && currentScrollY > 120) {
+          // Scrolling down - hide
           setHidden(true);
           upScrollAccumulated.current = 0;
-        } else if (currentScrollY < lastScrollY.current) {
-          // Avoid jitter where tiny upward movements (trackpads/inertia) instantly re-show.
-          // Accumulate upward scroll so slow scrolling still works.
-          upScrollAccumulated.current += lastScrollY.current - currentScrollY;
-          if (upScrollAccumulated.current > 12) {
+        } else if (scrollDelta < -5) {
+          // Scrolling up - show
+          upScrollAccumulated.current += Math.abs(scrollDelta);
+          if (upScrollAccumulated.current > 10) {
             setHidden(false);
             upScrollAccumulated.current = 0;
           }
         }
 
         lastScrollY.current = currentScrollY;
+        ticking = false;
       });
     };
 
@@ -70,9 +75,6 @@ const Navbar = () => {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
-      if (rafId.current != null) {
-        window.cancelAnimationFrame(rafId.current);
-      }
     };
   }, []);
 
