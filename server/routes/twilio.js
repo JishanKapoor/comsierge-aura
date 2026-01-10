@@ -1,5 +1,6 @@
 import express from "express";
 import twilio from "twilio";
+import { v2 as cloudinary } from "cloudinary";
 import TwilioAccount from "../models/TwilioAccount.js";
 import User from "../models/User.js";
 import Message from "../models/Message.js";
@@ -12,6 +13,20 @@ import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 
 const router = express.Router();
+
+const hasCloudinaryConfig =
+  !!process.env.CLOUDINARY_CLOUD_NAME &&
+  !!process.env.CLOUDINARY_API_KEY &&
+  !!process.env.CLOUDINARY_API_SECRET;
+
+if (hasCloudinaryConfig) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+}
 
 // In-memory store for incoming messages (for demo purposes)
 // In production, use a database
@@ -190,8 +205,15 @@ async function resolveTwilioConfig(body = {}, userPhone = null) {
   if (userPhone) {
     try {
       const normalizedUserPhone = normalizePhone(userPhone);
-      // Try exact match first
-      let account = await TwilioAccount.findOne({ phoneNumbers: userPhone });
+      // Try explicit assignment first
+      let account = await TwilioAccount.findOne({
+        "phoneAssignments.phoneNumber": { $in: [userPhone, normalizedUserPhone] },
+      });
+
+      // Then try exact match in phoneNumbers
+      if (!account) {
+        account = await TwilioAccount.findOne({ phoneNumbers: userPhone });
+      }
       
       // If no match, try normalized version
       if (!account && normalizedUserPhone && normalizedUserPhone !== userPhone) {
@@ -223,9 +245,7 @@ async function resolveTwilioConfig(body = {}, userPhone = null) {
     }
   }
 
-  // Override with body params if provided (backward compat)
-  if (body.accountSid) accountSid = body.accountSid;
-  if (body.authToken) authToken = body.authToken;
+  // Do not allow client-supplied credentials. fromNumber is validated elsewhere.
   if (body.fromNumber) fromNumber = body.fromNumber;
 
   return { accountSid, authToken, fromNumber };
@@ -459,6 +479,30 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       });
     }
 
+    // Images only for attachments
+    const allowedImageTypes = new Set([
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ]);
+    const normalizedMediaType = String(mediaType || "").toLowerCase();
+    if (mediaBase64) {
+      if (!normalizedMediaType || !normalizedMediaType.startsWith("image/")) {
+        return res.status(400).json({
+          success: false,
+          message: "Only image attachments are supported.",
+        });
+      }
+      if (!allowedImageTypes.has(normalizedMediaType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Unsupported image type: ${normalizedMediaType}`,
+        });
+      }
+    }
+
     const cleanFrom = (fromNumber || "").replace(/[^\d+]/g, "");
       const normalizeToE164ish = (value) => {
         if (!value) return "";
@@ -546,23 +590,35 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       // Track attachment for saving to message
       let outboundAttachment = null;
 
-      // If media is provided, store it in MongoDB and create a public URL
+      // If media is provided, create a public URL for Twilio to fetch (Cloudinary if configured)
       if (mediaBase64) {
-        console.log("📷 MMS requested - media type:", mediaType);
+        console.log("📷 MMS requested - media type:", normalizedMediaType);
         
         try {
-          // Store media in MongoDB
-          const media = new Media({
-            data: mediaBase64,
-            mimeType: mediaType || "image/jpeg",
-            userId: req.user._id,
-          });
-          await media.save();
-          console.log("📷 Media saved to MongoDB with ID:", media._id);
-          
-          // Create public URL for Twilio to fetch
-          const mediaUrl = `${baseUrl}/api/media/${media._id}`;
-          console.log("📷 Media URL for Twilio:", mediaUrl);
+          let mediaUrl;
+          if (hasCloudinaryConfig) {
+            const upload = await cloudinary.uploader.upload(mediaBase64, {
+              resource_type: "image",
+              folder: "comsierge/mms",
+            });
+            mediaUrl = upload?.secure_url;
+            console.log("📷 Cloudinary URL for Twilio:", mediaUrl);
+          }
+
+          if (!mediaUrl) {
+            // Fallback: Store media in MongoDB
+            const media = new Media({
+              data: mediaBase64,
+              mimeType: normalizedMediaType || "image/jpeg",
+              userId: req.user._id,
+            });
+            await media.save();
+            console.log("📷 Media saved to MongoDB with ID:", media._id);
+
+            // Create public URL for Twilio to fetch
+            mediaUrl = `${baseUrl}/api/media/${media._id}`;
+            console.log("📷 Media URL for Twilio:", mediaUrl);
+          }
           
           // Add media URL to message options
           messageOptions.mediaUrl = [mediaUrl];
@@ -570,7 +626,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           // Store attachment info for the message record
           outboundAttachment = {
             url: mediaUrl,
-            contentType: mediaType || "image/jpeg",
+            contentType: normalizedMediaType || "image/jpeg",
             filename: "sent_image",
           };
         } catch (mediaError) {
@@ -805,7 +861,7 @@ router.post("/webhook/sms", async (req, res) => {
     console.log(`   MessageSid: ${MessageSid}`);
     console.log(`   NumMedia: ${NumMedia || 0}`);
     
-    // Parse MMS attachments
+    // Parse MMS attachments (images only)
     const attachments = [];
     const numMedia = parseInt(NumMedia || 0, 10);
     if (numMedia > 0) {
@@ -813,13 +869,15 @@ router.post("/webhook/sms", async (req, res) => {
       for (let i = 0; i < numMedia; i++) {
         const mediaUrl = req.body[`MediaUrl${i}`];
         const mediaContentType = req.body[`MediaContentType${i}`];
-        if (mediaUrl) {
+        if (mediaUrl && String(mediaContentType || "").toLowerCase().startsWith("image/")) {
           console.log(`   📎 Media ${i}: ${mediaContentType} - ${mediaUrl}`);
           attachments.push({
             url: mediaUrl,
             contentType: mediaContentType,
             filename: `media_${i}_${MessageSid}`,
           });
+        } else if (mediaUrl) {
+          console.log(`   📎 Skipping non-image media ${i}: ${mediaContentType}`);
         }
       }
     }

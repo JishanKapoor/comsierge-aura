@@ -493,75 +493,20 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Voice note recording state
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [pendingVoiceNote, setPendingVoiceNote] = useState<Blob | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Image attachment state (images only)
+  const [pendingImage, setPendingImage] = useState<{
+    base64: string;
+    mimeType: string;
+    filename: string;
+  } | null>(null);
+  const messageAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const processedMessageIds = useRef<Set<string>>(new Set());
 
-  // Voice recording functions
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        setPendingVoiceNote(audioBlob);
-        // Stop all tracks to release microphone
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingDuration(0);
-      
-      // Start duration timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
-      
-      toast.info("Recording started...");
-    } catch (error) {
-      console.error("Failed to start recording:", error);
-      toast.error("Could not access microphone. Please allow microphone access.");
-    }
-  };
-  
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      toast.success("Voice note recorded");
-    }
-  };
-  
-  const cancelVoiceNote = () => {
-    setPendingVoiceNote(null);
-    setRecordingDuration(0);
-  };
-  
-  const formatRecordingTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const cancelImageAttachment = () => {
+    setPendingImage(null);
+    if (messageAttachmentInputRef.current) messageAttachmentInputRef.current.value = "";
   };
 
   const insertEmoji = (emoji: string) => {
@@ -1044,7 +989,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (isMobile) setMobilePane("chat");
   };
 
-  // Convert blob to base64 for sending
+  // Convert blob/file to base64 for sending
   const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1058,16 +1003,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (!selectedMessage) return;
 
     const trimmed = newMessage.trim();
-    if (!trimmed && !pendingVoiceNote) return;
+    if (!trimmed && !pendingImage) return;
     if (isSending) return;
 
-    // Capture voice note before clearing
-    const voiceNoteToSend = pendingVoiceNote;
+    // Capture image before clearing
+    const imageToSend = pendingImage;
 
     // Clear input immediately for instant feel
     setNewMessage("");
-    setPendingVoiceNote(null);
-    setRecordingDuration(0);
+    setPendingImage(null);
     setShowEmojiPicker(false);
     setAiAssistOpen(false);
     setAiAssistMode(null);
@@ -1097,11 +1041,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         timestamp,
       });
     }
-    if (voiceNoteToSend) {
+    if (imageToSend) {
       optimisticBubbles.push({
-        id: `${optimisticId}-voice`,
+        id: `${optimisticId}-image`,
         role: "outgoing",
-        content: `🎤 Voice note`,
+        content: `[Image]`,
         timestamp,
       });
     }
@@ -1142,27 +1086,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       
       setIsSending(true);
       try {
-        // Convert voice note to base64 if present
+        // Convert image attachment to base64 if present
         let mediaBase64: string | undefined;
         let mediaType: string | undefined;
-        if (voiceNoteToSend) {
-          try {
-            mediaBase64 = await blobToBase64(voiceNoteToSend);
-            mediaType = "audio/webm";
-          } catch (e) {
-            console.error("Failed to convert voice note to base64:", e);
-            toast.error("Failed to process voice note");
-            setIsSending(false);
-            // Remove optimistic bubbles on failure
-            setThreadsByContactId((prev) => {
-              const current = prev[selectedMessage.contactId] ?? [];
-              return {
-                ...prev,
-                [selectedMessage.contactId]: current.filter((b) => !String(b.id).startsWith(optimisticId)),
-              };
-            });
-            return;
-          }
+        if (imageToSend) {
+          mediaBase64 = imageToSend.base64;
+          mediaType = imageToSend.mimeType;
         }
 
         // Send with user's assigned phone - backend will use env creds + validate the number
@@ -1175,16 +1104,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           mediaType?: string;
         } = {
           toNumber: recipientPhone,
-          body: messageToSend || (voiceNoteToSend ? "🎤 Voice note" : ""),
+          body: messageToSend || (imageToSend ? "[Image]" : ""),
           fromNumber: userPhone,
           contactName: selectedMessage.contactName,
         };
 
         if (mediaBase64) {
           requestBody.mediaBase64 = mediaBase64;
-          requestBody.mediaType = mediaType || "audio/webm";
-          console.log("🎤 Sending MMS with voice note, media type:", requestBody.mediaType);
-          console.log("🎤 Media base64 length:", mediaBase64.length);
+          requestBody.mediaType = mediaType || "image/jpeg";
+          console.log("📎 Sending MMS with image, media type:", requestBody.mediaType);
         }
         
         console.log("📤 Sending message request:", {
@@ -3010,8 +2938,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           {/* Show MMS image attachments */}
                           {bubble.attachments && bubble.attachments.length > 0 && (
                             <div className="mb-2">
-                              {bubble.attachments.map((att, idx) => (
-                                att.contentType?.startsWith("image/") ? (
+                              {bubble.attachments
+                                .filter((att) => att.contentType?.startsWith("image/"))
+                                .map((att, idx) => (
                                   <a 
                                     key={idx} 
                                     href={att.url} 
@@ -3026,34 +2955,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                                       loading="lazy"
                                     />
                                   </a>
-                                ) : att.contentType?.startsWith("audio/") ? (
-                                  <div key={idx} className="flex flex-col gap-1">
-                                    <audio 
-                                      controls 
-                                      src={att.url} 
-                                      className="max-w-full h-10"
-                                    />
-                                    <span className="flex items-center gap-1 text-xs opacity-70">
-                                      <Mic className="w-3 h-3" />
-                                      Voice note
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <a 
-                                    key={idx} 
-                                    href={att.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className={cn(
-                                      "flex items-center gap-2 text-xs underline",
-                                      isOutgoing ? "text-indigo-100" : "text-indigo-600"
-                                    )}
-                                  >
-                                    <File className="w-3 h-3" />
-                                    {att.filename || "Attachment"}
-                                  </a>
-                                )
-                              ))}
+                                  ))}
                             </div>
                           )}
                           
@@ -3201,30 +3103,37 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 )}
 
               <div className="flex items-end gap-2">
-                {/* Voice Recording Button */}
-                {isRecording ? (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-lg border border-red-200">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-sm text-red-600 font-medium">
-                      {formatRecordingTime(recordingDuration)}
-                    </span>
-                    <button
-                      className="p-1.5 rounded-full hover:bg-red-100 transition-colors"
-                      aria-label="Stop recording"
-                      onClick={stopRecording}
-                      type="button"
-                    >
-                      <StopCircle className="w-5 h-5 text-red-600" />
-                    </button>
-                  </div>
-                ) : pendingVoiceNote ? (
+                {/* Image attachment (images only) */}
+                <input
+                  ref={messageAttachmentInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const compressedBase64 = await compressImage(file, 1200, 0.8);
+                      setPendingImage({
+                        base64: compressedBase64,
+                        mimeType: file.type || "image/jpeg",
+                        filename: file.name || "image",
+                      });
+                    } catch (err) {
+                      console.error("Image compression failed:", err);
+                      toast.error("Failed to process image. Try a smaller file.");
+                      cancelImageAttachment();
+                    }
+                  }}
+                />
+                {pendingImage ? (
                   <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg border border-blue-200">
-                    <Mic className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-blue-600">Voice note ready</span>
+                    <File className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-blue-600">Image ready</span>
                     <button
                       className="p-1 rounded hover:bg-blue-100 transition-colors"
-                      aria-label="Remove voice note"
-                      onClick={cancelVoiceNote}
+                      aria-label="Remove image"
+                      onClick={cancelImageAttachment}
                       type="button"
                     >
                       <X className="w-4 h-4 text-blue-600" />
@@ -3233,11 +3142,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 ) : (
                   <button
                     className="p-2 rounded hover:bg-gray-100 transition-colors shrink-0"
-                    aria-label="Record voice note"
-                    onClick={startRecording}
+                    aria-label="Attach image"
+                    onClick={() => messageAttachmentInputRef.current?.click()}
                     type="button"
                   >
-                    <Mic className="w-4 h-4 text-gray-500" />
+                    <File className="w-4 h-4 text-gray-500" />
                   </button>
                 )}
                 <div className="flex-1 relative">
