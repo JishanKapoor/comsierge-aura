@@ -965,17 +965,18 @@ router.post("/webhook/sms", async (req, res) => {
           // Use the category from classification
           const category = spamAnalysis.category || "INBOX";
           
-          if (category === "SPAM") {
+          // CRITICAL: Also check spamAnalysis.isHeld directly in case it was set
+          const spamIsHeld = spamAnalysis.isHeld === true;
+          
+          console.log(`   DEBUG: category=${category}, spamAnalysis.isHeld=${spamAnalysis.isHeld}, spamIsHeld=${spamIsHeld}`);
+          
+          if (category === "SPAM" || spamIsHeld) {
             console.log(`   → SPAM: ${spamAnalysis.reasoning}`);
             messageStatus = "spam";
             isHeld = true;
             shouldNotify = false;
-          } else if (category === "HELD") {
-            console.log(`   → HELD: ${spamAnalysis.reasoning}`);
-            messageStatus = "held";
-            isHeld = true;
-            shouldNotify = true; // Still notify for held messages
           } else {
+            // INBOX - not spam, not held
             console.log(`   → INBOX: ${spamAnalysis.reasoning}`);
             messageStatus = "received";
             isHeld = false;
@@ -1131,19 +1132,25 @@ router.post("/webhook/sms", async (req, res) => {
         });
         
         // Update conversation with analysis results
+        // IMPORTANT: Only set isHeld=true on the conversation if message is SPAM
+        // Non-spam messages should NEVER set the conversation to held
+        const conversationUpdate = {
+          isPriority: isPriority || undefined,
+          lastAiAnalysis: aiAnalysis ? {
+            priority: aiAnalysis.priority,
+            category: aiAnalysis.category,
+            sentiment: aiAnalysis.sentiment,
+          } : undefined,
+        };
+        
+        // Only update isHeld if it's spam (true) - never clear it here as user may have manually held it
+        if (isHeld && messageStatus === "spam") {
+          conversationUpdate.isHeld = true;
+        }
+        
         await Conversation.findOneAndUpdate(
           { userId: user._id, contactPhone: normalizeToE164ish(From) },
-          {
-            $set: {
-              isHeld,
-              isPriority: isPriority || undefined,
-              lastAiAnalysis: aiAnalysis ? {
-                priority: aiAnalysis.priority,
-                category: aiAnalysis.category,
-                sentiment: aiAnalysis.sentiment,
-              } : undefined,
-            }
-          },
+          { $set: conversationUpdate },
           { upsert: false }
         );
         
