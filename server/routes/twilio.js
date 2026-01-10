@@ -654,13 +654,13 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
             console.log("📷 Media URL for Twilio:", mediaUrl);
           }
           
-          // Add media URL to message options
-          messageOptions.mediaUrl = [mediaUrl];
-
-          // For voice notes, do not add placeholder text. If Twilio rejects the media,
-          // we'll fall back to sending the Cloudinary link as SMS body.
+          // For voice notes, always send as SMS link (carriers strip audio MMS)
           if (isAudioMedia) {
-            messageOptions.body = "";
+            messageOptions.body = `🎤 Voice note: ${mediaUrl}`;
+            // Don't attach as MMS - carriers remove audio attachments
+          } else {
+            // Add image media URL to message options
+            messageOptions.mediaUrl = [mediaUrl];
           }
 
           resolvedMediaUrl = mediaUrl;
@@ -689,38 +689,15 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       try {
         twilioMessage = await client.messages.create(messageOptions);
       } catch (twilioError) {
-        // Voice notes: some carriers reject audio MMS. Fall back to sending link as SMS.
-        if (isAudioMedia && resolvedMediaUrl) {
-          try {
-            const fallbackOptions = {
-              ...messageOptions,
-              body: resolvedMediaUrl,
-            };
-            delete fallbackOptions.mediaUrl;
-            twilioMessage = await client.messages.create(fallbackOptions);
-          } catch (fallbackError) {
-            console.error("❌ Twilio API error (voice note):", twilioError.message);
-            console.error("❌ Twilio error code:", twilioError.code);
-            console.error("❌ Twilio error details:", twilioError.moreInfo);
-            console.error("❌ Fallback SMS also failed:", fallbackError?.message || fallbackError);
-            return res.status(400).json({
-              success: false,
-              message: `Twilio error: ${twilioError.message}`,
-              code: twilioError.code,
-              moreInfo: twilioError.moreInfo,
-            });
-          }
-        } else {
-          console.error("❌ Twilio API error:", twilioError.message);
-          console.error("❌ Twilio error code:", twilioError.code);
-          console.error("❌ Twilio error details:", twilioError.moreInfo);
-          return res.status(400).json({
-            success: false,
-            message: `Twilio error: ${twilioError.message}`,
-            code: twilioError.code,
-            moreInfo: twilioError.moreInfo,
-          });
-        }
+        console.error("❌ Twilio API error:", twilioError.message);
+        console.error("❌ Twilio error code:", twilioError.code);
+        console.error("❌ Twilio error details:", twilioError.moreInfo);
+        return res.status(400).json({
+          success: false,
+          message: `Twilio error: ${twilioError.message}`,
+          code: twilioError.code,
+          moreInfo: twilioError.moreInfo,
+        });
       }
 
       console.log("✅ Twilio message sent:", twilioMessage.sid);
@@ -733,7 +710,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactPhone: cleanTo,
           contactName: contactName || "Unknown",
           direction: "outgoing",
-          body: body || (outboundAttachment ? (isAudioMedia ? "" : "[Image]") : ""),
+          body: isAudioMedia ? `🎤 Voice note: ${resolvedMediaUrl}` : (body || (outboundAttachment ? "[Image]" : "")),
           // Delivery is async; start as pending and update via status callbacks
           status: "pending",
           twilioSid: twilioMessage.sid,
