@@ -528,11 +528,19 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
     }
 
     try {
+      // Base URL for callbacks/media
+      const baseUrl =
+        process.env.RENDER_EXTERNAL_URL ||
+        process.env.API_BASE_URL ||
+        `${req.protocol}://${req.get("host")}`;
+
       // Build message options
       const messageOptions = {
         body: body || "",
         from: cleanFrom,
         to: cleanTo,
+        // Ensure Twilio posts delivery/failure updates back to us
+        statusCallback: `${baseUrl}/api/twilio/webhook/status`,
       };
 
       // Track attachment for saving to message
@@ -553,10 +561,6 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           console.log("📷 Media saved to MongoDB with ID:", media._id);
           
           // Create public URL for Twilio to fetch
-          // Use the deployed Render URL or construct from request
-          const baseUrl = process.env.RENDER_EXTERNAL_URL || 
-                         process.env.API_BASE_URL || 
-                         `${req.protocol}://${req.get("host")}`;
           const mediaUrl = `${baseUrl}/api/media/${media._id}`;
           console.log("📷 Media URL for Twilio:", mediaUrl);
           
@@ -609,7 +613,8 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactName: contactName || "Unknown",
           direction: "outgoing",
           body: body || (outboundAttachment ? "[Image]" : ""),
-          status: "sent", // Use a simple status value that's in the enum
+          // Delivery is async; start as pending and update via status callbacks
+          status: "pending",
           twilioSid: twilioMessage.sid,
           fromNumber: cleanFrom,
           toNumber: cleanTo,
@@ -2406,10 +2411,71 @@ router.post("/webhook/dial-status", async (req, res) => {
 // @access  Public (Twilio webhook)
 router.post("/webhook/status", async (req, res) => {
   try {
-    const { MessageSid, CallSid, MessageStatus, CallStatus, CallDuration, From, To, ParentCallSid } = req.body;
+    const {
+      MessageSid,
+      CallSid,
+      MessageStatus,
+      SmsStatus,
+      ErrorCode,
+      ErrorMessage,
+      CallStatus,
+      CallDuration,
+      From,
+      To,
+      ParentCallSid,
+    } = req.body;
     
     if (MessageSid) {
-      console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
+      const rawStatus = (MessageStatus || SmsStatus || "").toString().toLowerCase();
+      console.log(`📊 SMS Status Update: ${MessageSid} - ${rawStatus || "(missing)"}`);
+
+      // Map Twilio message statuses to our enum
+      const mapMessageStatus = (s) => {
+        switch (s) {
+          case "queued":
+          case "accepted":
+          case "sending":
+            return "pending";
+          case "sent":
+            return "sent";
+          case "delivered":
+            return "delivered";
+          case "undelivered":
+          case "failed":
+            return "failed";
+          default:
+            return null;
+        }
+      };
+
+      const mapped = mapMessageStatus(rawStatus);
+      if (mapped) {
+        const update = {
+          status: mapped,
+        };
+
+        // Keep error details for debugging when Twilio/carrier rejects delivery
+        if (mapped === "failed" && (ErrorCode || ErrorMessage)) {
+          update.metadata = {
+            twilioErrorCode: ErrorCode || null,
+            twilioErrorMessage: ErrorMessage || null,
+            twilioFrom: From || null,
+            twilioTo: To || null,
+          };
+        }
+
+        const updated = await Message.findOneAndUpdate(
+          { twilioSid: MessageSid },
+          { $set: update },
+          { new: true }
+        );
+
+        if (!updated) {
+          console.log(`   ⚠️ No Message found for twilioSid ${MessageSid}`);
+        } else {
+          console.log(`   ✅ Updated Message ${updated._id} status -> ${mapped}`);
+        }
+      }
     }
     
     if (CallSid) {
