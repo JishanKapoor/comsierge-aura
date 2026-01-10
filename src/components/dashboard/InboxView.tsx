@@ -516,6 +516,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   // Menu states
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showTranslateModal, setShowTranslateModal] = useState(false);
+  const [showReceiveLanguageDropdown, setShowReceiveLanguageDropdown] = useState(false);
+  const [showSendLanguageDropdown, setShowSendLanguageDropdown] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAiChat, setShowAiChat] = useState(false);
   
@@ -3849,27 +3851,73 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               <div className="px-6 py-5 space-y-4">
                 <div>
                   <p className="text-xs font-medium text-gray-800 mb-2">Translate incoming to</p>
-                  <select
-                    value={receiveLanguage}
-                    onChange={(e) => setReceiveLanguage(e.target.value)}
-                    className="w-full px-2.5 py-2 text-sm bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-gray-300"
-                  >
-                    {languages.map((lang) => (
-                      <option key={lang.code} value={lang.code}>{lang.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowReceiveLanguageDropdown(!showReceiveLanguageDropdown);
+                        setShowSendLanguageDropdown(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      <span>{languages.find(l => l.code === receiveLanguage)?.name || "English"}</span>
+                      <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showReceiveLanguageDropdown && "rotate-180")} />
+                    </button>
+                    
+                    {showReceiveLanguageDropdown && (
+                      <div className="absolute z-10 w-full top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {languages.filter(l => l.code !== 'en').map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              setReceiveLanguage(lang.code);
+                              setShowReceiveLanguageDropdown(false);
+                            }}
+                            className={cn(
+                              "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
+                              receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
+                            )}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-800 mb-2">Send in</p>
-                  <select
-                    value={sendLanguage}
-                    onChange={(e) => setSendLanguage(e.target.value)}
-                    className="w-full px-2.5 py-2 text-sm bg-gray-50 border border-gray-200 rounded focus:outline-none focus:border-gray-300"
-                  >
-                    {languages.map((lang) => (
-                      <option key={lang.code} value={lang.code}>{lang.name}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowSendLanguageDropdown(!showSendLanguageDropdown);
+                        setShowReceiveLanguageDropdown(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                    >
+                      <span>{languages.find(l => l.code === sendLanguage)?.name || "English"}</span>
+                      <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showSendLanguageDropdown && "rotate-180")} />
+                    </button>
+                    
+                    {showSendLanguageDropdown && (
+                      <div className="absolute z-10 w-full top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
+                        {languages.map((lang) => (
+                          <button
+                            key={lang.code}
+                            onClick={() => {
+                              setSendLanguage(lang.code);
+                              setShowSendLanguageDropdown(false);
+                            }}
+                            className={cn(
+                              "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
+                              sendLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
+                            )}
+                          >
+                            {lang.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
