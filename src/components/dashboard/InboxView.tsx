@@ -548,8 +548,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   // Menu states
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showTranslateModal, setShowTranslateModal] = useState(false);
-  const [showReceiveLanguageDropdown, setShowReceiveLanguageDropdown] = useState(false);
-  const [showSendLanguageDropdown, setShowSendLanguageDropdown] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAiChat, setShowAiChat] = useState(false);
   
@@ -583,12 +581,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       localStorage.getItem(STORAGE_KEYS.languages)
     );
     return saved?.receiveLanguage || "en";
-  });
-  const [sendLanguage, setSendLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean }>(
-      localStorage.getItem(STORAGE_KEYS.languages)
-    );
-    return saved?.sendLanguage || "en";
   });
   const [autoTranslateIncoming, setAutoTranslateIncoming] = useState(() => {
     const saved = safeParseJson<{ autoTranslateIncoming?: boolean }>(
@@ -793,9 +785,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.languages,
-      JSON.stringify({ receiveLanguage, sendLanguage, autoTranslateIncoming })
+      // Keep backward compatibility with older saved shape (sendLanguage), even though
+      // we now use a single unified language setting in the UI.
+      JSON.stringify({ receiveLanguage, sendLanguage: receiveLanguage, autoTranslateIncoming })
     );
-  }, [receiveLanguage, sendLanguage, autoTranslateIncoming]);
+  }, [receiveLanguage, autoTranslateIncoming]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -1319,12 +1313,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       }));
     }
 
-    // Translate message if sendLanguage is not English
+    // Translate outgoing message (unified language setting)
     let messageToSend = trimmed;
-    if (trimmed && sendLanguage !== "en") {
+    if (trimmed && receiveLanguage !== "en") {
       setIsSending(true);
       try {
-        messageToSend = await translateText(trimmed, sendLanguage);
+        messageToSend = await translateText(trimmed, receiveLanguage);
       } catch (e) {
         console.error("Translation failed, sending original:", e);
       }
@@ -3934,39 +3928,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               </div>
               <div className="px-6 py-5 space-y-4">
                 <div>
-                  <p className="text-xs font-medium text-gray-800 mb-2">Translate incoming to</p>
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowReceiveLanguageDropdown(!showReceiveLanguageDropdown);
-                        setShowSendLanguageDropdown(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                      <span>{languages.find(l => l.code === receiveLanguage)?.name || "English"}</span>
-                      <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showReceiveLanguageDropdown && "rotate-180")} />
-                    </button>
-                    
-                    {showReceiveLanguageDropdown && (
-                      <div className="absolute z-10 w-full top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                        {languages.map((lang) => (
-                          <button
-                            key={lang.code}
-                            onClick={() => {
-                              setReceiveLanguage(lang.code);
-                              setShowReceiveLanguageDropdown(false);
-                            }}
-                            className={cn(
-                              "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
-                              receiveLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
-                            )}
-                          >
-                            {lang.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-xs font-medium text-gray-800 mb-1">Language</p>
+                  <p className="text-[11px] text-gray-500 mb-2">Used for incoming translations and sending replies.</p>
+                  <select
+                    value={receiveLanguage}
+                    onChange={(e) => setReceiveLanguage(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    {languages.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
@@ -3992,41 +3966,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </button>
                 </div>
 
-                <div>
-                  <p className="text-xs font-medium text-gray-800 mb-2">Send in</p>
-                  <div className="relative">
-                    <button
-                      onClick={() => {
-                        setShowSendLanguageDropdown(!showSendLanguageDropdown);
-                        setShowReceiveLanguageDropdown(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                      <span>{languages.find(l => l.code === sendLanguage)?.name || "English"}</span>
-                      <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform", showSendLanguageDropdown && "rotate-180")} />
-                    </button>
-                    
-                    {showSendLanguageDropdown && (
-                      <div className="absolute z-10 w-full top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-y-auto">
-                        {languages.map((lang) => (
-                          <button
-                            key={lang.code}
-                            onClick={() => {
-                              setSendLanguage(lang.code);
-                              setShowSendLanguageDropdown(false);
-                            }}
-                            className={cn(
-                              "w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors",
-                              sendLanguage === lang.code ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700"
-                            )}
-                          >
-                            {lang.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-100 flex flex-col gap-3 shrink-0">
                 {selectedMessage && receiveLanguage !== "en" && (
@@ -4051,8 +3990,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
+                      const label = languages.find((l) => l.code === receiveLanguage)?.name || receiveLanguage;
                       toast.success(
-                        `Translation updated: Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`
+                        `Translation updated: ${label}`
                       );
                       setShowTranslateModal(false);
 

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import heroImage from "@/assets/hero-nyc.jpg";
 
 const HeroSection = () => {
@@ -51,12 +50,12 @@ const HeroSection = () => {
         </p>
 
         <div className="mt-8 sm:mt-10 flex items-center justify-center gap-4">
-          <Link to="/auth" className="pill-button group">
+          <a href="mailto:jishan.kapoor@mail.utoronto.ca" className="pill-button group">
             <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
             </span>
             <span className="text-sm sm:text-base">Get in touch</span>
-          </Link>
+          </a>
         </div>
       </div>
 

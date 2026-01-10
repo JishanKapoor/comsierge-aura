@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { Link } from "react-router-dom";
 import ctaBg from "@/assets/cta-bg.jpg";
 
 const CTASection = () => {
@@ -55,17 +54,11 @@ const CTASection = () => {
         </p>
 
         <div className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 transition-all duration-700 delay-200 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
-          <Link to="/auth" className="pill-button group">
+          <a href="mailto:jishan.kapoor@mail.utoronto.ca" className="pill-button group">
             <span className="w-8 h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-4 h-4 text-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
             </span>
             Get in touch
-          </Link>
-          <a
-            href="mailto:jishan.kapoor@mail.utoronto.ca"
-            className="pill-button-ghost"
-          >
-            jishan.kapoor@mail.utoronto.ca
           </a>
         </div>
       </div>
