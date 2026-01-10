@@ -123,7 +123,6 @@ interface InboxViewProps {
 type TransferMode = "calls" | "messages" | "both";
 type TransferType = "all" | "high-priority";
 type PriorityFilter = "all" | "emergency" | "meetings" | "deadlines" | "important";
-type ScheduleMode = "always" | "duration" | "custom";
 
 // Translation via backend (more reliable) with Google Translate fallback
 const translateText = async (text: string, targetLang: string, sourceLang: string = "auto"): Promise<string> => {
@@ -796,12 +795,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [transferTo, setTransferTo] = useState<string>("");
   const [transferContactSearch, setTransferContactSearch] = useState("");
-  
-  // Schedule state for transfer
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("always");
-  const [scheduleDuration, setScheduleDuration] = useState<number>(2);
-  const [scheduleStartTime, setScheduleStartTime] = useState<string>("");
-  const [scheduleEndTime, setScheduleEndTime] = useState<string>("");
 
   // Fetch contacts from API on mount
   useEffect(() => {
@@ -2229,18 +2222,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       return;
     }
     
-    // Validate custom schedule
-    if (scheduleMode === "custom") {
-      if (!scheduleStartTime || !scheduleEndTime) {
-        toast.error("Please set both start and end times");
-        return;
-      }
-      if (new Date(scheduleStartTime) >= new Date(scheduleEndTime)) {
-        toast.error("End time must be after start time");
-        return;
-      }
-    }
-    
     // Build description based on mode and type
     let transferDescription = "";
     if (transferMode === "calls") {
@@ -2269,12 +2250,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       active: true,
       createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       type: "transfer",
-      schedule: {
-        mode: scheduleMode,
-        durationHours: scheduleMode === "duration" ? scheduleDuration : undefined,
-        startTime: scheduleMode === "custom" ? scheduleStartTime : undefined,
-        endTime: scheduleMode === "custom" ? scheduleEndTime : undefined,
-      },
       transferDetails: {
         mode: transferMode,
         priority: transferType,
@@ -2288,18 +2263,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const existingRules = loadRules();
     saveRules([newRule, ...existingRules]);
     
-    // Build schedule description
-    let scheduleDesc = "";
-    if (scheduleMode === "duration") {
-      scheduleDesc = ` for ${scheduleDuration} hour${scheduleDuration > 1 ? "s" : ""}`;
-    } else if (scheduleMode === "custom") {
-      const start = new Date(scheduleStartTime);
-      const end = new Date(scheduleEndTime);
-      const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-      scheduleDesc = ` from ${formatDate(start)} to ${formatDate(end)}`;
-    }
-    
-    toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}${scheduleDesc}`);
+    toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}`);
 
     // Remember last used transfer settings per conversation
     if (selectedMessage) {
@@ -2313,11 +2277,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       }));
     }
 
-    // Reset schedule state
-    setScheduleMode("always");
-    setScheduleDuration(2);
-    setScheduleStartTime("");
-    setScheduleEndTime("");
     setShowTransferModal(false);
   };
 
@@ -3844,94 +3803,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     </div>
                   </div>
                 )}
-
-                {/* Schedule / Duration */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500">Schedule</p>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setScheduleMode("always")}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        scheduleMode === "always" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      Always
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScheduleMode("duration")}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        scheduleMode === "duration" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      For duration
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScheduleMode("custom")}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        scheduleMode === "custom" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      Custom
-                    </button>
-                  </div>
-                  
-                  {/* Duration selector */}
-                  {scheduleMode === "duration" && (
-                    <div className="flex items-center gap-2 mt-1">
-                      <select
-                        value={scheduleDuration}
-                        onChange={(e) => setScheduleDuration(Number(e.target.value))}
-                        className="px-2 py-1.5 rounded text-xs bg-white text-gray-700 border border-gray-200 focus:outline-none focus:border-gray-300"
-                      >
-                        <option value={1}>1 hour</option>
-                        <option value={2}>2 hours</option>
-                        <option value={4}>4 hours</option>
-                        <option value={8}>8 hours</option>
-                        <option value={12}>12 hours</option>
-                        <option value={24}>24 hours</option>
-                        <option value={48}>2 days</option>
-                        <option value={168}>1 week</option>
-                      </select>
-                      <span className="text-[11px] text-gray-400">from now</span>
-                    </div>
-                  )}
-                  
-                  {/* Custom time range */}
-                  {scheduleMode === "custom" && (
-                    <div className="space-y-2 mt-1">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-gray-500 w-10">Start</label>
-                        <input
-                          type="datetime-local"
-                          value={scheduleStartTime}
-                          onChange={(e) => setScheduleStartTime(e.target.value)}
-                          className="flex-1 px-2 py-1.5 rounded text-xs bg-white text-gray-700 border border-gray-200 focus:outline-none focus:border-gray-300"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-gray-500 w-10">End</label>
-                        <input
-                          type="datetime-local"
-                          value={scheduleEndTime}
-                          onChange={(e) => setScheduleEndTime(e.target.value)}
-                          className="flex-1 px-2 py-1.5 rounded text-xs bg-white text-gray-700 border border-gray-200 focus:outline-none focus:border-gray-300"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
 
                 {/* Contact Selection */}
                 <div className="space-y-2">
