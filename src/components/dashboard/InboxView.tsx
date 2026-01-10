@@ -2984,8 +2984,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             </div>
                           )}
                           
-                          {/* Translate button - show on hover for non-AI messages */}
-                          {!isAi && !hasTranslation && (
+                          {/* Translate button - show on hover for non-AI messages with actual text content */}
+                          {!isAi && !hasTranslation && bubble.content && bubble.content !== "[Image]" && (
                             <button
                               type="button"
                               onClick={() => translateBubble(bubble.id, bubble.content)}
