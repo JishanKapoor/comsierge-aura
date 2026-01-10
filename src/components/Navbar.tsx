@@ -20,62 +20,57 @@ const Navbar = () => {
   useEffect(() => {
     let ticking = false;
     
+    // Simplified, more robust logic
     const onScroll = () => {
       if (ticking) return;
-      
       ticking = true;
+      
       window.requestAnimationFrame(() => {
         const currentScrollY = window.scrollY;
-
-        // Add background when scrolled past threshold
-        setScrolled(currentScrollY > 50);
-
-        // If mobile menu is open, keep header visible.
+        
+        // Background logic
+        setScrolled(currentScrollY > 20);
+        
         if (mobileOpenRef.current) {
           lastScrollY.current = currentScrollY;
           ticking = false;
           return;
         }
 
-        // Always show near the top.
-        if (currentScrollY < 24) {
+        // At the very top? Always show
+        if (currentScrollY < 50) {
           setHidden(false);
-          upScrollAccumulated.current = 0;
           lastScrollY.current = currentScrollY;
           ticking = false;
           return;
         }
 
-        // Hide on scroll down, show on scroll up
-        const scrollDelta = currentScrollY - lastScrollY.current;
+        // Determine direction
+        // > 0 means scrolling DOWN
+        // < 0 means scrolling UP
+        const diff = currentScrollY - lastScrollY.current;
         
-        if (scrollDelta > 5 && currentScrollY > 120) {
-          // Scrolling down - hide
-          setHidden(true);
-          upScrollAccumulated.current = 0;
-        } else if (scrollDelta < -5) {
-          // Scrolling up - show
-          upScrollAccumulated.current += Math.abs(scrollDelta);
-          if (upScrollAccumulated.current > 10) {
+        // Only trigger if movement is significant to avoid jitter
+        if (Math.abs(diff) > 2) {
+          if (diff > 0) {
+            // Scrolling DOWN -> Hide
+            setHidden(true);
+          } else {
+            // Scrolling UP -> Show
             setHidden(false);
-            upScrollAccumulated.current = 0;
           }
         }
-
+        
         lastScrollY.current = currentScrollY;
         ticking = false;
       });
     };
 
-    // Initialize baseline
     lastScrollY.current = window.scrollY;
-    upScrollAccumulated.current = 0;
-    setScrolled(window.scrollY > 50);
+    setScrolled(window.scrollY > 20);
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-    };
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // Close mobile menu on route changes
@@ -99,7 +94,7 @@ const Navbar = () => {
       <div
         className={[
           "fixed top-0 left-0 right-0 z-50 pt-3 sm:pt-4",
-          "transition-transform duration-500 ease-out will-change-transform",
+          "transition-transform duration-500 ease-out transform will-change-transform",
           hidden && !isAuthPage && !mobileOpen ? "-translate-y-full" : "translate-y-0",
         ].join(" ")}
       >
