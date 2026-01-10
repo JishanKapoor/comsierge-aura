@@ -15,11 +15,11 @@ import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiSer
 
 const router = express.Router();
 
-// Translation helper using MyMemory API
+// Translation helper using Google Translate (free endpoint)
 async function translateText(text, targetLang, sourceLang = 'auto') {
   console.log(`   🌐 translateText called: targetLang=${targetLang}, text="${text?.substring(0, 30)}..."`);
   
-  // Skip if target is English and source is likely English
+  // Skip if target is English
   if (targetLang === 'en') {
     console.log(`   🌐 Skipping translation - target is English`);
     return text;
@@ -30,22 +30,21 @@ async function translateText(text, targetLang, sourceLang = 'auto') {
   }
   
   try {
-    const langPair = sourceLang === 'auto' ? `en|${targetLang}` : `${sourceLang}|${targetLang}`;
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
-    console.log(`   🌐 Calling MyMemory API: ${langPair}`);
+    // Use Google Translate free endpoint
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+    console.log(`   🌐 Calling Google Translate: ${sourceLang} -> ${targetLang}`);
     
     const response = await fetch(url);
     const data = await response.json();
     
-    console.log(`   🌐 MyMemory response status: ${data.responseStatus}`);
-    
-    if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      const translated = data.responseData.translatedText;
+    // Google returns nested arrays: [[["translated text","original text",null,null,10]],null,"en",...]
+    if (data && data[0] && Array.isArray(data[0])) {
+      const translated = data[0].map(item => item[0]).join('');
       console.log(`   🌐 Translation success: "${translated.substring(0, 50)}..."`);
       return translated;
     }
     
-    console.log(`   ⚠️ Translation failed, responseData:`, JSON.stringify(data.responseData));
+    console.log(`   ⚠️ Translation failed, unexpected response format`);
     return text;
   } catch (error) {
     console.error('   ❌ Translation error:', error.message);
