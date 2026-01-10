@@ -6,7 +6,8 @@ const router = express.Router();
 // For production, consider Google Cloud Translation API or DeepL
 const translateWithMyMemory = async (text, sourceLang, targetLang) => {
   try {
-    const langPair = sourceLang === 'auto' ? `auto|${targetLang}` : `${sourceLang}|${targetLang}`;
+    // MyMemory doesn't support 'auto' - use empty source to let it auto-detect
+    const langPair = sourceLang === 'auto' ? `|${targetLang}` : `${sourceLang}|${targetLang}`;
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
     
     const response = await fetch(url);
