@@ -125,38 +125,25 @@ type ScheduleMode = "always" | "duration" | "custom";
 
 // Translation via Google Translate (free endpoint)
 const translateText = async (text: string, targetLang: string, sourceLang: string = 'auto'): Promise<string> => {
-  console.log(`[translateText] Called with: text="${text?.substring(0, 30)}...", targetLang=${targetLang}, sourceLang=${sourceLang}`);
-  
-  if (!text.trim()) {
-    console.log(`[translateText] Skipping - empty text`);
-    return text;
-  }
-  if (targetLang === "en" && sourceLang === "en") {
-    console.log(`[translateText] Skipping - both source and target are English`);
-    return text;
-  }
-  
+  if (!text.trim()) return text;
+  if (targetLang === "en" && sourceLang === "en") return text;
+
   try {
     // Use Google Translate free endpoint directly
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-    console.log(`[translateText] Calling: ${url.substring(0, 80)}...`);
-    
     const response = await fetch(url);
-    console.log(`[translateText] Response status: ${response.status}`);
-    
+    if (!response.ok) return text;
+
     const data = await response.json();
-    console.log(`[translateText] Response data:`, data);
-    
+
     // Google returns nested arrays: [[["translated text","original text",null,null,10]],null,"en",...]
     if (data && data[0] && Array.isArray(data[0])) {
       const translated = data[0].map((item: any) => item[0]).join('');
-      console.log(`[translateText] Success: "${translated.substring(0, 50)}..."`);
       return translated;
     }
-    console.log(`[translateText] Failed - unexpected response format`);
     return text;
   } catch (error) {
-    console.error("[translateText] Error:", error);
+    console.error("Translation failed:", error);
     return text;
   }
 };
@@ -547,37 +534,46 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   });
   
   const [receiveLanguage, setReceiveLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string }>(
+    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean }>(
       localStorage.getItem(STORAGE_KEYS.languages)
     );
     return saved?.receiveLanguage || "en";
   });
   const [sendLanguage, setSendLanguage] = useState(() => {
-    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string }>(
+    const saved = safeParseJson<{ receiveLanguage?: string; sendLanguage?: string; autoTranslateIncoming?: boolean }>(
       localStorage.getItem(STORAGE_KEYS.languages)
     );
     return saved?.sendLanguage || "en";
+  });
+  const [autoTranslateIncoming, setAutoTranslateIncoming] = useState(() => {
+    const saved = safeParseJson<{ autoTranslateIncoming?: boolean }>(
+      localStorage.getItem(STORAGE_KEYS.languages)
+    );
+    return Boolean(saved?.autoTranslateIncoming);
   });
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   // Track which message bubbles are currently being translated
   const [translatingBubbles, setTranslatingBubbles] = useState<Set<string>>(new Set());
+
+  const autoTranslateInFlight = useRef(false);
+  const autoTranslatePending = useRef(false);
   
   // Translate a specific message bubble
-  const translateBubble = async (bubbleId: string, content: string) => {
-    console.log(`[translateBubble] Called with bubbleId=${bubbleId}, receiveLanguage=${receiveLanguage}`);
-    if (translatingBubbles.has(bubbleId)) {
-      console.log(`[translateBubble] Skipping - already translating`);
-      return;
-    }
+  const translateBubble = async (
+    bubbleId: string,
+    content: string,
+    opts?: { silent?: boolean; targetLang?: string }
+  ) => {
+    const targetLang = opts?.targetLang ?? receiveLanguage;
+    if (targetLang === "en") return;
+    if (translatingBubbles.has(bubbleId)) return;
     
     setTranslatingBubbles(prev => new Set(prev).add(bubbleId));
     
     try {
       // Translate to user's receive language
-      console.log(`[translateBubble] Calling translateText with targetLang=${receiveLanguage}`);
-      const translated = await translateText(content, receiveLanguage, "auto");
-      console.log(`[translateBubble] Got translation: "${translated?.substring(0, 50)}..."`);
+      const translated = await translateText(content, targetLang, "auto");
       
       // Update the bubble with translation
       setThreadsByContactId(prev => {
@@ -593,11 +589,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           ),
         };
       });
-      
-      toast.success("Message translated");
+
+      if (!opts?.silent) toast.success("Message translated");
     } catch (error) {
       console.error("Translation failed:", error);
-      toast.error("Translation failed");
+      if (!opts?.silent) toast.error("Translation failed");
     } finally {
       setTranslatingBubbles(prev => {
         const next = new Set(prev);
@@ -608,30 +604,34 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   };
   
   // Translate all incoming messages in the current thread
-  const translateAllIncoming = async () => {
-    console.log(`[translateAllIncoming] Called with receiveLanguage=${receiveLanguage}`);
-    if (!selectedMessage) {
-      console.log(`[translateAllIncoming] No selected message`);
-      return;
-    }
+  const translateAllIncoming = async (opts?: { showToasts?: boolean; silentBubbles?: boolean }) => {
+    const showToasts = opts?.showToasts !== false;
+    const silentBubbles = opts?.silentBubbles !== false;
+    if (!selectedMessage) return;
     const thread = threadsByContactId[selectedMessage.contactId];
-    if (!thread) {
-      console.log(`[translateAllIncoming] No thread found`);
-      return;
-    }
+    if (!thread) return;
     
-    const incomingBubbles = thread.filter(b => b.role === "incoming" && !b.translatedContent);
-    console.log(`[translateAllIncoming] Found ${incomingBubbles.length} incoming messages to translate`);
+    const incomingBubbles = thread.filter(
+      b =>
+        b.role === "incoming" &&
+        Boolean(b.content) &&
+        b.content !== "[Image]" &&
+        b.content !== "[Voice Note]" &&
+        b.content !== "[Audio]" &&
+        !b.translatedContent
+    );
     if (incomingBubbles.length === 0) {
-      toast.info("All messages already translated");
+      if (showToasts) toast.info("All messages already translated");
       return;
     }
     
-    toast.info(`Translating ${incomingBubbles.length} messages...`);
+    if (showToasts) toast.info(`Translating ${incomingBubbles.length} messages...`);
     
     for (const bubble of incomingBubbles) {
-      await translateBubble(bubble.id, bubble.content);
+      await translateBubble(bubble.id, bubble.content, { silent: silentBubbles, targetLang: receiveLanguage });
     }
+
+    if (showToasts) toast.success("Translation complete");
   };
 
   type AiChatMessage = {
@@ -748,9 +748,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.languages,
-      JSON.stringify({ receiveLanguage, sendLanguage })
+      JSON.stringify({ receiveLanguage, sendLanguage, autoTranslateIncoming })
     );
-  }, [receiveLanguage, sendLanguage]);
+  }, [receiveLanguage, sendLanguage, autoTranslateIncoming]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -1110,6 +1110,45 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   }, [isMobile, selectedMessage]);
 
   const activeThread = selectedMessage ? threadsByContactId[selectedMessage.contactId] ?? [] : [];
+
+  // If enabled, automatically translate incoming messages and show both original + translated.
+  useEffect(() => {
+    if (!selectedMessage) return;
+    if (!autoTranslateIncoming) return;
+    if (!receiveLanguage || receiveLanguage === "en") return;
+    if (!activeThread || activeThread.length === 0) return;
+
+    const hasPending = activeThread.some(
+      b =>
+        b.role === "incoming" &&
+        Boolean(b.content) &&
+        b.content !== "[Image]" &&
+        b.content !== "[Voice Note]" &&
+        b.content !== "[Audio]" &&
+        !b.translatedContent
+    );
+
+    if (!hasPending) return;
+
+    if (autoTranslateInFlight.current) {
+      autoTranslatePending.current = true;
+      return;
+    }
+
+    autoTranslateInFlight.current = true;
+    (async () => {
+      try {
+        await translateAllIncoming({ showToasts: false, silentBubbles: true });
+      } finally {
+        autoTranslateInFlight.current = false;
+        if (autoTranslatePending.current) {
+          autoTranslatePending.current = false;
+          // Re-run once to catch any messages that arrived mid-translation.
+          await translateAllIncoming({ showToasts: false, silentBubbles: true });
+        }
+      }
+    })();
+  }, [selectedMessage?.contactId, activeThread, autoTranslateIncoming, receiveLanguage]);
 
   // Track if user has scrolled up
   const userScrolledUp = useRef(false);
@@ -3942,14 +3981,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </Button>
                   <Button
                     onClick={() => {
-                      // Save language settings to localStorage
-                      localStorage.setItem(STORAGE_KEYS.languages, JSON.stringify({
-                        receiveLanguage,
-                        sendLanguage
-                      }));
-                      console.log(`[Apply] Saved languages: receiveLanguage=${receiveLanguage}, sendLanguage=${sendLanguage}`);
-                      toast.success(`Translation settings saved! Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`);
+                      // Enable auto-translate for incoming messages (shows original + translated)
+                      setAutoTranslateIncoming(true);
+                      toast.success(
+                        `Translation enabled: Incoming -> ${languages.find(l => l.code === receiveLanguage)?.name || receiveLanguage}, Outgoing -> ${languages.find(l => l.code === sendLanguage)?.name || sendLanguage}`
+                      );
                       setShowTranslateModal(false);
+
+                      // Kick off a quiet pass for the current thread
+                      translateAllIncoming({ showToasts: false, silentBubbles: true });
                     }}
                     className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
                   >
