@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+﻿import { useEffect, useMemo, useState, useRef, useCallback, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { API_BASE_URL } from "@/config";
 import {
@@ -330,6 +330,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [newMessage, setNewMessage] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "chat">("list");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [isPending, startTransition] = useTransition();
   const [isSending, setIsSending] = useState(false);
 
   // Call mode dialog state
@@ -469,14 +470,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (showLoading) setIsLoadingMessages(false);
   }, [activeFilter, contacts]);
 
-  // Track if this is the initial load
+  // Track if this is the initial load and current filter for transition handling
   const hasInitiallyLoaded = useRef(false);
+  const previousFilter = useRef<FilterType>(activeFilter);
+  const isFilterTransition = useRef(false);
 
   // Fetch conversations from MongoDB API on filter change
   useEffect(() => {
+    // Check if this is a filter change (not initial load)
+    if (hasInitiallyLoaded.current && previousFilter.current !== activeFilter) {
+      isFilterTransition.current = true;
+    }
+    previousFilter.current = activeFilter;
+    
     // Only show loading skeleton on very first load, not on filter changes
     const shouldShowLoading = !hasInitiallyLoaded.current;
-    loadConversations(shouldShowLoading);
+    loadConversations(shouldShowLoading).then(() => {
+      isFilterTransition.current = false;
+    });
     hasInitiallyLoaded.current = true;
   }, [loadConversations]); // Refetch when filter changes
 
@@ -2441,7 +2452,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           ] as const).map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveFilter(tab.id)}
+              onClick={() => startTransition(() => setActiveFilter(tab.id))}
               className={cn(
                 "px-2.5 py-1 text-xs rounded transition-colors",
                 activeFilter === tab.id
