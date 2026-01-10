@@ -870,8 +870,27 @@ router.post("/webhook/sms", async (req, res) => {
     console.log(`   Body: ${Body}`);
     console.log(`   MessageSid: ${MessageSid}`);
     console.log(`   NumMedia: ${NumMedia || 0}`);
+    console.log(`   AccountSid: ${AccountSid}`);
     
-    // Parse MMS attachments (images only) - download and upload to Cloudinary for public access
+    // Get Twilio credentials for this account to download media
+    let twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
+    let twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
+    
+    // Try to find credentials from DB based on AccountSid
+    if (AccountSid) {
+      try {
+        const twilioAccount = await TwilioAccount.findOne({ accountSid: AccountSid });
+        if (twilioAccount) {
+          twilioAccountSid = twilioAccount.accountSid;
+          twilioAuthToken = twilioAccount.authToken;
+          console.log(`   ✅ Found Twilio credentials for account ${AccountSid.slice(0,8)}...`);
+        }
+      } catch (e) {
+        console.log(`   ⚠️ Could not lookup Twilio account: ${e.message}`);
+      }
+    }
+    
+    // Parse MMS attachments (images only) - download with auth and upload to Cloudinary
     const attachments = [];
     const numMedia = parseInt(NumMedia || 0, 10);
     if (numMedia > 0) {
@@ -882,28 +901,56 @@ router.post("/webhook/sms", async (req, res) => {
         if (mediaUrl && String(mediaContentType || "").toLowerCase().startsWith("image/")) {
           console.log(`   📎 Media ${i}: ${mediaContentType} - ${mediaUrl}`);
           
-          // Download from Twilio and upload to Cloudinary for public access
-          let publicUrl = mediaUrl;
+          let publicUrl = null;
+          
           try {
+            // Step 1: Download image from Twilio (requires Basic Auth)
+            console.log(`   📎 Downloading from Twilio with auth...`);
+            const authHeader = 'Basic ' + Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
+            const response = await fetch(mediaUrl, {
+              headers: { 'Authorization': authHeader }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Twilio download failed: ${response.status} ${response.statusText}`);
+            }
+            
+            const imageBuffer = await response.arrayBuffer();
+            const base64Image = `data:${mediaContentType};base64,${Buffer.from(imageBuffer).toString('base64')}`;
+            console.log(`   📎 Downloaded ${imageBuffer.byteLength} bytes`);
+            
+            // Step 2: Upload to Cloudinary
             if (hasCloudinaryConfig) {
               console.log(`   📎 Uploading to Cloudinary...`);
-              const upload = await cloudinary.uploader.upload(mediaUrl, {
+              const upload = await cloudinary.uploader.upload(base64Image, {
                 resource_type: "image",
                 folder: "comsierge/mms-inbound",
               });
-              publicUrl = upload?.secure_url || mediaUrl;
-              console.log(`   📎 Cloudinary URL: ${publicUrl}`);
+              publicUrl = upload?.secure_url;
+              console.log(`   📎 ✅ Cloudinary URL: ${publicUrl}`);
+            } else {
+              // Fallback: store in MongoDB
+              console.log(`   📎 No Cloudinary config, storing in MongoDB...`);
+              const media = new Media({
+                data: base64Image,
+                mimeType: mediaContentType,
+              });
+              await media.save();
+              const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.API_BASE_URL || `${req.protocol}://${req.get("host")}`;
+              publicUrl = `${baseUrl}/api/media/${media._id}`;
+              console.log(`   📎 MongoDB URL: ${publicUrl}`);
             }
-          } catch (uploadErr) {
-            console.error(`   ❌ Failed to upload to Cloudinary:`, uploadErr.message);
-            // Keep original Twilio URL as fallback (may not work for display)
+          } catch (downloadErr) {
+            console.error(`   ❌ Failed to process media:`, downloadErr.message);
           }
           
-          attachments.push({
-            url: publicUrl,
-            contentType: mediaContentType,
-            filename: `media_${i}_${MessageSid}`,
-          });
+          if (publicUrl) {
+            attachments.push({
+              url: publicUrl,
+              contentType: mediaContentType,
+              filename: `image_${i + 1}.${mediaContentType.split('/')[1] || 'jpg'}`,
+            });
+          }
         } else if (mediaUrl) {
           console.log(`   📎 Skipping non-image media ${i}: ${mediaContentType}`);
         }
