@@ -867,14 +867,20 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Close menus on outside click
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    // On mobile the More menu is rendered via a portal + backdrop; an "outside click"
+    // listener here will treat taps inside the sheet as outside and close it before
+    // button handlers fire.
+    if (isMobile) return;
+
+    const handlePointerDown = (e: PointerEvent) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
         setShowMoreMenu(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isMobile]);
   
   // API already filters by activeFilter, we just do local search filtering here
   const filteredMessages = useMemo(() => {
@@ -2885,16 +2891,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 <div
                   key={msg.id}
                   onClick={(e) => {
-                    // Only select conversation if clicking the row itself, not a nested button
+                    // Safety check: ensure we don't handle clicks intended for action buttons
                     if ((e.target as HTMLElement).closest('button')) return;
+                    
+                    // For mobile debugging
+                    console.log("[Row Click] Selecting conversation:", msg.id);
+                    
                     handleSelectConversation(msg.id);
                   }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSelectConversation(msg.id)}
                   className={cn(
-                    "w-full text-left px-4 py-3 border-b border-gray-100 transition-colors cursor-pointer",
-                    isSelected ? "bg-gray-100" : "hover:bg-gray-50"
+                    "w-full text-left px-4 py-3 border-b border-gray-100 transition-colors cursor-pointer select-none", // select-none helps mobile feel
+                    isSelected ? "bg-gray-100" : "hover:bg-gray-50",
+                    isMobile && "active:bg-gray-100" // Mobile active state
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -2930,17 +2938,29 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0 ml-2">
                         <span className="text-xs text-gray-500 truncate max-w-[80px] text-right">{msg.timestamp}</span>
-                        <button
-                          onClick={togglePinFromRow}
-                          className={cn(
-                            "p-2 rounded-full hover:bg-gray-100 transition-colors shrink-0 touch-manipulation",
-                            isPinned ? "text-amber-500" : "text-gray-300 hover:text-gray-500"
-                          )}
-                          aria-label={isPinned ? "Unpin" : "Pin"}
-                          title={isPinned ? "Unpin" : "Pin"}
+                        {/* 
+                          MOBILE FIX (PIN BUTTON):
+                          1. pointer-events-auto ensures it catches touches
+                          2. onPointerDown with stopPropagation prevents the row click from firing even if onClick delays
+                          3. z-index 10 floats it clearly above
+                        */}
+                        <div 
+                          className="relative z-10" 
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onTouchStart={(e) => e.stopPropagation()}
                         >
-                          <Pin className="w-4 h-4" />
-                        </button>
+                          <button
+                            type="button"
+                            onClick={togglePinFromRow}
+                            className={cn(
+                              "p-2 rounded-full hover:bg-gray-100 transition-colors shrink-0 touch-manipulation active:scale-95",
+                              isPinned ? "text-amber-500" : "text-gray-300 hover:text-gray-500"
+                            )}
+                            aria-label={isPinned ? "Unpin" : "Pin"}
+                          >
+                            <Pin className="w-5 h-5" /> 
+                          </button>
+                        </div>
                       </div>
                     </div>
                     
