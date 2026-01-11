@@ -2852,12 +2852,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" />
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-xs text-gray-500">{msg.timestamp}</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-xs text-gray-500 min-w-0 truncate">{msg.timestamp}</span>
                         <button
                           onClick={togglePinFromRow}
                           className={cn(
-                            "p-1 rounded hover:bg-gray-100 transition-colors",
+                            "p-1 rounded hover:bg-gray-100 transition-colors shrink-0",
                             isPinned ? "text-amber-500" : "text-gray-300 hover:text-gray-500"
                           )}
                           aria-label={isPinned ? "Unpin" : "Pin"}

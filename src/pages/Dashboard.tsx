@@ -285,21 +285,18 @@ const Dashboard = () => {
           showMenu ? "translate-x-0 ease-in shadow-xl z-50" : "-translate-x-full ease-out shadow-none z-0 pointer-events-none lg:pointer-events-auto lg:z-auto"
         )}
       >
+        {/* Mobile close button */}
+        <button
+          className="flex-shrink-0 px-5 ml-2 lg:hidden h-14 focus:outline-none"
+          onClick={() => setShowMenu(false)}
+        >
+          <Menu className="w-4 h-4 text-gray-500 hover:text-gray-800" />
+        </button>
+
         {/* Top section */}
         <div className="flex flex-col flex-grow-0 flex-shrink-0 px-5 py-3">
-          {/* Mobile: close button on the right */}
-          <div className="flex items-center justify-end lg:hidden">
-            <button
-              className="flex items-center justify-center w-10 h-10 -mr-2 rounded hover:bg-gray-100 focus:outline-none"
-              onClick={() => setShowMenu(false)}
-              aria-label="Close menu"
-            >
-              <Menu className="w-4 h-4 text-gray-500 hover:text-gray-800" />
-            </button>
-          </div>
-
-          {/* Desktop: Brand */}
-          <div className="hidden lg:flex items-center justify-between">
+          <div className="flex items-center justify-between">
+            {/* Brand */}
             <div className="flex items-center p-2 pr-3 rounded cursor-pointer hover:bg-gray-100">
               <div className="flex text-sm items-center justify-center rounded-sm w-5 h-5 text-white bg-indigo-500 mr-2.5 font-semibold">
                 C
@@ -308,48 +305,21 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Mobile: Phone number first, then brand */}
-          <div className="lg:hidden">
-            {user?.phoneNumber ? (
-              <button
-                onClick={copyPhoneNumber}
-                className="inline-flex items-center px-2 py-2 mt-2 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
-              >
-                <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
-                <span className="font-mono text-gray-600">{phoneNumber}</span>
-              </button>
-            ) : (
-              <div className="inline-flex items-center px-2 py-2 mt-2 bg-gray-50 border border-gray-200 rounded h-8 text-xs">
-                <Phone className="w-3.5 h-3.5 mr-2 text-gray-400" />
-                <span className="text-gray-500">No number assigned</span>
-              </div>
-            )}
-
-            <div className="flex items-center p-2 pr-3 rounded cursor-pointer hover:bg-gray-100 mt-3">
-              <div className="flex text-sm items-center justify-center rounded-sm w-5 h-5 text-white bg-indigo-500 mr-2.5 font-semibold">
-                C
-              </div>
-              <div className="text-sm font-medium text-gray-800">Comsierge</div>
+          {/* Phone number */}
+          {user?.phoneNumber ? (
+            <button
+              onClick={copyPhoneNumber}
+              className="inline-flex items-center px-2 py-2 mt-3 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
+            >
+              <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
+              <span className="font-mono text-gray-600">{phoneNumber}</span>
+            </button>
+          ) : (
+            <div className="inline-flex items-center px-2 py-2 mt-3 bg-gray-50 border border-gray-200 rounded h-8 text-xs">
+              <Phone className="w-3.5 h-3.5 mr-2 text-gray-400" />
+              <span className="text-gray-500">No number assigned</span>
             </div>
-          </div>
-
-          {/* Desktop: Phone number */}
-          <div className="hidden lg:block">
-            {user?.phoneNumber ? (
-              <button
-                onClick={copyPhoneNumber}
-                className="inline-flex items-center px-2 py-2 mt-3 bg-white border border-gray-200 rounded hover:bg-gray-50 focus:outline-none h-8 text-xs group"
-              >
-                <Copy className="w-3.5 h-3.5 mr-2 text-gray-400 group-hover:text-gray-600" />
-                <span className="font-mono text-gray-600">{phoneNumber}</span>
-              </button>
-            ) : (
-              <div className="inline-flex items-center px-2 py-2 mt-3 bg-gray-50 border border-gray-200 rounded h-8 text-xs">
-                <Phone className="w-3.5 h-3.5 mr-2 text-gray-400" />
-                <span className="text-gray-500">No number assigned</span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Navigation */}
