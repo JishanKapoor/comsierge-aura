@@ -1619,7 +1619,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const getStatusInfo = (status: Message["status"]) => {
     switch (status) {
       case "priority":
-        return { color: "hsl(var(--chat-pink))", bg: "hsl(var(--chat-pink) / 0.12)", icon: Star, label: "Priority" };
+        return { color: "hsl(var(--chat-pink))", bg: "hsl(var(--chat-pink) / 0.12)", icon: Sparkles, label: "Priority" };
       case "protected":
         return { color: "hsl(var(--chat-green))", bg: "hsl(var(--chat-green) / 0.12)", icon: Shield, label: "Protected" };
       case "blocked":
@@ -3237,12 +3237,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         )}
                       </button>
                       {/* Remove from Priority - show if conversation is marked priority */}
-                      {selectedMessage?.isPriority && (
+                      {selectedMessage?.status === "priority" && (
                         <button
                           onClick={handleRemovePriority}
                           className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                         >
-                          <Star className="w-4 h-4 mr-2.5 text-pink-500" />
+                          <Sparkles className="w-4 h-4 mr-2.5 text-pink-500" />
                           Remove Priority
                         </button>
                       )}
@@ -3357,12 +3357,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                               </>
                             )}
                           </button>
-                          {selectedMessage?.isPriority && (
+                          {selectedMessage?.status === "priority" && (
                             <button
                               onClick={handleRemovePriority}
                               className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
                             >
-                              <Star className="w-5 h-5 mr-3 text-pink-500" />
+                              <Sparkles className="w-5 h-5 mr-3 text-pink-500" />
                               Remove Priority
                             </button>
                           )}
