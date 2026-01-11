@@ -1,7 +1,7 @@
 // API-based store for messages and conversations (replaces localStorage)
 import { API_BASE_URL } from "@/config";
 
-export type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
+export type FilterType = "all" | "unread" | "priority" | "held" | "blocked" | "transferred";
 export type SentimentType = "positive" | "neutral" | "negative";
 export type UrgencyType = "low" | "medium" | "high" | "emergency";
 export type CategoryType = "personal" | "business" | "finance" | "meeting" | "promo" | "scam" | "other";
@@ -47,6 +47,10 @@ export interface Message {
   wasForwarded?: boolean;
   forwardedTo?: string;
   forwardedAt?: string;
+  wasTransferred?: boolean;
+  transferredTo?: string;
+  transferredAt?: string;
+  matchedTransferRule?: string;
   sentiment?: {
     score: SentimentType | null;
     confidence: number | null;

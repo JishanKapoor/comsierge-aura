@@ -51,7 +51,7 @@ import { cn } from "@/lib/utils";
 import { languages } from "./mockData";
 import type { Contact, Message } from "./types";
 import { fetchContacts, onContactsChange } from "./contactsApi";
-import { loadRules, saveRules, ActiveRule } from "./rulesStore";
+import { createRule, ActiveRule } from "./rulesApi";
 import { loadTwilioAccounts } from "./adminStore";
 import { 
   fetchConversations, 
@@ -90,10 +90,12 @@ type ChatBubble = {
   translatedContent?: string; // For storing translated text
   wasForwarded?: boolean;
   forwardedTo?: string;
+  wasTransferred?: boolean;
+  transferredTo?: string;
   attachments?: MessageAttachment[]; // MMS image attachments
 };
 
-type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
+type FilterType = "all" | "unread" | "priority" | "held" | "blocked" | "transferred";
 
 type TransferPrefs = {
   to: string;
@@ -1087,6 +1089,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
+            wasTransferred: m.wasTransferred || false,
+            transferredTo: m.transferredTo || undefined,
             attachments: m.attachments || [],
           }));
           
@@ -1529,6 +1533,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
             wasForwarded: m.wasForwarded || false,
             forwardedTo: m.forwardedTo || undefined,
+            wasTransferred: m.wasTransferred || false,
+            transferredTo: m.transferredTo || undefined,
             attachments: m.attachments || [],
           }));
           setThreadsByContactId((prev) => {
@@ -2233,7 +2239,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
-  const handleTransferSubmit = () => {
+  const handleTransferSubmit = async () => {
     if (!transferTo) {
       toast.error("Please select a contact or enter a number to transfer to");
       return;
@@ -2260,12 +2266,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       ? transferTo.replace("custom:", "") 
       : contacts.find(c => c.id === transferTo)?.name || "selected contact";
     
-    // Create the rule
-    const newRule: ActiveRule = {
-      id: `transfer-${Date.now()}`,
+    // Create the rule via API
+    const newRule = await createRule({
       rule: `Transfer ${transferDescription} to ${contactName} (${contactPhone})`,
       active: true,
-      createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       type: "transfer",
       transferDetails: {
         mode: transferMode,
@@ -2274,13 +2278,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         contactName,
         contactPhone,
       },
-    };
+    });
     
-    // Save to rules store
-    const existingRules = loadRules();
-    saveRules([newRule, ...existingRules]);
-    
-    toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}`);
+    if (newRule) {
+      toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}`);
+    } else {
+      toast.error("Failed to create transfer rule");
+    }
 
     // Remember last used transfer settings per conversation
     if (selectedMessage) {
@@ -2616,6 +2620,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           {([
             { id: "all", label: "All" },
             { id: "priority", label: "Priority" },
+            { id: "transferred", label: "Transferred" },
             { id: "held", label: "Held" },
             { id: "blocked", label: "Blocked" },
           ] as const).map((tab) => (
@@ -3223,8 +3228,15 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                               <span className="text-[11px] font-medium text-purple-600">AI Assistant</span>
                             </div>
                           )}
+                          {/* Show transferred indicator for incoming messages */}
+                          {bubble.wasTransferred && !isOutgoing && (
+                            <div className="flex items-center gap-1 mb-1 text-purple-600">
+                              <ArrowRightLeft className="w-3 h-3" />
+                              <span className="text-[10px] font-medium">Transferred{bubble.transferredTo ? ` to ${bubble.transferredTo}` : ""}</span>
+                            </div>
+                          )}
                           {/* Show forwarded indicator for incoming messages */}
-                          {bubble.wasForwarded && !isOutgoing && (
+                          {bubble.wasForwarded && !isOutgoing && !bubble.wasTransferred && (
                             <div className="flex items-center gap-1 mb-1 text-green-600">
                               <Forward className="w-3 h-3" />
                               <span className="text-[10px] font-medium">Forwarded to your phone</span>
@@ -3797,7 +3809,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         High Priority
                       </button>
                     </div>
-                    <p className="text-[11px] text-gray-400">Spam is always excluded</p>
                   </div>
                 )}
 

@@ -1496,15 +1496,150 @@ router.post("/webhook/sms", async (req, res) => {
         console.log(`   User's forwardingNumber: ${user.forwardingNumber || "NOT SET"}`);
         console.log(`   📢 receiveLanguage at forward time: "${receiveLanguage}"`);
         
+        // ===============================================
+        // TRANSFER RULES - Check for message transfer rules
+        // Transfer rules send messages directly to another contact
+        // The user doesn't receive the message directly - it goes to the transfer target
+        // But the message is still recorded in the user's dashboard as "transferred"
+        // ===============================================
+        const transferRules = await Rule.find({
+          userId: user._id,
+          type: "transfer",
+          active: true
+        });
+        
+        console.log(`   🔄 Found ${transferRules.length} active transfer rules for messages`);
+        
+        let wasTransferred = false;
+        let transferredTo = null;
+        let matchedTransferRule = null;
+        
+        for (const rule of transferRules) {
+          const transferDetails = rule.transferDetails || {};
+          const transferMode = transferDetails.mode || "both";
+          const transferPriority = transferDetails.priority || "all";
+          const transferPriorityFilter = transferDetails.priorityFilter;
+          const transferTargetPhone = transferDetails.contactPhone;
+          
+          console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${transferMode}, priority: ${transferPriority})`);
+          
+          // Check if rule applies to messages
+          if (transferMode !== "messages" && transferMode !== "both") {
+            console.log(`      ⏭️ Transfer rule is for calls only, skipping`);
+            continue;
+          }
+          
+          // Check schedule
+          if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
+            if (new Date() > new Date(rule.schedule.endTime)) {
+              console.log(`      ⏭️ Transfer rule expired, skipping`);
+              continue;
+            }
+          }
+          
+          // Check priority filter for messages
+          // "all" = transfer all messages
+          // "high-priority" = only transfer high priority messages
+          if (transferPriority === "high-priority") {
+            if (!isPriority) {
+              console.log(`      ⏭️ Message is not high priority, skipping (rule requires high-priority)`);
+              continue;
+            }
+            
+            // If there's a specific priority category filter, check it
+            if (transferPriorityFilter && transferPriorityFilter !== "all") {
+              const messageKind = priorityContext?.kind || null;
+              // Map priority context kinds to filter values
+              const kindToFilter = {
+                emergency: "emergency",
+                meeting: "meetings",
+                deadline: "deadlines",
+                important: "important"
+              };
+              const filterValue = kindToFilter[messageKind] || null;
+              
+              if (filterValue !== transferPriorityFilter) {
+                console.log(`      ⏭️ Priority category mismatch: message is ${messageKind}, rule wants ${transferPriorityFilter}`);
+                continue;
+              }
+            }
+          }
+          
+          // Rule matches! Transfer the message
+          if (transferTargetPhone) {
+            console.log(`   ✅ Transfer rule matched! Forwarding to: ${transferTargetPhone}`);
+            
+            try {
+              // Find the TwilioAccount that owns this phone number (To)
+              const normalizedTo = normalizeToE164ish(To);
+              let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: To });
+              
+              if (!twilioAccount && normalizedTo && normalizedTo !== To) {
+                twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedTo });
+              }
+              
+              if (!twilioAccount) {
+                const allAccounts = await TwilioAccount.find({});
+                for (const acc of allAccounts) {
+                  const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+                  if (normalizedPhones.includes(normalizedTo)) {
+                    twilioAccount = acc;
+                    break;
+                  }
+                }
+              }
+              
+              if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
+                const transferClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+                
+                // Build transferred message with sender info
+                const senderName = contact?.name || From;
+                const transferredBody = `[Transferred SMS from ${senderName}]\n${Body}`;
+                
+                const transferResult = await transferClient.messages.create({
+                  body: transferredBody,
+                  from: normalizedTo,
+                  to: transferTargetPhone
+                });
+                
+                wasTransferred = true;
+                transferredTo = transferTargetPhone;
+                matchedTransferRule = rule.rule;
+                
+                console.log(`   ✅ SMS transferred successfully to ${transferTargetPhone}`);
+                
+                // Update the message to mark it as transferred
+                await Message.findByIdAndUpdate(savedMessage._id, {
+                  wasTransferred: true,
+                  transferredTo: transferTargetPhone,
+                  transferredAt: new Date(),
+                  transferredTwilioSid: transferResult.sid,
+                  matchedTransferRule: rule.rule
+                });
+                
+              } else {
+                console.log(`   ❌ No TwilioAccount found for ${To} - cannot transfer SMS`);
+              }
+            } catch (transferErr) {
+              console.error(`   ❌ Failed to transfer SMS:`, transferErr.message);
+            }
+            
+            break; // Only process first matching transfer rule
+          }
+        }
+        
         // FORWARD SMS to user's personal phone if shouldNotify is true
         // But skip if the sender IS the user's personal number (no point forwarding to yourself)
+        // Also skip regular forwarding if message was already transferred (transfer takes precedence)
         const normalizedFrom = normalizeToE164ish(From);
         const normalizedForwardingNumber = user.forwardingNumber ? normalizeToE164ish(user.forwardingNumber) : null;
         const isSenderPersonalNumber = normalizedForwardingNumber && normalizedFrom === normalizedForwardingNumber;
         
-        console.log(`   Forward check: shouldNotify=${shouldNotify}, forwardingNumber=${user.forwardingNumber}, isSenderPersonalNumber=${isSenderPersonalNumber}`);
+        console.log(`   Forward check: shouldNotify=${shouldNotify}, forwardingNumber=${user.forwardingNumber}, isSenderPersonalNumber=${isSenderPersonalNumber}, wasTransferred=${wasTransferred}`);
         
-        if (isSenderPersonalNumber) {
+        if (wasTransferred) {
+          console.log(`   ℹ️ Message was transferred - skipping regular forwarding`);
+        } else if (isSenderPersonalNumber) {
           console.log(`   ❌ Skipping SMS forward - sender (${From}) is user's personal number`);
         } else if (shouldNotify && user.forwardingNumber) {
           console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);

@@ -155,7 +155,7 @@ router.get("/search", async (req, res) => {
 // @access  Private
 router.get("/conversations", async (req, res) => {
   try {
-    const { filter } = req.query; // all, unread, priority, held, blocked
+    const { filter } = req.query; // all, unread, priority, held, blocked, transferred
     
     let query = { 
       userId: req.user._id,
@@ -173,6 +173,15 @@ router.get("/conversations", async (req, res) => {
       query.isHeld = true;
     } else if (filter === "blocked") {
       query.isBlocked = true;
+    } else if (filter === "transferred") {
+      // Show conversations that have transferred messages
+      // We need to find conversations with at least one transferred message
+      const transferredConvs = await Message.distinct("contactPhone", {
+        userId: req.user._id,
+        wasTransferred: true
+      });
+      query.contactPhone = { $in: transferredConvs };
+      query.isBlocked = { $ne: true };
     } else {
       // "all" - exclude blocked and held
       query.isBlocked = { $ne: true };

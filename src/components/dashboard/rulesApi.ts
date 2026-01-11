@@ -6,7 +6,7 @@ export interface ActiveRule {
   rule: string;
   active: boolean;
   createdAt: string;
-  type?: "transfer" | "auto-reply" | "block" | "forward" | "priority" | "custom";
+  type?: "transfer" | "auto-reply" | "block" | "forward" | "priority" | "custom" | "message-notify";
   schedule?: {
     mode: "always" | "duration" | "custom";
     durationHours?: number;

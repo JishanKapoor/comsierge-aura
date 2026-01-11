@@ -197,6 +197,27 @@ const messageSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // For transferred messages (via transfer rules)
+    wasTransferred: {
+      type: Boolean,
+      default: false,
+    },
+    transferredTo: {
+      type: String,
+      default: null,
+    },
+    transferredAt: {
+      type: Date,
+      default: null,
+    },
+    transferredTwilioSid: {
+      type: String,
+      default: null,
+    },
+    matchedTransferRule: {
+      type: String,
+      default: null,
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},

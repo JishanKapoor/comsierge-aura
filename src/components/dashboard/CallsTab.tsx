@@ -46,7 +46,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Device } from "@twilio/voice-sdk";
 import { CallSkeleton } from "./LoadingSkeletons";
 
-type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail";
+type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail" | "routed";
 
 interface CallsTabProps {
   selectedContactPhone?: string | null;
@@ -183,8 +183,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
   const loadCalls = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingCalls(true);
     try {
-      // For voicemail filter, we need to fetch all calls and filter client-side
-      const apiFilter = (filter === "all" || filter === "voicemail") ? undefined : filter;
+      // For voicemail and routed filters, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed") ? undefined : filter;
       const callRecords = await fetchCalls(apiFilter);
       
       // Helper functions for formatting (inside callback to avoid closure issues)
@@ -323,9 +323,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
 
   // Filter calls - API already filters by type, just do client-side search
   // For voicemail filter, we filter client-side since API doesn't have voicemail filter
+  // For routed filter, show only forwarded or transferred calls
   const filteredCalls = calls.filter((call) => {
     // Voicemail filter - show only calls with voicemails
     if (filter === "voicemail" && !call.hasVoicemail) return false;
+    
+    // Routed filter - show only forwarded or transferred calls
+    if (filter === "routed" && call.status !== "forwarded" && call.status !== "transferred") return false;
     
     if (!searchQuery) return true;
     const matchesSearch =
@@ -338,8 +342,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
   const refreshCalls = async () => {
     setIsLoadingCalls(true);
     try {
-      // For voicemail filter, we need to fetch all calls and filter client-side
-      const apiFilter = (filter === "all" || filter === "voicemail") ? undefined : filter;
+      // For voicemail and routed filters, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed") ? undefined : filter;
       const callRecords = await fetchCalls(apiFilter);
       
       // Build a set of blocked phone numbers from contacts
@@ -1382,7 +1386,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
 
       {/* Filters */}
       <div className="flex gap-1.5 flex-wrap">
-        {(["all", "missed", "incoming", "outgoing", "voicemail"] as Filter[]).map((f) => (
+        {(["all", "missed", "incoming", "outgoing", "routed", "voicemail"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -1390,9 +1394,12 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
               filter === f ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }${
               f === "voicemail" ? " flex items-center gap-1" : ""
+            }${
+              f === "routed" ? " flex items-center gap-1" : ""
             }`}
           >
             {f === "voicemail" && <Voicemail className="w-3 h-3" />}
+            {f === "routed" && <ArrowRightLeft className="w-3 h-3" />}
             {f}
           </button>
         ))}
