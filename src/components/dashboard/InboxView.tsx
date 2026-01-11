@@ -3038,7 +3038,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <MoreHorizontal className="w-4 h-4 text-gray-500" />
                   </button>
                   
-                  {showMoreMenu && (
+                  {showMoreMenu && !isMobile && (
                     <div className="absolute right-0 top-10 w-44 bg-[#F5F5F5] border border-gray-200 rounded-lg shadow-lg py-1 z-50">
                       <button
                         onClick={openContactEditor}
@@ -3148,6 +3148,129 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         Delete
                       </button>
                     </div>
+                  )}
+                  
+                  {/* Mobile More Menu - Bottom Sheet */}
+                  {showMoreMenu && isMobile && createPortal(
+                    <>
+                      <div 
+                        className="fixed inset-0 bg-black/40 z-50"
+                        onClick={() => setShowMoreMenu(false)}
+                      />
+                      <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl pb-safe">
+                        <div className="flex justify-center py-2">
+                          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+                        </div>
+                        <div className="px-2 pb-4 max-h-[70vh] overflow-y-auto">
+                          <button
+                            onClick={openContactEditor}
+                            className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                          >
+                            {selectedSavedContact ? (
+                              <>
+                                <Pencil className="w-5 h-5 mr-3 text-blue-500" />
+                                Edit contact
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus className="w-5 h-5 mr-3 text-blue-500" />
+                                Save contact
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleTranslate}
+                            className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                          >
+                            <Languages className="w-5 h-5 mr-3 text-blue-500" />
+                            Translate
+                          </button>
+                          <button
+                            onClick={handlePin}
+                            className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                          >
+                            {selectedMessage.isPinned ? (
+                              <>
+                                <PinOff className="w-5 h-5 mr-3 text-amber-500" />
+                                Unpin
+                              </>
+                            ) : (
+                              <>
+                                <Pin className="w-5 h-5 mr-3 text-gray-500" />
+                                Pin
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleToggleFavorite}
+                            className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                          >
+                            {selectedSavedContact?.isFavorite ? (
+                              <>
+                                <Star className="w-5 h-5 mr-3 text-red-500 fill-red-500" />
+                                Remove Favorite
+                              </>
+                            ) : (
+                              <>
+                                <Star className="w-5 h-5 mr-3 text-gray-400" />
+                                Add Favorite
+                              </>
+                            )}
+                          </button>
+                          <button
+                            onClick={handleHold}
+                            className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                          >
+                            {activeFilter === "held" ? (
+                              <>
+                                <MailCheck className="w-5 h-5 mr-3 text-green-500" />
+                                Release from Hold
+                              </>
+                            ) : (
+                              <>
+                                <AlertTriangle className="w-5 h-5 mr-3 text-amber-500" />
+                                Put on Hold
+                              </>
+                            )}
+                          </button>
+                          {selectedMessage?.isPriority && (
+                            <button
+                              onClick={handleRemovePriority}
+                              className="flex items-center w-full px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                            >
+                              <Star className="w-5 h-5 mr-3 text-pink-500" />
+                              Remove Priority
+                            </button>
+                          )}
+                          <div className="border-t border-gray-100 my-2 mx-4" />
+                          {selectedMessage?.isBlocked ? (
+                            <button
+                              onClick={handleUnblock}
+                              className="flex items-center w-full px-4 py-3 text-sm text-green-600 hover:bg-green-50 rounded-lg"
+                            >
+                              <Ban className="w-5 h-5 mr-3" />
+                              Unblock
+                            </button>
+                          ) : (
+                            <button
+                              onClick={handleBlock}
+                              className="flex items-center w-full px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Ban className="w-5 h-5 mr-3" />
+                              Block
+                            </button>
+                          )}
+                          <button
+                            onClick={handleDelete}
+                            className="flex items-center w-full px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            <Trash2 className="w-5 h-5 mr-3" />
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </>,
+                    document.body
                   )}
                 </div>
               </div>
@@ -3701,6 +3824,97 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             </>
           )}
         </section>
+      )}
+
+      {/* Mobile AI Chat Modal */}
+      {isMobile && showAiChat && selectedMessage && createPortal(
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={closeAiChat}
+          />
+          {/* Modal */}
+          <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh]">
+            {/* Handle bar */}
+            <div className="flex justify-center py-2">
+              <div className="w-10 h-1 bg-gray-300 rounded-full" />
+            </div>
+            {/* Header */}
+            <div className="px-4 pb-3 flex items-center justify-between border-b border-gray-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-purple-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">AI Assistant</p>
+                  <p className="text-xs text-gray-500 truncate">{selectedMessage.contactName}</p>
+                </div>
+              </div>
+              <button
+                className="p-2 rounded hover:bg-gray-100 transition-colors"
+                aria-label="Close AI"
+                onClick={closeAiChat}
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 bg-gray-50 min-h-0">
+              <div className="space-y-3">
+                {(aiChatsByConversationId[selectedMessage.id] ?? []).map((m) => (
+                  <div key={m.id} className={cn("flex", m.isUser ? "justify-end" : "justify-start")}>
+                    <div
+                      className={cn(
+                        "max-w-[85%] rounded-lg px-3 py-2",
+                        m.isUser
+                          ? "bg-indigo-500 text-white rounded-br-sm"
+                          : "bg-white border border-gray-200 text-gray-700 rounded-bl-sm"
+                      )}
+                    >
+                      {!m.isUser && (
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Sparkles className="w-3 h-3 text-purple-500" />
+                          <span className="text-[11px] font-medium text-purple-600">AI</span>
+                        </div>
+                      )}
+                      <p className="text-sm whitespace-pre-line">{m.content}</p>
+                      <p className={cn("text-[11px] mt-1", m.isUser ? "text-indigo-100 text-right" : "text-gray-500")}>{m.timestamp}</p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={aiChatEndRef} />
+              </div>
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-gray-200 bg-white shrink-0 pb-safe">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder={`Ask AI about ${selectedMessage.contactName}...`}
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAiSend();
+                    }}
+                    className="w-full px-4 py-3 rounded-lg text-sm bg-gray-50 text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
+                  />
+                </div>
+                <button
+                  className="p-3 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors shrink-0"
+                  aria-label="Send to AI"
+                  onClick={handleAiSend}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
       )}
 
       {/* Transfer Modal */}
