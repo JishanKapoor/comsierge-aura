@@ -214,6 +214,7 @@ router.put("/:id", async (req, res) => {
     // Wrapped in try-catch so propagation failures don't break the main save.
     try {
       const phoneCandidates = buildPhoneCandidates(oldPhone, contact.phone);
+      console.log(`[Contact Rename] Propagating name "${contact.name}" for phones:`, phoneCandidates);
 
       if (contact.name) {
         const nameUpdate = { contactName: contact.name };
@@ -248,7 +249,11 @@ router.put("/:id", async (req, res) => {
             "transferDetails.contactPhone": { $in: phoneCandidates },
           },
           { $set: { "transferDetails.contactName": contact.name } }
-        );
+        ).then(result => {
+          if (result.modifiedCount > 0) {
+            console.log(`[Contact Rename] Updated ${result.modifiedCount} transfer rules (target contact)`);
+          }
+        });
 
         // Also update sourceContactName in transfer rules when the SOURCE contact is renamed
         await Rule.updateMany(
@@ -257,7 +262,11 @@ router.put("/:id", async (req, res) => {
             "conditions.sourceContactPhone": { $in: phoneCandidates },
           },
           { $set: { "conditions.sourceContactName": contact.name } }
-        );
+        ).then(result => {
+          if (result.modifiedCount > 0) {
+            console.log(`[Contact Rename] Updated ${result.modifiedCount} transfer rules (source contact)`);
+          }
+        });
       }
     } catch (propagationError) {
       console.error("Name propagation error (non-fatal):", propagationError);

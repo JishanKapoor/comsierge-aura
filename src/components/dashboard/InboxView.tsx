@@ -4547,14 +4547,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     </div>
 
                     <div>
-                      <label className="text-xs text-gray-500">Phone *</label>
+                      <label className="text-xs text-gray-500">Phone {selectedSavedContact ? "" : "*"}</label>
                       <input
                         type="tel"
                         value={contactEditForm.phone}
-                        onChange={(e) => setContactEditForm({ ...contactEditForm, phone: e.target.value })}
+                        onChange={(e) => !selectedSavedContact && setContactEditForm({ ...contactEditForm, phone: e.target.value })}
                         placeholder="+1 (555) 123-4567"
-                        className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-indigo-300"
+                        disabled={!!selectedSavedContact}
+                        className={cn(
+                          "w-full mt-1 px-3 py-1.5 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-indigo-300",
+                          selectedSavedContact ? "bg-gray-100 cursor-not-allowed" : "bg-gray-50 placeholder:text-gray-400"
+                        )}
                       />
+                      {selectedSavedContact && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">Phone cannot be changed</p>
+                      )}
                     </div>
 
                     <div>

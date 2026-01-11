@@ -901,14 +901,21 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-500">Phone *</label>
+                    <label className="text-xs text-gray-500">Phone {selectedContact ? "" : "*"}</label>
                     <input
                       type="tel"
                       value={editForm.phone}
-                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      onChange={(e) => !selectedContact && setEditForm({ ...editForm, phone: e.target.value })}
                       placeholder="+1 (555) 123-4567"
-                      className="w-full mt-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded text-gray-700 text-xs placeholder:text-gray-400 focus:outline-none focus:border-indigo-300"
+                      disabled={!!selectedContact}
+                      className={cn(
+                        "w-full mt-1 px-3 py-1.5 border border-gray-200 rounded text-gray-700 text-xs focus:outline-none focus:border-indigo-300",
+                        selectedContact ? "bg-gray-100 cursor-not-allowed" : "bg-gray-50 placeholder:text-gray-400"
+                      )}
                     />
+                    {selectedContact && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">Phone cannot be changed</p>
+                    )}
                   </div>
 
                   <div>
