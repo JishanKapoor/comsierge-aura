@@ -172,7 +172,7 @@ const createTransferRuleTool = tool(
           console.log(`Contact "${targetName}" not found in database`);
           // If we can't find the contact, we can't create a forwarding rule effectively without a number.
           // But maybe the user meant to forward TO the current contact? No, "forward to jeremy".
-          return `⚠️ I couldn't find a contact named "${targetName}" in your contacts. Please provide their phone number or save them as a contact first.`;
+          return `I couldn't find a contact named "${targetName}" in your contacts. Please provide their phone number or save them as a contact first.`;
         }
       }
       
@@ -975,18 +975,18 @@ const makeCallTool = tool(
         }
         
         if (!phone) {
-          return `⚠️ I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
+          return `I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
         }
       }
       
       if (!phone) {
-        return "⚠️ I need either a contact name or phone number to make a call.";
+        return "I need either a contact name or phone number to make a call.";
       }
       
       // Get user to find their assigned phone number
       const user = await User.findById(userId);
       if (!user?.phoneNumber) {
-        return "⚠️ You don't have a phone number set up yet. Go to Settings to configure your Twilio number.";
+        return "You don't have a phone number set up yet. Go to Settings to configure your Twilio number.";
       }
       
       // Return confirmation with call details - frontend will handle the actual call
@@ -996,7 +996,7 @@ const makeCallTool = tool(
         contactName: resolvedName || phone,
         contactPhone: phone,
         fromNumber: user.phoneNumber,
-        message: `📞 Ready to call ${resolvedName || phone}. How would you like to call?\n\n1. **VoIP** - Call through the app\n2. **SIP** - Call via your desk phone\n3. **Callback** - Have me call your phone first, then connect`
+        message: `Ready to call ${resolvedName || phone}. Choose your calling method above.`
       });
     } catch (error) {
       console.error("Make call error:", error);
@@ -1051,16 +1051,16 @@ const sendMessageTool = tool(
         }
         
         if (!phone) {
-          return `⚠️ I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
+          return `I couldn't find "${contactName}" in your contacts. Please provide their phone number.`;
         }
       }
       
       if (!phone) {
-        return "⚠️ I need either a contact name or phone number to send a message.";
+        return "I need either a contact name or phone number to send a message.";
       }
       
       if (!messageText) {
-        return `📝 What would you like to say to ${name || phone}?`;
+        return `What would you like to say to ${name || phone}?`;
       }
       
       // Return confirmation - frontend will handle actual sending
