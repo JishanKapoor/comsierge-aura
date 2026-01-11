@@ -2317,6 +2317,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const contactName = isCustomNumber 
       ? transferTo.replace("custom:", "") 
       : contacts.find(c => c.id === transferTo)?.name || "selected contact";
+
+    // Prevent transferring to the same number (Person A -> Person A)
+    if (selectedMessage) {
+      const normalizeForCompare = (value: string) => {
+        let digits = String(value || "").replace(/\D/g, "");
+        if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+        return digits;
+      };
+      const fromDigits = normalizeForCompare(selectedMessage.contactPhone);
+      const toDigits = normalizeForCompare(contactPhone);
+      if (fromDigits && toDigits && fromDigits === toDigits) {
+        toast.error("You can't transfer to the same number");
+        return;
+      }
+    }
     
     // Create the rule via API
     const newRule = await createRule({
@@ -3054,14 +3069,22 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       {selectedMessage.contactName}
                     </p>
                     {selectedMessage.isPinned && (
-                      <Pin className="w-3 h-3 text-amber-500 shrink-0" />
+                      <Pin
+                        className={cn(
+                          "shrink-0",
+                          isMobile ? "w-2.5 h-2.5 text-amber-400/70" : "w-3 h-3 text-amber-500"
+                        )}
+                      />
                     )}
                     {selectedMessage.isMuted && (
                       <BellOff className="w-3 h-3 text-orange-400 shrink-0" />
                     )}
                   </div>
                   <div className="flex items-center gap-2 min-w-0">
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className={cn(
+                      "truncate",
+                      isMobile ? "text-[10px] text-gray-400" : "text-xs text-gray-500"
+                    )}>
                       {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
                     </p>
                     {/* Translation indicator */}
