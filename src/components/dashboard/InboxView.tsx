@@ -2204,19 +2204,27 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const handlePin = async () => {
     if (!selectedMessage) return;
-    const isPinned = selectedMessage.isPinned || false;
+    const wasPinned = selectedMessage.isPinned || false;
+    const nextPinned = !wasPinned;
     const phone = selectedMessage.contactPhone;
-    
-    // Update in API
-    const success = await updateConversation(phone, { isPinned: !isPinned });
-    
+    const conversationId = selectedMessage.id;
+
+    // Optimistic update for snappy UI
+    setMessages(prev => prev.map(m =>
+      m.id === conversationId ? { ...m, isPinned: nextPinned } : m
+    ));
+
+    const success = await updateConversation(phone, { isPinned: nextPinned });
     if (success) {
-      // Update local state immediately for responsive UI
-      setMessages(prev => prev.map(m => 
-        m.id === selectedMessage.id ? { ...m, isPinned: !isPinned } : m
-      ));
-      toast.success(isPinned ? "Conversation unpinned" : "Conversation pinned");
+      toast.success(wasPinned ? "Conversation unpinned" : "Conversation pinned");
+      // Ensure server truth is reflected (prevents mobile-only weirdness)
+      await loadConversations({ showLoading: false, replace: true });
+      setSelectedMessageId(conversationId);
     } else {
+      // Revert optimistic update
+      setMessages(prev => prev.map(m =>
+        m.id === conversationId ? { ...m, isPinned: wasPinned } : m
+      ));
       toast.error("Failed to update pin status");
     }
     setShowMoreMenu(false);
@@ -2772,12 +2780,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               const togglePinFromRow = async (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const success = await updateConversation(msg.contactPhone, { isPinned: !isPinned });
+                const wasPinned = isPinned;
+                const nextPinned = !wasPinned;
+
+                // Optimistic update
+                setMessages(prev => prev.map(m =>
+                  m.id === msg.id ? { ...m, isPinned: nextPinned } : m
+                ));
+
+                const success = await updateConversation(msg.contactPhone, { isPinned: nextPinned });
                 if (success) {
-                  setMessages(prev => prev.map(m => 
-                    m.id === msg.id ? { ...m, isPinned: !isPinned } : m
+                  toast.success(wasPinned ? "Unpinned" : "Pinned");
+                  await loadConversations({ showLoading: false, replace: true });
+                } else {
+                  // Revert
+                  setMessages(prev => prev.map(m =>
+                    m.id === msg.id ? { ...m, isPinned: wasPinned } : m
                   ));
-                  toast.success(isPinned ? "Unpinned" : "Pinned");
+                  toast.error("Failed to update pin status");
                 }
               };
 
@@ -2931,7 +2951,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           <>
             {/* Chat header */}
             <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 shrink-0 bg-white">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 {isMobile && (
                   <button
                     className="-ml-2 p-2 rounded hover:bg-gray-100 transition-colors"
@@ -2952,44 +2972,49 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     {selectedMessage.contactName.charAt(0)}
                   </div>
                 )}
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-semibold text-gray-800">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
                       {selectedMessage.contactName}
                     </p>
                     {selectedMessage.isPinned && (
-                      <Pin className="w-3 h-3 text-amber-500" />
+                      <Pin className="w-3 h-3 text-amber-500 shrink-0" />
                     )}
                     {selectedMessage.isMuted && (
-                      <BellOff className="w-3 h-3 text-orange-400" />
+                      <BellOff className="w-3 h-3 text-orange-400 shrink-0" />
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs text-gray-500">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-xs text-gray-500 truncate">
                       {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
                     </p>
                     {/* Translation indicator */}
                     {(autoTranslateIncoming || translateOutgoing) && (
                       <button
                         onClick={() => setShowTranslateModal(true)}
-                        className="flex items-center gap-1 text-[10px] text-indigo-500 hover:text-indigo-600 transition-colors"
+                        className={cn(
+                          "flex items-center text-[10px] text-indigo-500 hover:text-indigo-600 transition-colors shrink-0",
+                          isMobile ? "gap-0.5" : "gap-1"
+                        )}
                         title="Translation active"
                       >
                         <Languages className="w-3 h-3" />
-                        <span>
-                          {autoTranslateIncoming && translateOutgoing
-                            ? `${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"} ↔ ${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"}`
-                            : autoTranslateIncoming
-                              ? `→ ${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"}`
-                              : `${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"} →`
-                          }
-                        </span>
+                        {!isMobile && (
+                          <span>
+                            {autoTranslateIncoming && translateOutgoing
+                              ? `${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"} ↔ ${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"}`
+                              : autoTranslateIncoming
+                                ? `→ ${languages.find(l => l.code === receiveLanguage)?.name?.slice(0, 2) || "EN"}`
+                                : `${languages.find(l => l.code === sendLanguage)?.name?.slice(0, 2) || "EN"} →`
+                            }
+                          </span>
+                        )}
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   className={cn(
                     "p-2 rounded transition-colors",
