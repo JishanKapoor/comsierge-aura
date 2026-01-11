@@ -249,6 +249,15 @@ router.put("/:id", async (req, res) => {
           },
           { $set: { "transferDetails.contactName": contact.name } }
         );
+
+        // Also update sourceContactName in transfer rules when the SOURCE contact is renamed
+        await Rule.updateMany(
+          {
+            userId: req.user._id,
+            "conditions.sourceContactPhone": { $in: phoneCandidates },
+          },
+          { $set: { "conditions.sourceContactName": contact.name } }
+        );
       }
     } catch (propagationError) {
       console.error("Name propagation error (non-fatal):", propagationError);

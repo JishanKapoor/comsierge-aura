@@ -180,7 +180,22 @@ router.get("/conversations", async (req, res) => {
         userId: req.user._id,
         wasTransferred: true
       });
-      query.contactPhone = { $in: transferredConvs };
+
+      // Conversations and messages may have different phone formatting (legacy data, imports, etc).
+      // Expand to a small set of common variants so the Transferred tab is consistent.
+      const phoneCandidates = new Set();
+      for (const phone of transferredConvs) {
+        const normalized = normalizePhone(phone);
+        [
+          phone,
+          normalized,
+          normalized.replace(/^\+1/, ""),
+        ]
+          .filter(Boolean)
+          .forEach((p) => phoneCandidates.add(p));
+      }
+
+      query.contactPhone = { $in: Array.from(phoneCandidates) };
       query.isBlocked = { $ne: true };
     } else {
       // "all" - exclude blocked and held

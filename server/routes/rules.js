@@ -13,10 +13,43 @@ router.use(authMiddleware);
 router.get("/", async (req, res) => {
   try {
     const rules = await Rule.find({ userId: req.user._id }).sort({ createdAt: -1 });
+
+    // Clean up duplicate transfer rules (caused by repeated submits / network retries).
+    // Keep the newest one (rules are sorted newest-first) and delete older duplicates.
+    const seen = new Set();
+    const deduped = [];
+    const duplicateIds = [];
+
+    for (const r of rules) {
+      if (r.type !== "transfer") {
+        deduped.push(r);
+        continue;
+      }
+
+      // Simplified key: just source + target phone = same transfer rule
+      // Mode/priority changes should UPDATE, not create new rules
+      const key = JSON.stringify({
+        source: r.conditions?.sourceContactPhone || null,
+        target: r.transferDetails?.contactPhone || null,
+      });
+
+      if (seen.has(key)) {
+        duplicateIds.push(r._id);
+        continue;
+      }
+
+      seen.add(key);
+      deduped.push(r);
+    }
+
+    if (duplicateIds.length) {
+      await Rule.deleteMany({ userId: req.user._id, _id: { $in: duplicateIds } });
+    }
+
     res.json({
       success: true,
-      count: rules.length,
-      data: rules,
+      count: deduped.length,
+      data: deduped,
     });
   } catch (error) {
     console.error("Get rules error:", error);
@@ -40,6 +73,41 @@ router.post("/", async (req, res) => {
         success: false,
         message: "Rule description is required",
       });
+    }
+
+    // For transfer rules, avoid creating duplicates by reusing an existing identical rule.
+    if ((type || "custom") === "transfer") {
+      const src = conditions?.sourceContactPhone || null;
+      const tgt = transferDetails?.contactPhone || null;
+      const mode = transferDetails?.mode || "both";
+      const priority = transferDetails?.priority || "all";
+      const priorityFilter = transferDetails?.priorityFilter || null;
+
+      if (tgt) {
+        // Find ANY existing transfer rule for same source->target (regardless of mode/priority)
+        // This ensures we UPDATE instead of creating duplicates
+        const existing = await Rule.findOne({
+          userId: req.user._id,
+          type: "transfer",
+          "transferDetails.contactPhone": tgt,
+          ...(src ? { "conditions.sourceContactPhone": src } : {}),
+        }).sort({ createdAt: -1 });
+
+        if (existing) {
+          existing.rule = rule;
+          existing.schedule = schedule || { mode: "always" };
+          existing.transferDetails = transferDetails;
+          existing.conditions = conditions;
+          existing.actions = actions;
+          await existing.save();
+
+          return res.status(200).json({
+            success: true,
+            message: "Rule updated",
+            data: existing,
+          });
+        }
+      }
     }
 
     const newRule = await Rule.create({
@@ -161,6 +229,48 @@ router.put("/:id/toggle", async (req, res) => {
     });
   } catch (error) {
     console.error("Toggle rule error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
+// @route   DELETE /api/rules/cleanup/transfers
+// @desc    Delete all duplicate transfer rules (one-time cleanup)
+// @access  Private
+router.delete("/cleanup/transfers", async (req, res) => {
+  try {
+    const rules = await Rule.find({ userId: req.user._id, type: "transfer" }).sort({ createdAt: -1 });
+    
+    const seen = new Set();
+    const duplicateIds = [];
+    
+    for (const r of rules) {
+      const key = JSON.stringify({
+        source: r.conditions?.sourceContactPhone || null,
+        target: r.transferDetails?.contactPhone || null,
+      });
+      
+      if (seen.has(key)) {
+        duplicateIds.push(r._id);
+      } else {
+        seen.add(key);
+      }
+    }
+    
+    if (duplicateIds.length > 0) {
+      await Rule.deleteMany({ _id: { $in: duplicateIds } });
+    }
+    
+    res.json({
+      success: true,
+      message: `Deleted ${duplicateIds.length} duplicate transfer rules`,
+      deletedCount: duplicateIds.length,
+    });
+  } catch (error) {
+    console.error("Cleanup transfer rules error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",

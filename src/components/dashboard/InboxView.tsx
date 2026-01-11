@@ -99,6 +99,7 @@ type FilterType = "all" | "unread" | "priority" | "held" | "blocked" | "transfer
 
 type TransferPrefs = {
   to: string;
+  mode: TransferMode;
   type: TransferType;
   priorityFilter: PriorityFilter;
 };
@@ -1931,6 +1932,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setTransferType(prefs.type);
         setPriorityFilter(prefs.priorityFilter);
         setTransferTo(prefs.to);
+        setTransferMode(prefs.mode || "both");
         if (prefs.to.startsWith("custom:")) {
           setTransferContactSearch(prefs.to.replace("custom:", ""));
         } else {
@@ -1938,11 +1940,12 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         }
       } else {
         // Reset to defaults when no prefs for this conversation
+        // Default to "calls" since that's simpler (no priority section)
         setTransferType("all");
         setPriorityFilter("all");
         setTransferTo("");
         setTransferContactSearch("");
-        setTransferMode("both");
+        setTransferMode("calls");
       }
     } else {
       // No selected message - reset everything
@@ -1950,7 +1953,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       setPriorityFilter("all");
       setTransferTo("");
       setTransferContactSearch("");
-      setTransferMode("both");
+      setTransferMode("calls");
     }
     setShowTransferModal(true);
     setShowMoreMenu(false);
@@ -2333,11 +2336,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       }
     }
     
+    // Build a cleaner rule description
+    const sourceDisplayName = selectedMessage?.contactName || selectedMessage?.contactPhone || "Unknown";
+    const targetDisplayName = contactName || contactPhone;
+    const ruleDescription = `Transfer ${transferDescription} from ${sourceDisplayName} to ${targetDisplayName}`;
+    
     // Create the rule via API
     const newRule = await createRule({
-      rule: `Transfer ${transferDescription} to ${contactName} (${contactPhone})`,
+      rule: ruleDescription,
       active: true,
       type: "transfer",
+      conditions: {
+        // Scope this transfer to the currently selected conversation.
+        sourceContactPhone: selectedMessage?.contactPhone,
+        sourceContactName: selectedMessage?.contactName || null,
+      },
       transferDetails: {
         mode: transferMode,
         priority: transferType,
@@ -2359,6 +2372,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         ...prev,
         [selectedMessage.id]: {
           to: transferTo,
+          mode: transferMode,
           type: transferType,
           priorityFilter,
         },
@@ -2968,12 +2982,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             type="button"
                             onClick={togglePinFromRow}
                             className={cn(
-                              "p-2 rounded-full hover:bg-gray-100 transition-colors shrink-0 touch-manipulation active:scale-95",
-                              isPinned ? "text-amber-500" : "text-gray-300 hover:text-gray-500"
+                              // Keep mobile tap target, but make it minimal on desktop.
+                              "p-2 md:p-1 rounded-full hover:bg-gray-50 transition-colors shrink-0 touch-manipulation active:scale-95",
+                              isPinned ? "text-amber-400/60" : "text-gray-300/50 hover:text-gray-400/70"
                             )}
                             aria-label={isPinned ? "Unpin" : "Pin"}
                           >
-                            <Pin className="w-5 h-5" /> 
+                            <Pin className="w-3.5 h-3.5 opacity-70" />
                           </button>
                         </div>
                       </div>
@@ -3085,7 +3100,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       "truncate",
                       isMobile ? "text-[10px] text-gray-400" : "text-xs text-gray-500"
                     )}>
-                      {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Online"}
+                      {selectedMessage.status === "blocked" ? "Blocked" : selectedMessage.status === "held" ? "On Hold" : "Messages"}
                     </p>
                     {/* Translation indicator */}
                     {(autoTranslateIncoming || translateOutgoing) && (
@@ -3874,13 +3889,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             showAiChat && selectedMessage ? "w-96 border-l border-gray-200" : "w-0 border-l-0"
           )}
         >
-          {selectedMessage && (
+          {showAiChat && selectedMessage ? (
             <>
               <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 shrink-0 bg-white">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-purple-600" />
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Bot className="w-4 h-4 text-purple-600" />
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-800">AI</p>
                     <p className="text-xs text-gray-500 truncate">{selectedMessage.contactName}</p>
@@ -3946,7 +3959,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </div>
               </div>
             </>
-          )}
+          ) : null}
         </section>
       )}
 

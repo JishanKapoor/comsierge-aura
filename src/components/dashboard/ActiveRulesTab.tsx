@@ -412,7 +412,35 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
                         rule.active ? "text-gray-800" : "text-gray-500"
                       )}
                     >
-                      {rule.rule}
+                      {/* For transfer rules, dynamically build the description from stored data */}
+                      {rule.type === "transfer" && rule.transferDetails ? (() => {
+                        const mode = rule.transferDetails.mode || "both";
+                        const priority = rule.transferDetails.priority || "all";
+                        const tgtName = rule.transferDetails.contactName || rule.transferDetails.contactPhone || "Unknown";
+                        
+                        // Get source name - try conditions first, then fall back to parsing old rule text
+                        let srcName = rule.conditions?.sourceContactName || rule.conditions?.sourceContactPhone;
+                        if (!srcName && rule.rule) {
+                          // Try to extract from old format: "Transfer ... from X to Y"
+                          const fromMatch = rule.rule.match(/from\s+(.+?)\s+to\s+/i);
+                          if (fromMatch) {
+                            srcName = fromMatch[1];
+                          }
+                        }
+                        srcName = srcName || "All contacts";
+                        
+                        let what = "";
+                        if (mode === "calls") {
+                          what = "all calls";
+                        } else if (mode === "messages") {
+                          what = priority === "all" ? "all messages" : "high priority messages";
+                        } else {
+                          const msgPart = priority === "all" ? "all messages" : "high priority messages";
+                          what = `all calls and ${msgPart}`;
+                        }
+                        
+                        return `Transfer ${what} from ${srcName} to ${tgtName}`;
+                      })() : rule.rule}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       <span

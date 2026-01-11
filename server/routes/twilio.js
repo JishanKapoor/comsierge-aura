@@ -1520,8 +1520,22 @@ router.post("/webhook/sms", async (req, res) => {
           const transferPriority = transferDetails.priority || "all";
           const transferPriorityFilter = transferDetails.priorityFilter;
           const transferTargetPhone = transferDetails.contactPhone;
+          const sourceContactPhone = rule.conditions?.sourceContactPhone;
           
           console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${transferMode}, priority: ${transferPriority})`);
+
+          // If this transfer rule is scoped to a specific conversation, only apply it for that sender.
+          if (sourceContactPhone) {
+            const fromNorm = normalizeToE164ish(From);
+            const { variations: fromVars } = buildPhoneVariations(fromNorm);
+            const { variations: srcVars } = buildPhoneVariations(sourceContactPhone);
+            const srcSet = new Set(srcVars);
+            const matchesSource = fromVars.some((v) => srcSet.has(v));
+            if (!matchesSource) {
+              console.log(`      ⏭️ Transfer rule scoped to ${sourceContactPhone}; sender ${From} does not match`);
+              continue;
+            }
+          }
           
           // Check if rule applies to messages
           if (transferMode !== "messages" && transferMode !== "both") {
@@ -1963,8 +1977,30 @@ router.post("/webhook/voice", async (req, res) => {
           const conditions = rule.conditions || {};
           const mode = conditions.mode || "all";
           const transferDetails = rule.transferDetails || {};
+          const sourceContactPhone = conditions.sourceContactPhone;
           
           console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${mode})`);
+
+          // If this transfer rule is scoped to a specific conversation, only apply it for that caller.
+          if (sourceContactPhone) {
+            const normalizePhone = (p) => {
+              const cleaned = p ? String(p).replace(/[^\d+]/g, "") : "";
+              if (cleaned.startsWith("+")) return cleaned;
+              const digits = String(p || "").replace(/\D/g, "");
+              if (digits.length === 10) return `+1${digits}`;
+              if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+              return cleaned;
+            };
+
+            const caller = normalizePhone(From);
+            const src = normalizePhone(sourceContactPhone);
+            const callerDigits = String(caller).replace(/\D/g, "").slice(-10);
+            const srcDigits = String(src).replace(/\D/g, "").slice(-10);
+            if (!caller || !src || callerDigits !== srcDigits) {
+              console.log(`      ⏭️ Transfer rule scoped to ${sourceContactPhone}; caller ${From} does not match`);
+              continue;
+            }
+          }
           
           // Check if rule applies to calls
           const transferMode = transferDetails.mode || "both";

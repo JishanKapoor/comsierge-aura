@@ -7,6 +7,8 @@ export interface ActiveRule {
   active: boolean;
   createdAt: string;
   type?: "transfer" | "auto-reply" | "block" | "forward" | "priority" | "custom" | "message-notify";
+  conditions?: Record<string, any>;
+  actions?: Record<string, any>;
   schedule?: {
     mode: "always" | "duration" | "custom";
     durationHours?: number;
@@ -33,6 +35,16 @@ const getAuthHeaders = () => {
 // Fetch all rules from API
 export const fetchRules = async (): Promise<ActiveRule[]> => {
   try {
+    // First, clean up any duplicate transfer rules
+    try {
+      await fetch(`${API_BASE_URL}/api/rules/cleanup/transfers`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+    } catch {
+      // Ignore cleanup errors
+    }
+    
     const response = await fetch(`${API_BASE_URL}/api/rules`, {
       headers: getAuthHeaders(),
     });
@@ -44,6 +56,8 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
         active: r.active,
         createdAt: new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         type: r.type,
+        conditions: r.conditions,
+        actions: r.actions,
         schedule: r.schedule,
         transferDetails: r.transferDetails,
       }));
@@ -71,6 +85,8 @@ export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Pr
         active: data.data.active,
         createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         type: data.data.type,
+        conditions: data.data.conditions,
+        actions: data.data.actions,
         schedule: data.data.schedule,
         transferDetails: data.data.transferDetails,
       };
