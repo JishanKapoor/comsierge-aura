@@ -84,7 +84,7 @@ const createTransferRuleTool = tool(
           contactPhone: resolvedPhone,
         }
       });
-      return `✅ Done! Created rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}). Manage in Active Rules.`;
+      return `Done. Created rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}).`;
     } catch (error) {
       console.error("Transfer rule error:", error);
       return `Error creating rule: ${error.message}`;
@@ -120,7 +120,7 @@ const createAutoReplyTool = tool(
           autoReplyMessage: replyMessage,
         }
       });
-      return `✅ Done! Auto-reply set for ${sourceContact}. They'll receive: "${replyMessage}"`;
+      return `Done. Auto-reply set for ${sourceContact}. They'll receive: "${replyMessage}"`;
     } catch (error) {
       console.error("Auto-reply error:", error);
       return `Error: ${error.message}`;
@@ -163,7 +163,7 @@ const blockContactTool = tool(
         console.log("Updated conversation isBlocked for phone:", normalizedPhone);
       }
 
-      return `✅ Done! Blocked ${sourceContact}. They won't be able to reach you.`;
+      return `Done. Blocked ${sourceContact}. They won't be able to reach you.`;
     } catch (error) {
       console.error("Block error:", error);
       return `Error: ${error.message}`;
@@ -207,7 +207,7 @@ const unblockContactTool = tool(
         console.log("Updated conversation isBlocked=false for phone:", normalizedPhone);
       }
 
-      return `✅ Done! Unblocked ${sourceContact}. They can now message you again.`;
+      return `Done. Unblocked ${sourceContact}. They can now message you again.`;
     } catch (error) {
       console.error("Unblock error:", error);
       return `Error: ${error.message}`;
@@ -226,49 +226,68 @@ const unblockContactTool = tool(
 
 // Tool: Update Contact Name
 const updateContactTool = tool(
-  async ({ userId, currentPhone, newName }) => {
+  async ({ userId, currentName, currentPhone, newName }) => {
     try {
-      console.log("Updating contact:", { userId, currentPhone, newName });
+      console.log("Updating contact:", { userId, currentName, currentPhone, newName });
       
-      if (!currentPhone || currentPhone === "unknown") {
-        return "Error: I don't have a phone number for this contact to save them.";
+      // Find contact by name OR phone
+      let contact = null;
+      
+      if (currentName) {
+        contact = await Contact.findOne({ 
+          userId, 
+          name: { $regex: `^${currentName}$`, $options: "i" }
+        });
+        // Try partial match if exact didn't work
+        if (!contact) {
+          contact = await Contact.findOne({ 
+            userId, 
+            name: { $regex: currentName, $options: "i" }
+          });
+        }
       }
-
-      const normalizedPhone = currentPhone.replace(/\D/g, '');
       
-      if (!normalizedPhone) {
-        return "Error: Invalid phone number.";
-      }
-
-      // Update Contact model
-      // We use $setOnInsert to ensure phone is set only if creating a new doc
-      // But actually, we can just set it. If it exists, it matches the regex anyway (mostly).
-      // Better: Try to find first to avoid regex upsert issues.
-      
-      let contact = await Contact.findOne({ 
-        userId, 
-        phone: { $regex: normalizedPhone } 
-      });
-
-      if (contact) {
-        contact.name = newName;
-        await contact.save();
-      } else {
-        // Create new contact
-        contact = await Contact.create({
-          userId,
-          phone: `+${normalizedPhone}`, // Ensure + format if possible, or just normalized
-          name: newName
+      if (!contact && currentPhone) {
+        const normalizedPhone = currentPhone.replace(/\D/g, '');
+        contact = await Contact.findOne({ 
+          userId, 
+          phone: { $regex: normalizedPhone } 
         });
       }
 
+      if (!contact) {
+        return `Could not find contact "${currentName || currentPhone}". Check the name and try again.`;
+      }
+
+      const oldName = contact.name;
+      contact.name = newName;
+      await contact.save();
+
       // Update Conversation model to reflect the new name immediately
+      const normalizedPhone = contact.phone.replace(/\D/g, '');
       await Conversation.updateMany(
         { userId, contactPhone: { $regex: normalizedPhone } },
         { contactName: newName }
       );
+      
+      // Update Message contactName
+      await Message.updateMany(
+        { userId, contactPhone: { $regex: normalizedPhone } },
+        { contactName: newName }
+      );
+      
+      // Update transfer rules that reference this contact
+      const Rule = (await import("../models/Rule.js")).default;
+      await Rule.updateMany(
+        { userId, "transferDetails.contactPhone": { $regex: normalizedPhone } },
+        { $set: { "transferDetails.contactName": newName } }
+      );
+      await Rule.updateMany(
+        { userId, "conditions.sourceContactPhone": { $regex: normalizedPhone } },
+        { $set: { "conditions.sourceContactName": newName } }
+      );
 
-      return `✅ Done! Contact renamed to "${newName}"`;
+      return `Done. Renamed "${oldName}" to "${newName}".`;
     } catch (error) {
       console.error("Update contact error:", error);
       return `Error: ${error.message}`;
@@ -276,10 +295,11 @@ const updateContactTool = tool(
   },
   {
     name: "update_contact",
-    description: "Rename/update a contact. Use when user says: change name, rename, update contact, set name as, call them X.",
+    description: "Rename a contact. Use when user says: change name, rename, update contact, set name as, call them X. Example: 'change jk f to jk k' or 'rename John to Johnny'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      currentPhone: z.string().describe("Phone number of contact to update"),
+      currentName: z.string().optional().describe("Current name of contact to rename"),
+      currentPhone: z.string().optional().describe("Phone number of contact to update (if name not provided)"),
       newName: z.string().describe("New name for the contact"),
     }),
   }
@@ -323,7 +343,7 @@ const markPriorityTool = tool(
         active: true,
         transferDetails: { sourceContact, sourcePhone }
       });
-      return `✅ Done! ${sourceContact} marked as high priority. You'll get prominent alerts.`;
+      return `Done. ${sourceContact} marked as high priority. You'll get prominent alerts.`;
     } catch (error) {
       return `Error: ${error.message}`;
     }
@@ -507,7 +527,7 @@ const deleteRuleTool = tool(
       });
       
       if (result) {
-        return `✅ Rule deleted: "${result.rule}"`;
+        return `Rule deleted: "${result.rule}"`;
       } else {
         return `Could not find a rule matching "${ruleDescription}". Use "show my rules" to see your active rules.`;
       }
@@ -934,7 +954,7 @@ const sendMessageTool = tool(
         contactName: name || phone,
         contactPhone: phone,
         messageText,
-        message: `📱 Ready to send to ${name || phone}:\n\n"${messageText}"\n\n**Reply "yes" to send** or tell me what changes to make.`
+        message: `Ready to send to ${name || phone}:\n\n"${messageText}"\n\nReply "yes" to send or tell me what changes to make.`
       });
     } catch (error) {
       console.error("Send message error:", error);
@@ -969,12 +989,12 @@ const listContactsTool = tool(
       
       const list = contacts.map(c => {
         let status = [];
-        if (c.isFavorite) status.push("⭐");
-        if (c.isBlocked) status.push("🚫");
-        return `• ${c.name} - ${c.phone} ${status.join(" ")}`;
+        if (c.isFavorite) status.push("[fav]");
+        if (c.isBlocked) status.push("[blocked]");
+        return `- ${c.name} (${c.phone})${status.length ? " " + status.join(" ") : ""}`;
       }).join("\n");
       
-      return `📒 Your Contacts (${contacts.length}):\n\n${list}`;
+      return `Your contacts (${contacts.length}):\n${list}`;
     } catch (error) {
       console.error("List contacts error:", error);
       return `Error: ${error.message}`;
@@ -998,17 +1018,17 @@ const getPhoneInfoTool = tool(
       
       let info = [];
       if (user?.phoneNumber) {
-        info.push(`📱 Your Comsierge Number: ${user.phoneNumber}`);
+        info.push(`Your Comsierge Number: ${user.phoneNumber}`);
       }
       if (user?.forwardingNumber) {
-        info.push(`📲 Forwarding to: ${user.forwardingNumber}`);
+        info.push(`Forwarding to: ${user.forwardingNumber}`);
       }
       
       const rulesCount = await Rule.countDocuments({ userId, active: true });
-      info.push(`📋 Active Rules: ${rulesCount}`);
+      info.push(`Active Rules: ${rulesCount}`);
       
       const contactsCount = await Contact.countDocuments({ userId });
-      info.push(`👥 Contacts: ${contactsCount}`);
+      info.push(`Contacts: ${contactsCount}`);
       
       return info.join("\n");
     } catch (error) {
@@ -1130,43 +1150,38 @@ const fullAgentLLM = new ChatOpenAI({
  */
 export async function rulesAgentChat(userId, message, chatHistory = []) {
   try {
-    console.log("🤖 Rules Agent Chat:", { userId, message });
+    console.log("Rules Agent Chat:", { userId, message });
     
-    const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge - a smart SMS/call management platform.
+    const systemPrompt = `You are Aura, an AI assistant for Comsierge SMS/call management.
 
-You can do ANYTHING the user asks:
+CRITICAL FORMATTING RULES:
+- NEVER use emojis
+- NEVER use markdown (no **, no ##, no bullet points with *)
+- Use plain text only
+- Be concise and direct
+- Use dashes (-) for lists
 
-=== ACTIONS (Execute immediately or confirm first) ===
-1. make_call - Call someone. Ask "How would you like to call?" (VoIP/SIP/Callback)
-2. send_message - Send SMS. Show the message and ask for confirmation.
-3. confirm_action - Execute confirmed calls/messages
+AVAILABLE TOOLS:
+1. list_contacts - Show contacts (filter: all/favorites/blocked)
+2. search_contacts - Find a contact by name/phone
+3. update_contact - Rename a contact (provide currentName and newName)
+4. block_contact - Block a contact
+5. unblock_contact - Unblock a contact
+6. create_transfer_rule - Forward calls/messages to someone else
+7. create_auto_reply - Set automatic replies
+8. mark_priority - Mark contact as high priority
+9. get_rules - Show all active rules
+10. delete_rule - Remove a rule
+11. search_messages - Search message content
+12. make_call - Initiate a call
+13. send_message - Send SMS
 
-=== CONTACTS ===
-4. list_contacts - Show all/favorites/blocked contacts
-5. search_contacts - Find a contact by name
-6. update_contact - Rename, add to favorites, add tags
-7. block_contact - Block a contact
-8. unblock_contact - Unblock a contact
-
-=== RULES (Automations) ===
-9. create_transfer_rule - Forward calls/messages to someone else
-10. create_auto_reply - Set automatic replies
-11. mark_priority - Mark contact as high/normal priority
-12. get_rules - Show all active rules
-13. delete_rule - Remove a rule
-
-=== SEARCH & INFO ===
-14. search_messages - Search message content
-15. search_messages_by_date - Find messages by date
-16. summarize_conversation - Summarize chat history
-17. get_phone_info - Show user's phone setup
-
-=== BEHAVIOR ===
-- For calls: ALWAYS ask confirmation and how they want to call (VoIP, SIP, Callback)
-- For messages: Show the message preview and ask "Reply yes to send"
-- For rules: Create immediately and confirm
-- Be conversational and helpful
-- If unsure, ask clarifying questions
+BEHAVIOR:
+- Execute tool calls immediately when the intent is clear
+- For "change X to Y" or "rename X to Y": use update_contact with currentName=X, newName=Y
+- For "forward calls from X to Y": use create_transfer_rule
+- If unsure, ask ONE clarifying question
+- Keep responses under 2 sentences unless listing data
 
 User ID: ${userId}`;
 
