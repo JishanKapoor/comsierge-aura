@@ -6,6 +6,8 @@ import Rule from "../models/Rule.js";
 import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
+import Reminder from "../models/Reminder.js";
+import User from "../models/User.js";
 
 // Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
@@ -13,6 +15,125 @@ const llm = new ChatOpenAI({
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
+
+// ==================== HELPER FUNCTIONS ====================
+
+// Parse natural language time to Date
+function parseNaturalTime(timeStr, referenceDate = new Date()) {
+  const now = referenceDate;
+  const lower = timeStr.toLowerCase().trim();
+  
+  // Relative times
+  if (lower.includes("in ")) {
+    const match = lower.match(/in\s+(\d+)\s*(min|minute|hour|hr|day|week)/i);
+    if (match) {
+      const amount = parseInt(match[1]);
+      const unit = match[2].toLowerCase();
+      const result = new Date(now);
+      if (unit.startsWith("min")) result.setMinutes(result.getMinutes() + amount);
+      else if (unit.startsWith("hour") || unit === "hr") result.setHours(result.getHours() + amount);
+      else if (unit.startsWith("day")) result.setDate(result.getDate() + amount);
+      else if (unit.startsWith("week")) result.setDate(result.getDate() + amount * 7);
+      return result;
+    }
+  }
+  
+  // Tomorrow
+  if (lower.includes("tomorrow")) {
+    const result = new Date(now);
+    result.setDate(result.getDate() + 1);
+    // Check for time
+    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1]);
+      const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+      const ampm = timeMatch[3]?.toLowerCase();
+      if (ampm === "pm" && hours < 12) hours += 12;
+      if (ampm === "am" && hours === 12) hours = 0;
+      result.setHours(hours, minutes, 0, 0);
+    } else {
+      result.setHours(9, 0, 0, 0); // Default to 9 AM
+    }
+    return result;
+  }
+  
+  // Today with time
+  if (lower.includes("today") || lower.match(/at\s+\d/)) {
+    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1]);
+      const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+      const ampm = timeMatch[3]?.toLowerCase();
+      if (ampm === "pm" && hours < 12) hours += 12;
+      if (ampm === "am" && hours === 12) hours = 0;
+      const result = new Date(now);
+      result.setHours(hours, minutes, 0, 0);
+      return result;
+    }
+  }
+  
+  // Specific day of week
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  for (let i = 0; i < days.length; i++) {
+    if (lower.includes(days[i])) {
+      const result = new Date(now);
+      const currentDay = result.getDay();
+      let daysToAdd = i - currentDay;
+      if (daysToAdd <= 0) daysToAdd += 7;
+      result.setDate(result.getDate() + daysToAdd);
+      
+      const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+        const ampm = timeMatch[3]?.toLowerCase();
+        if (ampm === "pm" && hours < 12) hours += 12;
+        if (ampm === "am" && hours === 12) hours = 0;
+        result.setHours(hours, minutes, 0, 0);
+      } else {
+        result.setHours(9, 0, 0, 0);
+      }
+      return result;
+    }
+  }
+  
+  // Default: try to parse as date
+  const parsed = new Date(timeStr);
+  if (!isNaN(parsed.getTime())) return parsed;
+  
+  return null;
+}
+
+// Resolve contact by name or phone
+async function resolveContact(userId, nameOrPhone) {
+  if (!nameOrPhone) return null;
+  
+  // Try by name first (exact, then partial)
+  let contact = await Contact.findOne({
+    userId,
+    name: { $regex: `^${nameOrPhone}$`, $options: "i" }
+  });
+  
+  if (!contact) {
+    contact = await Contact.findOne({
+      userId,
+      name: { $regex: nameOrPhone, $options: "i" }
+    });
+  }
+  
+  // Try by phone
+  if (!contact) {
+    const digits = nameOrPhone.replace(/\D/g, '');
+    if (digits.length >= 7) {
+      contact = await Contact.findOne({
+        userId,
+        phone: { $regex: digits.slice(-10) }
+      });
+    }
+  }
+  
+  return contact;
+}
 
 // ==================== TOOLS ====================
 
@@ -1089,6 +1210,497 @@ const confirmActionTool = tool(
   }
 );
 
+// ==================== NEW ADVANCED TOOLS ====================
+
+// Tool: Create Reminder
+const createReminderTool = tool(
+  async ({ userId, title, when, contactName, contactPhone, type, description }) => {
+    try {
+      console.log("Creating reminder:", { userId, title, when, contactName });
+      
+      // Parse the time
+      const scheduledAt = parseNaturalTime(when);
+      if (!scheduledAt) {
+        return `Could not understand the time "${when}". Try "in 30 minutes", "tomorrow at 3pm", or "Monday 9am".`;
+      }
+      
+      // Resolve contact if provided
+      let resolvedContact = null;
+      let resolvedPhone = contactPhone;
+      let resolvedName = contactName;
+      
+      if (contactName && !contactPhone) {
+        resolvedContact = await resolveContact(userId, contactName);
+        if (resolvedContact) {
+          resolvedPhone = resolvedContact.phone;
+          resolvedName = resolvedContact.name;
+        }
+      }
+      
+      const reminder = await Reminder.create({
+        userId,
+        title,
+        description: description || null,
+        type: type || "personal",
+        scheduledAt,
+        contactPhone: resolvedPhone || null,
+        contactName: resolvedName || null,
+      });
+      
+      const timeStr = scheduledAt.toLocaleString("en-US", { 
+        weekday: "short", month: "short", day: "numeric", 
+        hour: "numeric", minute: "2-digit" 
+      });
+      
+      return `Done. Reminder set for ${timeStr}: "${title}"${resolvedName ? ` (re: ${resolvedName})` : ""}`;
+    } catch (error) {
+      console.error("Create reminder error:", error);
+      return `Error creating reminder: ${error.message}`;
+    }
+  },
+  {
+    name: "create_reminder",
+    description: "Create a reminder. Use for: 'remind me to...', 'set a reminder', 'don't let me forget', 'follow up with X in 30 min'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      title: z.string().describe("What to remind about"),
+      when: z.string().describe("When to remind - e.g. 'in 30 minutes', 'tomorrow 3pm', 'Monday 9am'"),
+      contactName: z.string().optional().describe("Related contact name if any"),
+      contactPhone: z.string().optional().describe("Related contact phone if any"),
+      type: z.enum(["personal", "call", "message"]).optional().describe("Reminder type"),
+      description: z.string().optional().describe("Additional details"),
+    }),
+  }
+);
+
+// Tool: List Reminders
+const listRemindersTool = tool(
+  async ({ userId, filter }) => {
+    try {
+      let query = { userId };
+      
+      if (filter === "upcoming") {
+        query.isCompleted = false;
+        query.scheduledAt = { $gte: new Date() };
+      } else if (filter === "completed") {
+        query.isCompleted = true;
+      } else if (filter === "today") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        query.scheduledAt = { $gte: today, $lt: tomorrow };
+      }
+      
+      const reminders = await Reminder.find(query).sort({ scheduledAt: 1 }).limit(20);
+      
+      if (reminders.length === 0) {
+        return filter === "upcoming" ? "No upcoming reminders." : "No reminders found.";
+      }
+      
+      const list = reminders.map(r => {
+        const time = new Date(r.scheduledAt).toLocaleString("en-US", {
+          weekday: "short", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit"
+        });
+        const status = r.isCompleted ? "[done]" : "";
+        return `- ${time}: ${r.title} ${status}`;
+      }).join("\n");
+      
+      return `Reminders (${reminders.length}):\n${list}`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "list_reminders",
+    description: "List reminders. Use for: 'show my reminders', 'what reminders do I have', 'upcoming reminders'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      filter: z.enum(["all", "upcoming", "completed", "today"]).optional().describe("Filter reminders"),
+    }),
+  }
+);
+
+// Tool: Delete/Complete Reminder
+const completeReminderTool = tool(
+  async ({ userId, reminderTitle, action }) => {
+    try {
+      const reminder = await Reminder.findOne({
+        userId,
+        title: { $regex: reminderTitle, $options: "i" },
+        isCompleted: false
+      });
+      
+      if (!reminder) {
+        return `Could not find reminder matching "${reminderTitle}".`;
+      }
+      
+      if (action === "complete") {
+        reminder.isCompleted = true;
+        reminder.completedAt = new Date();
+        await reminder.save();
+        return `Marked as complete: "${reminder.title}"`;
+      } else if (action === "delete") {
+        await Reminder.deleteOne({ _id: reminder._id });
+        return `Deleted reminder: "${reminder.title}"`;
+      }
+      
+      return "Unknown action.";
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "complete_reminder",
+    description: "Mark a reminder as complete or delete it",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      reminderTitle: z.string().describe("Part of reminder title to match"),
+      action: z.enum(["complete", "delete"]).describe("What to do with reminder"),
+    }),
+  }
+);
+
+// Tool: Extract Events from Messages
+const extractEventsTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      console.log("Extracting events from messages:", { userId, contactName });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      if (contactName && !contactPhone) {
+        const contact = await resolveContact(userId, contactName);
+        if (contact) phone = contact.phone;
+      }
+      
+      // Get recent messages
+      let query = { userId };
+      if (phone) {
+        const digits = phone.replace(/\D/g, '');
+        query.contactPhone = { $regex: digits.slice(-10) };
+      }
+      
+      const messages = await Message.find(query)
+        .sort({ createdAt: -1 })
+        .limit(50);
+      
+      if (messages.length === 0) {
+        return "No messages found to analyze.";
+      }
+      
+      // Build message text for analysis
+      const msgText = messages.map(m => m.body).join("\n---\n");
+      
+      // Use LLM to extract events
+      const response = await llm.invoke([
+        new SystemMessage(`Extract any dates, meetings, appointments, deadlines, or commitments from these messages. Format each as:
+- [DATE/TIME] Event description (from: sender)
+
+If no events found, say "No events or appointments found."
+Do NOT use emojis. Do NOT use markdown. Plain text only.`),
+        new HumanMessage(msgText)
+      ]);
+      
+      return response.content;
+    } catch (error) {
+      console.error("Extract events error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "extract_events",
+    description: "Find dates, meetings, appointments, deadlines in messages. Use for: 'any upcoming meetings', 'what appointments do I have', 'extract events from my messages'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Limit to specific contact"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+    }),
+  }
+);
+
+// Tool: Create Smart Rule from Natural Language
+const createSmartRuleTool = tool(
+  async ({ userId, ruleDescription }) => {
+    try {
+      console.log("Creating smart rule:", { userId, ruleDescription });
+      
+      // Use LLM to parse the rule intent
+      const parseResponse = await llm.invoke([
+        new SystemMessage(`Parse this rule request and return JSON with:
+{
+  "type": "transfer" | "auto-reply" | "block" | "priority" | "hold",
+  "sourceKeyword": "keyword to match in messages (if any)",
+  "sourceContactName": "specific contact name (if mentioned)",
+  "targetContactName": "contact to forward to (for transfer rules)",
+  "mode": "calls" | "messages" | "both",
+  "autoReplyMessage": "message text (for auto-reply)",
+  "schedule": { "startTime": "HH:MM", "endTime": "HH:MM", "days": ["Monday"...] } or null,
+  "priority": "all" | "high-priority",
+  "summary": "brief description of what this rule does"
+}
+Only return valid JSON, nothing else.`),
+        new HumanMessage(ruleDescription)
+      ]);
+      
+      let parsed;
+      try {
+        parsed = JSON.parse(parseResponse.content);
+      } catch (e) {
+        return `Could not understand the rule. Try being more specific, like "forward bank messages to John" or "auto-reply to work contacts after 6pm".`;
+      }
+      
+      // Resolve target contact for transfer rules
+      let targetPhone = null;
+      let targetName = parsed.targetContactName;
+      if (parsed.type === "transfer" && targetName) {
+        const target = await resolveContact(userId, targetName);
+        if (target) {
+          targetPhone = target.phone;
+          targetName = target.name;
+        } else {
+          return `Could not find contact "${targetName}". Save them as a contact first.`;
+        }
+      }
+      
+      // Resolve source contact if specified
+      let sourcePhone = null;
+      let sourceName = parsed.sourceContactName;
+      if (sourceName) {
+        const source = await resolveContact(userId, sourceName);
+        if (source) {
+          sourcePhone = source.phone;
+          sourceName = source.name;
+        }
+      }
+      
+      // Create the rule
+      const rule = await Rule.create({
+        userId,
+        rule: parsed.summary || ruleDescription,
+        type: parsed.type,
+        active: true,
+        conditions: {
+          keyword: parsed.sourceKeyword || null,
+          sourceContactPhone: sourcePhone,
+          sourceContactName: sourceName,
+          schedule: parsed.schedule,
+        },
+        transferDetails: parsed.type === "transfer" ? {
+          mode: parsed.mode || "both",
+          priority: parsed.priority || "all",
+          contactName: targetName,
+          contactPhone: targetPhone,
+        } : parsed.type === "auto-reply" ? {
+          autoReplyMessage: parsed.autoReplyMessage,
+          sourceContact: sourceName,
+          sourcePhone: sourcePhone,
+        } : null,
+      });
+      
+      return `Done. Created rule: "${parsed.summary || ruleDescription}"`;
+    } catch (error) {
+      console.error("Smart rule error:", error);
+      return `Error creating rule: ${error.message}`;
+    }
+  },
+  {
+    name: "create_smart_rule",
+    description: "Create any type of rule from natural language. Use for complex rules like: 'forward bank messages to accountant', 'hold spam messages', 'auto-reply after 6pm', 'block messages with crypto'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      ruleDescription: z.string().describe("Natural language description of the rule"),
+    }),
+  }
+);
+
+// Tool: Get Unread Summary / Proactive Updates
+const getUnreadSummaryTool = tool(
+  async ({ userId }) => {
+    try {
+      // Get unread conversations
+      const unreadConvs = await Conversation.find({
+        userId,
+        unreadCount: { $gt: 0 }
+      }).sort({ lastMessageAt: -1 }).limit(10);
+      
+      if (unreadConvs.length === 0) {
+        return "You're all caught up - no unread messages.";
+      }
+      
+      // Get the messages
+      const summaries = [];
+      for (const conv of unreadConvs) {
+        const messages = await Message.find({
+          userId,
+          contactPhone: conv.contactPhone,
+          isRead: false
+        }).sort({ createdAt: -1 }).limit(3);
+        
+        if (messages.length > 0) {
+          const preview = messages[0].body.substring(0, 80);
+          summaries.push(`- ${conv.contactName || conv.contactPhone} (${conv.unreadCount} unread): "${preview}${messages[0].body.length > 80 ? '...' : ''}"`);
+        }
+      }
+      
+      // Get upcoming reminders (next 24 hours)
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const upcomingReminders = await Reminder.find({
+        userId,
+        isCompleted: false,
+        scheduledAt: { $gte: new Date(), $lte: tomorrow }
+      }).sort({ scheduledAt: 1 }).limit(5);
+      
+      let response = `You have ${unreadConvs.length} conversation(s) with unread messages:\n${summaries.join("\n")}`;
+      
+      if (upcomingReminders.length > 0) {
+        const reminderList = upcomingReminders.map(r => {
+          const time = new Date(r.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+          return `- ${time}: ${r.title}`;
+        }).join("\n");
+        response += `\n\nUpcoming reminders:\n${reminderList}`;
+      }
+      
+      return response;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "get_unread_summary",
+    description: "Get summary of unread messages and upcoming reminders. Use for: 'what did I miss', 'any new messages', 'catch me up', 'updates'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+    }),
+  }
+);
+
+// Tool: Analyze Conversation Sentiment/Topics
+const analyzeConversationTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      if (contactName && !contactPhone) {
+        const contact = await resolveContact(userId, contactName);
+        if (contact) {
+          phone = contact.phone;
+          name = contact.name;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}".`;
+      }
+      
+      const digits = phone.replace(/\D/g, '');
+      const messages = await Message.find({
+        userId,
+        contactPhone: { $regex: digits.slice(-10) }
+      }).sort({ createdAt: -1 }).limit(50);
+      
+      if (messages.length === 0) {
+        return `No messages found with ${name || phone}.`;
+      }
+      
+      const msgText = messages.reverse().map(m => {
+        const dir = m.direction === 'outgoing' ? 'You' : name;
+        return `${dir}: ${m.body}`;
+      }).join("\n");
+      
+      const response = await llm.invoke([
+        new SystemMessage(`Analyze this conversation and provide:
+1. Overall sentiment (positive/neutral/negative)
+2. Main topics discussed
+3. Any pending action items or commitments
+4. Communication pattern (who initiates more, response times)
+
+Be concise. Use plain text only, no markdown or emojis.`),
+        new HumanMessage(msgText)
+      ]);
+      
+      return `Analysis of conversation with ${name || phone}:\n${response.content}`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "analyze_conversation",
+    description: "Analyze conversation sentiment, topics, and patterns. Use for: 'analyze my chat with X', 'what's the vibe with X', 'how's my relationship with X'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+    }),
+  }
+);
+
+// Tool: Quick Reply Suggestion
+const suggestReplyTool = tool(
+  async ({ userId, contactName, contactPhone, context }) => {
+    try {
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      if (contactName && !contactPhone) {
+        const contact = await resolveContact(userId, contactName);
+        if (contact) {
+          phone = contact.phone;
+          name = contact.name;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}".`;
+      }
+      
+      const digits = phone.replace(/\D/g, '');
+      const messages = await Message.find({
+        userId,
+        contactPhone: { $regex: digits.slice(-10) }
+      }).sort({ createdAt: -1 }).limit(10);
+      
+      if (messages.length === 0) {
+        return "No conversation history to base suggestions on.";
+      }
+      
+      const msgText = messages.reverse().map(m => {
+        const dir = m.direction === 'outgoing' ? 'You' : name;
+        return `${dir}: ${m.body}`;
+      }).join("\n");
+      
+      const response = await llm.invoke([
+        new SystemMessage(`Based on this conversation, suggest 3 appropriate reply options. ${context ? `Additional context: ${context}` : ""}
+
+Format as:
+1. [short reply for quick response]
+2. [medium reply with more detail]
+3. [longer reply if needed]
+
+Keep replies natural and conversational. No markdown or emojis.`),
+        new HumanMessage(msgText)
+      ]);
+      
+      return `Reply suggestions for ${name || phone}:\n${response.content}`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "suggest_reply",
+    description: "Suggest reply options for a conversation. Use for: 'what should I say to X', 'help me reply to X', 'suggest a response'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      context: z.string().optional().describe("Additional context like 'be professional' or 'apologize'"),
+    }),
+  }
+);
+
 // All tools for the full agent
 const fullAgentTools = [
   // Actions
@@ -1107,10 +1719,20 @@ const fullAgentTools = [
   markPriorityTool,
   getRulesTool,
   deleteRuleTool,
+  createSmartRuleTool,
   // Messages
   searchMessagesTool,
   searchMessagesByDateTool,
   summarizeConversationTool,
+  analyzeConversationTool,
+  suggestReplyTool,
+  extractEventsTool,
+  // Reminders
+  createReminderTool,
+  listRemindersTool,
+  completeReminderTool,
+  // Proactive
+  getUnreadSummaryTool,
   // Info
   getPhoneInfoTool,
 ];
@@ -1129,9 +1751,17 @@ const fullAgentToolMap = {
   mark_priority: markPriorityTool,
   get_rules: getRulesTool,
   delete_rule: deleteRuleTool,
+  create_smart_rule: createSmartRuleTool,
   search_messages: searchMessagesTool,
   search_messages_by_date: searchMessagesByDateTool,
   summarize_conversation: summarizeConversationTool,
+  analyze_conversation: analyzeConversationTool,
+  suggest_reply: suggestReplyTool,
+  extract_events: extractEventsTool,
+  create_reminder: createReminderTool,
+  list_reminders: listRemindersTool,
+  complete_reminder: completeReminderTool,
+  get_unread_summary: getUnreadSummaryTool,
   get_phone_info: getPhoneInfoTool,
 };
 
@@ -1150,7 +1780,7 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
   try {
     console.log("Rules Agent Chat:", { userId, message });
     
-    const systemPrompt = `You are Aura, an AI assistant for Comsierge SMS/call management.
+    const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge SMS/call management.
 
 CRITICAL FORMATTING RULES:
 - NEVER use emojis
@@ -1158,30 +1788,59 @@ CRITICAL FORMATTING RULES:
 - Use plain text only
 - Be concise and direct
 
-AVAILABLE TOOLS:
+TOOLS BY CATEGORY:
+
+CONTACTS:
 - list_contacts: Show all contacts
 - search_contacts: Find contact by name
 - update_contact: Rename contact (currentName + newName)
 - block_contact / unblock_contact: Block/unblock
-- create_transfer_rule: Forward calls/messages to another person
+
+RULES & AUTOMATION:
+- create_transfer_rule: Forward calls/messages (must specify source contact)
 - create_auto_reply: Set auto-reply message
 - mark_priority: Mark as high priority
-- get_rules: List active rules
+- get_rules: List active rules  
 - delete_rule: Remove a rule
-- search_messages: Search ALL messages for keywords like "meeting", "emergency", "appointment"
-- summarize_conversation: Summarize chat history WITH a specific contact (use contactName param)
+- create_smart_rule: Natural language rule creation (e.g. "forward bank messages to my accountant")
+
+MESSAGES & ANALYSIS:
+- search_messages: Search ALL messages for keywords
+- search_messages_by_date: Search messages in date range
+- summarize_conversation: Summarize chat with a specific contact
+- analyze_conversation: Analyze sentiment, topics, patterns with a contact
+- suggest_reply: Get reply suggestions for a conversation
+- extract_events: Find events, dates, appointments from messages
+
+REMINDERS:
+- create_reminder: Set reminder (supports "in 30 min", "tomorrow 3pm", "monday 9am")
+- list_reminders: View upcoming reminders
+- complete_reminder: Mark done or delete reminder
+
+PROACTIVE:
+- get_unread_summary: Get briefing on unread messages + upcoming reminders
+
+ACTIONS:
 - make_call: Call someone
 - send_message: Send SMS
 
-IMPORTANT - CHOOSING THE RIGHT TOOL:
+CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "do I have any meetings" -> search_messages with query="meeting"
-- "any emergency messages" -> search_messages with query="emergency"  
+- "any emergency messages" -> search_messages with query="emergency"
 - "summarize my chats from jk" -> summarize_conversation with contactName="jk"
 - "what did jk say" -> summarize_conversation with contactName="jk"
 - "change jk to john" -> update_contact with currentName="jk", newName="john"
 - "forward calls from jk to bob" -> create_transfer_rule
+- "remind me to call mom in 30 min" -> create_reminder
+- "forward bank messages to accountant" -> create_smart_rule
+- "what did I miss" -> get_unread_summary
+- "analyze my chat with john" -> analyze_conversation
+- "what should I say to sarah" -> suggest_reply
+- "any appointments from yesterday" -> extract_events OR search_messages_by_date
 
 Be direct. Execute tools immediately. No confirmation needed for read operations.
+For complex rules described in natural language, use create_smart_rule.
+Always resolve contacts by name when user provides a name.
 
 User ID: ${userId}`;
 
