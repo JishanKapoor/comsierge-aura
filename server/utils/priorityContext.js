@@ -76,10 +76,11 @@ export function detectPriorityContext({
   };
 }
 
-export function isPriorityActiveForList(priorityContext, { unreadCount = 0, now = new Date() } = {}) {
+export function isPriorityActiveForList(priorityContext, { unreadCount = 0, userHasReplied = false, now = new Date() } = {}) {
   if (!priorityContext || !priorityContext.kind) return false;
 
-  if (priorityContext.kind === "emergency") return true;
+  // Emergency clears after user sends a reply (acknowledges it)
+  if (priorityContext.kind === "emergency") return !userHasReplied;
 
   // "Important" should not stick around after read.
   if (priorityContext.kind === "important") return unreadCount > 0;
@@ -94,14 +95,22 @@ export function isPriorityActiveForList(priorityContext, { unreadCount = 0, now 
 
 export function shouldClearPriorityOnRead(priorityContext, { now = new Date() } = {}) {
   if (!priorityContext || !priorityContext.kind) return false;
+  // Emergency doesn't clear on read alone, only on reply
   if (priorityContext.kind === "emergency") return false;
 
   if (priorityContext.kind === "important") return true;
 
+  // Meetings/deadlines: clear if expired
   const expiresAt = priorityContext.expiresAt ? new Date(priorityContext.expiresAt) : null;
   if (expiresAt && !Number.isNaN(expiresAt.getTime())) {
     return expiresAt.getTime() <= now.getTime();
   }
 
   return false;
+}
+
+export function shouldClearPriorityOnReply(priorityContext) {
+  if (!priorityContext || !priorityContext.kind) return false;
+  // Emergency clears once user acknowledges by replying
+  return priorityContext.kind === "emergency";
 }

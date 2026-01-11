@@ -4,7 +4,7 @@ import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Contact from "../models/Contact.js";
 import { authMiddleware } from "./auth.js";
-import { detectPriorityContext, isPriorityActiveForList, shouldClearPriorityOnRead } from "../utils/priorityContext.js";
+import { detectPriorityContext, isPriorityActiveForList, shouldClearPriorityOnRead, shouldClearPriorityOnReply } from "../utils/priorityContext.js";
 
 const router = express.Router();
 
@@ -192,13 +192,24 @@ router.get("/conversations", async (req, res) => {
       const toClearIds = [];
       const toSetContext = [];
 
+      // For emergency handling, we need to check if user has replied in each conversation.
+      // Fetch the IDs of conversations where user has sent at least one outgoing message.
+      const convIds = conversations.map((c) => c._id);
+      const convPhones = conversations.map((c) => c.contactPhone);
+      const outgoingCounts = await Message.aggregate([
+        { $match: { userId: req.user._id, contactPhone: { $in: convPhones }, direction: "outgoing" } },
+        { $group: { _id: "$contactPhone", count: { $sum: 1 } } },
+      ]);
+      const userRepliedPhones = new Set(outgoingCounts.filter((o) => o.count > 0).map((o) => o._id));
+
       for (const conv of conversations) {
         const unreadCount = conv.unreadCount || 0;
         const ctx = conv.priorityContext || null;
+        const userHasReplied = userRepliedPhones.has(conv.contactPhone);
 
         let keepInPriority = false;
         if (ctx?.kind) {
-          keepInPriority = isPriorityActiveForList(ctx, { unreadCount, now });
+          keepInPriority = isPriorityActiveForList(ctx, { unreadCount, userHasReplied, now });
         } else {
           // No priorityContext means either:
           // - manual priority (user-set) → should never auto-expire
@@ -216,7 +227,7 @@ router.get("/conversations", async (req, res) => {
             });
             if (inferred?.kind) {
               toSetContext.push({ id: conv._id, ctx: inferred });
-              keepInPriority = isPriorityActiveForList(inferred, { unreadCount, now });
+              keepInPriority = isPriorityActiveForList(inferred, { unreadCount, userHasReplied, now });
             } else {
               // AI marked high but we can't infer a context from preview text → treat as "important".
               keepInPriority = unreadCount > 0;
@@ -557,7 +568,14 @@ router.put("/conversation/:contactPhone", async (req, res) => {
     if (isArchived !== undefined) update.isArchived = isArchived;
     if (isHeld !== undefined) update.isHeld = isHeld;
     if (isBlocked !== undefined) update.isBlocked = isBlocked;
-    if (isPriority !== undefined) update.isPriority = isPriority;
+    if (isPriority !== undefined) {
+      update.isPriority = isPriority;
+      // Clear priorityContext when manually removing priority
+      if (isPriority === false) {
+        update.priorityContext = null;
+        update.priority = "normal";
+      }
+    }
     if (priority !== undefined) update.priority = priority;
     if (transferPrefs !== undefined) update.transferPrefs = transferPrefs;
     if (language !== undefined) update.language = language;

@@ -2216,6 +2216,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
+  const handleRemovePriority = async () => {
+    if (!selectedMessage) return;
+    const phone = selectedMessage.contactPhone;
+    const success = await updateConversation(phone, { isPriority: false });
+    if (success) {
+      toast.success("Removed from priority");
+      await loadConversations();
+      // If we're on the priority tab, clear selection since this conversation is no longer priority
+      if (activeFilter === "priority") {
+        setSelectedMessageId(null);
+      }
+    } else {
+      toast.error("Failed to remove priority");
+    }
+    setShowMoreMenu(false);
+  };
+
   const handleTransferSubmit = () => {
     if (!transferTo) {
       toast.error("Please select a contact or enter a number to transfer to");
@@ -3090,6 +3107,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           </>
                         )}
                       </button>
+                      {/* Remove from Priority - show if conversation is marked priority */}
+                      {selectedMessage?.isPriority && (
+                        <button
+                          onClick={handleRemovePriority}
+                          className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          <Star className="w-4 h-4 mr-2.5 text-pink-500" />
+                          Remove Priority
+                        </button>
+                      )}
                       <div className="border-t border-gray-100 my-1" />
                       {selectedMessage?.isBlocked ? (
                         <button

@@ -3,6 +3,7 @@ import {
   detectPriorityContext,
   isPriorityActiveForList,
   shouldClearPriorityOnRead,
+  shouldClearPriorityOnReply,
 } from "../utils/priorityContext.js";
 
 const NOW = new Date("2026-01-10T12:00:00.000Z");
@@ -26,16 +27,20 @@ test("emergency detected regardless of AI priority", () => {
   assert.ok(ctx);
   assert.equal(ctx.kind, "emergency");
   assert.equal(ctx.expiresAt, null);
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, now: NOW }), true);
+  // Emergency stays active until user replies
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, userHasReplied: false, now: NOW }), true);
+  // Emergency clears once user replies
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, userHasReplied: true, now: NOW }), false);
   assert.equal(shouldClearPriorityOnRead(ctx, { now: NOW }), false);
+  assert.equal(shouldClearPriorityOnReply(ctx), true);
 });
 
 test("important detected when AI high (no time words)", () => {
   const ctx = detectPriorityContext({ text: "Please review the proposal when you can", aiPriority: "high", now: NOW });
   assert.ok(ctx);
   assert.equal(ctx.kind, "important");
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 1, now: NOW }), true);
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, now: NOW }), false);
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 1, userHasReplied: false, now: NOW }), true);
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, userHasReplied: false, now: NOW }), false);
   assert.equal(shouldClearPriorityOnRead(ctx, { now: NOW }), true);
 });
 
@@ -49,15 +54,15 @@ test("meeting: parses time and expires 2h after start", () => {
 
   // active before expiry
   const justBeforeExpiry = new Date(ctx.expiresAt.getTime() - 1);
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, now: justBeforeExpiry }), true);
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, userHasReplied: false, now: justBeforeExpiry }), true);
 
   // inactive after expiry when read
   const justAfterExpiry = new Date(ctx.expiresAt.getTime() + 1);
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, now: justAfterExpiry }), false);
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 0, userHasReplied: false, now: justAfterExpiry }), false);
   assert.equal(shouldClearPriorityOnRead(ctx, { now: justAfterExpiry }), true);
 
   // still active if unread even after expiry
-  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 2, now: justAfterExpiry }), true);
+  assert.equal(isPriorityActiveForList(ctx, { unreadCount: 2, userHasReplied: false, now: justAfterExpiry }), true);
 });
 
 test("meeting: no parse falls back to 6h expiry", () => {
