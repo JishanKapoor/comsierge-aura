@@ -7,9 +7,9 @@ import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 
-// Initialize OpenAI with GPT-5.2 (User requested)
+// Initialize OpenAI with GPT-4o for complex analysis
 const llm = new ChatOpenAI({
-  modelName: "gpt-5.2",
+  modelName: "gpt-4o",
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
@@ -53,21 +53,38 @@ const createTransferRuleTool = tool(
         }
       }
       
+      // First, look up source contact's phone if not provided
+      let resolvedSourcePhone = sourcePhone;
+      let resolvedSourceName = sourceContact;
+      
+      if (!sourcePhone) {
+        const srcContact = await Contact.findOne({
+          userId,
+          name: { $regex: sourceContact, $options: "i" }
+        });
+        if (srcContact) {
+          resolvedSourcePhone = srcContact.phone;
+          resolvedSourceName = srcContact.name;
+        }
+      }
+      
       const newRule = await Rule.create({
         userId,
-        rule: `Forward ${mode || "both"} from ${sourceContact} to ${resolvedName}`,
+        rule: `Forward ${mode || "both"} from ${resolvedSourceName} to ${resolvedName}`,
         type: "transfer",
         active: true,
+        conditions: {
+          sourceContactPhone: resolvedSourcePhone || null,
+          sourceContactName: resolvedSourceName,
+        },
         transferDetails: {
           mode: mode || "both",
           priority: "all",
           contactName: resolvedName,
           contactPhone: resolvedPhone,
-          sourceContact,
-          sourcePhone,
         }
       });
-      return `✅ Done! Created rule to forward ${mode || "all communications"} from ${sourceContact} to ${resolvedName} (${resolvedPhone}). Manage in Active Rules.`;
+      return `✅ Done! Created rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}). Manage in Active Rules.`;
     } catch (error) {
       console.error("Transfer rule error:", error);
       return `Error creating rule: ${error.message}`;
@@ -1102,7 +1119,7 @@ const fullAgentToolMap = {
 
 // Full Agent LLM
 const fullAgentLLM = new ChatOpenAI({
-  modelName: "gpt-5.2",
+  modelName: "gpt-4o",
   temperature: 0.3,
   openAIApiKey: process.env.OPENAI_API_KEY,
 }).bindTools(fullAgentTools);
