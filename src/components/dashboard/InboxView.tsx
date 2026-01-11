@@ -1922,8 +1922,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setTransferTo(prefs.to);
         if (prefs.to.startsWith("custom:")) {
           setTransferContactSearch(prefs.to.replace("custom:", ""));
+        } else {
+          setTransferContactSearch("");
         }
+      } else {
+        // Reset to defaults when no prefs for this conversation
+        setTransferType("all");
+        setPriorityFilter("all");
+        setTransferTo("");
+        setTransferContactSearch("");
+        setTransferMode("both");
       }
+    } else {
+      // No selected message - reset everything
+      setTransferType("all");
+      setPriorityFilter("all");
+      setTransferTo("");
+      setTransferContactSearch("");
+      setTransferMode("both");
     }
     setShowTransferModal(true);
     setShowMoreMenu(false);
@@ -2203,31 +2219,48 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   };
 
   const handlePin = async () => {
-    if (!selectedMessage) return;
+    if (!selectedMessage) {
+      console.warn("[handlePin] No selected message");
+      return;
+    }
     const wasPinned = selectedMessage.isPinned || false;
     const nextPinned = !wasPinned;
     const phone = selectedMessage.contactPhone;
     const conversationId = selectedMessage.id;
+
+    console.log("[handlePin] Starting pin toggle:", { phone, wasPinned, nextPinned, conversationId });
+
+    // Close menu immediately for better UX
+    setShowMoreMenu(false);
 
     // Optimistic update for snappy UI
     setMessages(prev => prev.map(m =>
       m.id === conversationId ? { ...m, isPinned: nextPinned } : m
     ));
 
-    const success = await updateConversation(phone, { isPinned: nextPinned });
-    if (success) {
-      toast.success(wasPinned ? "Conversation unpinned" : "Conversation pinned");
-      // Ensure server truth is reflected (prevents mobile-only weirdness)
-      await loadConversations({ showLoading: false, replace: true });
-      setSelectedMessageId(conversationId);
-    } else {
+    try {
+      const success = await updateConversation(phone, { isPinned: nextPinned });
+      console.log("[handlePin] API result:", success);
+      if (success) {
+        toast.success(wasPinned ? "Conversation unpinned" : "Conversation pinned");
+        // Ensure server truth is reflected (prevents mobile-only weirdness)
+        await loadConversations({ showLoading: false, replace: true });
+        setSelectedMessageId(conversationId);
+      } else {
+        // Revert optimistic update
+        setMessages(prev => prev.map(m =>
+          m.id === conversationId ? { ...m, isPinned: wasPinned } : m
+        ));
+        toast.error("Failed to update pin status");
+      }
+    } catch (err) {
+      console.error("[handlePin] Error:", err);
       // Revert optimistic update
       setMessages(prev => prev.map(m =>
         m.id === conversationId ? { ...m, isPinned: wasPinned } : m
       ));
       toast.error("Failed to update pin status");
     }
-    setShowMoreMenu(false);
   };
 
   const handleRemovePriority = async () => {

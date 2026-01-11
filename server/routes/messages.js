@@ -571,6 +571,8 @@ router.put("/conversation/:contactPhone", async (req, res) => {
     const { contactPhone } = req.params;
     const { isPinned, isMuted, isArchived, isHeld, isBlocked, isPriority, priority, transferPrefs, language, contactName } = req.body;
 
+    console.log(`[PUT /conversation/${contactPhone}] body:`, JSON.stringify(req.body));
+
     const update = {};
     if (isPinned !== undefined) update.isPinned = isPinned;
     if (isMuted !== undefined) update.isMuted = isMuted;
@@ -590,27 +592,34 @@ router.put("/conversation/:contactPhone", async (req, res) => {
     if (language !== undefined) update.language = language;
     if (contactName !== undefined) update.contactName = contactName;
 
+    console.log(`[PUT /conversation/${contactPhone}] update object:`, JSON.stringify(update));
+
     // Match existing conversations across common phone formatting variants (+1 vs none)
     const phoneVariations = buildPhoneCandidates(contactPhone);
+    console.log(`[PUT /conversation/${contactPhone}] phoneVariations:`, phoneVariations);
 
     const existing = await Conversation.findOne({
       userId: req.user._id,
       contactPhone: { $in: phoneVariations },
-    }).select("_id contactPhone");
+    }).select("_id contactPhone isPinned");
+
+    console.log(`[PUT /conversation/${contactPhone}] existing:`, existing ? { _id: existing._id, contactPhone: existing.contactPhone, isPinned: existing.isPinned } : null);
 
     let conversation;
     if (existing?._id) {
       conversation = await Conversation.findOneAndUpdate(
         { _id: existing._id, userId: req.user._id },
-        update,
+        { $set: update },
         { new: true }
       );
+      console.log(`[PUT /conversation/${contactPhone}] updated conversation isPinned:`, conversation?.isPinned);
     } else {
       conversation = await Conversation.create({
         userId: req.user._id,
         contactPhone,
         ...update,
       });
+      console.log(`[PUT /conversation/${contactPhone}] created new conversation`);
     }
 
     // Also update Contact's isBlocked status so calls get blocked too
