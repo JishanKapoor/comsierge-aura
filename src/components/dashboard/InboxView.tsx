@@ -95,7 +95,7 @@ type ChatBubble = {
   attachments?: MessageAttachment[]; // MMS image attachments
 };
 
-type FilterType = "all" | "unread" | "priority" | "held" | "blocked" | "transferred";
+type FilterType = "all" | "unread" | "priority" | "held" | "blocked";
 
 type TransferPrefs = {
   to: string;
@@ -2701,7 +2701,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           {([
             { id: "all", label: "All" },
             { id: "priority", label: "Priority" },
-            { id: "transferred", label: "Transferred" },
             { id: "held", label: "Held" },
             { id: "blocked", label: "Blocked" },
           ] as const).map((tab) => (
@@ -3494,7 +3493,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           {bubble.wasTransferred && !isOutgoing && (
                             <div className="flex items-center gap-1 mb-1 text-purple-600">
                               <ArrowRightLeft className="w-3 h-3" />
-                              <span className="text-[10px] font-medium">Transferred{bubble.transferredTo ? ` to ${bubble.transferredTo}` : ""}</span>
+                              <span className="text-[10px] font-medium">
+                                Transferred via active rule
+                                {bubble.transferredTo && (
+                                  <span className="text-purple-500"> → {(() => {
+                                    const contact = contacts?.find(c => 
+                                      c.phone === bubble.transferredTo || 
+                                      c.phone?.replace(/\D/g, '') === bubble.transferredTo?.replace(/\D/g, '')
+                                    );
+                                    return contact?.name || bubble.transferredTo;
+                                  })()}</span>
+                                )}
+                              </span>
                             </div>
                           )}
                           {/* Show forwarded indicator for incoming messages */}
