@@ -335,6 +335,11 @@ const VoiceNotePlayer = ({ url, isOutgoing }: { url: string; isOutgoing: boolean
 };
 
 const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) => {
+  // Mobile debugging
+  useEffect(() => {
+    console.log("InboxView mounted/updated - version [Mobile-Fix-3]");
+  }, []);
+
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
@@ -2813,6 +2818,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               const togglePinFromRow = async (e: React.MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
+                
+                // Debug logs for mobile troubleshooting
+                console.log("[togglePinFromRow] Clicked pin/unpin for:", msg.contactPhone);
+                
                 const wasPinned = isPinned;
                 const nextPinned = !wasPinned;
 
@@ -2821,16 +2830,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   m.id === msg.id ? { ...m, isPinned: nextPinned } : m
                 ));
 
-                const success = await updateConversation(msg.contactPhone, { isPinned: nextPinned });
-                if (success) {
-                  toast.success(wasPinned ? "Unpinned" : "Pinned");
-                  await loadConversations({ showLoading: false, replace: true });
-                } else {
+                try {
+                  const success = await updateConversation(msg.contactPhone, { isPinned: nextPinned });
+                  
+                  console.log("[togglePinFromRow] API Success:", success);
+                  
+                  if (success) {
+                    toast.success(wasPinned ? "Unpinned" : "Pinned");
+                    // Force refresh to ensure sort order persists
+                    await loadConversations({ showLoading: false, replace: true });
+                  } else {
+                    console.warn("[togglePinFromRow] Update failed (success=false)");
+                    // Revert
+                    setMessages(prev => prev.map(m =>
+                      m.id === msg.id ? { ...m, isPinned: wasPinned } : m
+                    ));
+                    toast.error("Failed to update pin status");
+                  }
+                } catch (err) {
+                  console.error("[togglePinFromRow] Exception:", err);
                   // Revert
                   setMessages(prev => prev.map(m =>
                     m.id === msg.id ? { ...m, isPinned: wasPinned } : m
                   ));
-                  toast.error("Failed to update pin status");
+                  toast.error("Connection error while pinning");
                 }
               };
 
@@ -2905,18 +2928,18 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" />
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-xs text-gray-500 min-w-0 truncate">{msg.timestamp}</span>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <span className="text-xs text-gray-500 truncate max-w-[80px] text-right">{msg.timestamp}</span>
                         <button
                           onClick={togglePinFromRow}
                           className={cn(
-                            "p-1 rounded hover:bg-gray-100 transition-colors shrink-0",
+                            "p-2 rounded-full hover:bg-gray-100 transition-colors shrink-0 touch-manipulation",
                             isPinned ? "text-amber-500" : "text-gray-300 hover:text-gray-500"
                           )}
                           aria-label={isPinned ? "Unpin" : "Pin"}
                           title={isPinned ? "Unpin" : "Pin"}
                         >
-                          <Pin className="w-3.5 h-3.5" />
+                          <Pin className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
