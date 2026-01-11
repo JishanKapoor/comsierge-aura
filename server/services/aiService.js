@@ -3,9 +3,9 @@ import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages
 import { StateGraph, END, START } from "@langchain/langgraph";
 import { z } from "zod";
 
-// Initialize OpenAI with GPT-4o for complex analysis
+// Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
-  modelName: "gpt-4o",
+  modelName: "gpt-5.2",
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });

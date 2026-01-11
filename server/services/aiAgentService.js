@@ -7,9 +7,9 @@ import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 
-// Initialize OpenAI with GPT-4o for complex analysis
+// Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
-  modelName: "gpt-4o",
+  modelName: "gpt-5.2",
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
@@ -552,55 +552,53 @@ const summarizeConversationTool = tool(
     try {
       console.log("Summarizing conversation:", { userId, contactPhone, contactName });
       
-      // Find the conversation
-      let conversation;
-      if (contactPhone) {
-        conversation = await Conversation.findOne({ userId, contactPhone });
-      } else if (contactName) {
-        conversation = await Conversation.findOne({ 
-          userId, 
-          contactName: { $regex: contactName, $options: "i" } 
+      // If we have a name but no phone, look up the contact first
+      let resolvedPhone = contactPhone;
+      let resolvedName = contactName;
+      
+      if (contactName && !contactPhone) {
+        const contact = await Contact.findOne({
+          userId,
+          name: { $regex: contactName, $options: "i" }
         });
+        if (contact) {
+          resolvedPhone = contact.phone;
+          resolvedName = contact.name;
+          console.log("Found contact:", resolvedName, resolvedPhone);
+        }
       }
       
-      if (!conversation) {
-        return `Could not find conversation with ${contactName || contactPhone}.`;
+      if (!resolvedPhone) {
+        return `Could not find contact "${contactName}". Try using their exact name.`;
       }
       
-      // Get recent messages
-      // Note: Message model might not have conversationId populated correctly in all cases, 
-      // or it might be a string vs ObjectId issue.
-      // Let's try finding by userId and contactPhone as a fallback if conversationId yields nothing.
+      // Normalize phone for matching
+      const phoneDigits = resolvedPhone.replace(/\D/g, '');
+      const phoneRegex = new RegExp(phoneDigits.slice(-10));
       
-      let messages = await Message.find({
-        conversationId: conversation._id
+      // Get messages directly by phone
+      const messages = await Message.find({
+        userId,
+        contactPhone: { $regex: phoneRegex }
       }).sort({ createdAt: -1 }).limit(30);
       
       if (messages.length === 0) {
-        console.log("No messages found by conversationId, trying by phone...");
-        messages = await Message.find({
-          userId,
-          contactPhone: conversation.contactPhone
-        }).sort({ createdAt: -1 }).limit(30);
-      }
-      
-      if (messages.length === 0) {
-        return "No messages found in this conversation.";
+        return `No messages found with ${resolvedName || resolvedPhone}.`;
       }
       
       // Build conversation text for summarization
       const msgText = messages.reverse().map(m => {
-        const dir = m.direction === 'outgoing' ? 'You' : (contactName || contactPhone);
+        const dir = m.direction === 'outgoing' ? 'You' : (resolvedName || resolvedPhone);
         return `${dir}: ${m.body}`;
       }).join("\n");
       
       // Use LLM to summarize
       const summaryResponse = await llm.invoke([
-        new SystemMessage("You are a helpful assistant. Summarize the following conversation concisely, highlighting key points, any action items, and any scheduled meetings or appointments. IMPORTANT: Do NOT use any markdown formatting (no ** or * or #), do NOT use emojis. Use plain text only with simple line breaks for structure."),
+        new SystemMessage("Summarize this conversation concisely. Highlight key points, action items, and any scheduled meetings. Use plain text only - NO markdown, NO emojis, NO asterisks."),
         new HumanMessage(msgText)
       ]);
       
-      return `Conversation Summary with ${contactName || contactPhone}:\n\n${summaryResponse.content}`;
+      return `Summary with ${resolvedName || resolvedPhone}:\n${summaryResponse.content}`;
     } catch (error) {
       console.error("Summarize conversation error:", error);
       return `Error summarizing: ${error.message}`;
@@ -608,11 +606,11 @@ const summarizeConversationTool = tool(
   },
   {
     name: "summarize_conversation",
-    description: "Summarize the conversation with current or specified contact. Use when user asks 'summarize', 'what did we talk about', 'give me a summary'.",
+    description: "Summarize chat history with a contact. Use for: 'summarize my chats from X', 'what did X and I talk about', 'summary with X'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      contactPhone: z.string().optional().describe("Phone of contact to summarize"),
-      contactName: z.string().optional().describe("Name of contact to summarize"),
+      contactPhone: z.string().optional().describe("Phone of contact"),
+      contactName: z.string().optional().describe("Name of contact to summarize chats with"),
     }),
   }
 );
@@ -1139,7 +1137,7 @@ const fullAgentToolMap = {
 
 // Full Agent LLM
 const fullAgentLLM = new ChatOpenAI({
-  modelName: "gpt-4o",
+  modelName: "gpt-5.2",
   temperature: 0.3,
   openAIApiKey: process.env.OPENAI_API_KEY,
 }).bindTools(fullAgentTools);
@@ -1156,32 +1154,34 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
 
 CRITICAL FORMATTING RULES:
 - NEVER use emojis
-- NEVER use markdown (no **, no ##, no bullet points with *)
+- NEVER use markdown (no **, no ##, no *)
 - Use plain text only
 - Be concise and direct
-- Use dashes (-) for lists
 
 AVAILABLE TOOLS:
-1. list_contacts - Show contacts (filter: all/favorites/blocked)
-2. search_contacts - Find a contact by name/phone
-3. update_contact - Rename a contact (provide currentName and newName)
-4. block_contact - Block a contact
-5. unblock_contact - Unblock a contact
-6. create_transfer_rule - Forward calls/messages to someone else
-7. create_auto_reply - Set automatic replies
-8. mark_priority - Mark contact as high priority
-9. get_rules - Show all active rules
-10. delete_rule - Remove a rule
-11. search_messages - Search message content
-12. make_call - Initiate a call
-13. send_message - Send SMS
+- list_contacts: Show all contacts
+- search_contacts: Find contact by name
+- update_contact: Rename contact (currentName + newName)
+- block_contact / unblock_contact: Block/unblock
+- create_transfer_rule: Forward calls/messages to another person
+- create_auto_reply: Set auto-reply message
+- mark_priority: Mark as high priority
+- get_rules: List active rules
+- delete_rule: Remove a rule
+- search_messages: Search ALL messages for keywords like "meeting", "emergency", "appointment"
+- summarize_conversation: Summarize chat history WITH a specific contact (use contactName param)
+- make_call: Call someone
+- send_message: Send SMS
 
-BEHAVIOR:
-- Execute tool calls immediately when the intent is clear
-- For "change X to Y" or "rename X to Y": use update_contact with currentName=X, newName=Y
-- For "forward calls from X to Y": use create_transfer_rule
-- If unsure, ask ONE clarifying question
-- Keep responses under 2 sentences unless listing data
+IMPORTANT - CHOOSING THE RIGHT TOOL:
+- "do I have any meetings" -> search_messages with query="meeting"
+- "any emergency messages" -> search_messages with query="emergency"  
+- "summarize my chats from jk" -> summarize_conversation with contactName="jk"
+- "what did jk say" -> summarize_conversation with contactName="jk"
+- "change jk to john" -> update_contact with currentName="jk", newName="john"
+- "forward calls from jk to bob" -> create_transfer_rule
+
+Be direct. Execute tools immediately. No confirmation needed for read operations.
 
 User ID: ${userId}`;
 
