@@ -2616,7 +2616,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         </div>
 
         {/* Filter tabs */}
-        <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-200">
+        <div className="flex items-center gap-1 px-3 py-2 border-b border-gray-200 overflow-x-auto">
           {([
             { id: "all", label: "All" },
             { id: "priority", label: "Priority" },
@@ -2628,7 +2628,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               key={tab.id}
               onClick={() => startTransition(() => setActiveFilter(tab.id))}
               className={cn(
-                "px-2.5 py-1 text-xs rounded transition-colors",
+                "px-2 py-1 text-xs rounded transition-colors whitespace-nowrap shrink-0",
                 activeFilter === tab.id
                   ? "bg-gray-100 text-gray-800 font-medium"
                   : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"

@@ -590,15 +590,31 @@ router.put("/conversation/:contactPhone", async (req, res) => {
     if (language !== undefined) update.language = language;
     if (contactName !== undefined) update.contactName = contactName;
 
-    const conversation = await Conversation.findOneAndUpdate(
-      { userId: req.user._id, contactPhone },
-      update,
-      { new: true, upsert: true }
-    );
+    // Match existing conversations across common phone formatting variants (+1 vs none)
+    const phoneVariations = buildPhoneCandidates(contactPhone);
+
+    const existing = await Conversation.findOne({
+      userId: req.user._id,
+      contactPhone: { $in: phoneVariations },
+    }).select("_id contactPhone");
+
+    let conversation;
+    if (existing?._id) {
+      conversation = await Conversation.findOneAndUpdate(
+        { _id: existing._id, userId: req.user._id },
+        update,
+        { new: true }
+      );
+    } else {
+      conversation = await Conversation.create({
+        userId: req.user._id,
+        contactPhone,
+        ...update,
+      });
+    }
 
     // Also update Contact's isBlocked status so calls get blocked too
     if (isBlocked !== undefined) {
-      const phoneVariations = buildPhoneCandidates(contactPhone);
       await Contact.updateMany(
         { userId: req.user._id, phone: { $in: phoneVariations } },
         { isBlocked }
