@@ -926,11 +926,6 @@ export async function chatWithAI(userId, message, history = []) {
 // ==================== FULL AGENT FOR RULES TAB ====================
 // This agent can do EVERYTHING - call, message, create rules, search, etc.
 
-import TwilioAccount from "../models/TwilioAccount.js";
-import User from "../models/User.js";
-
-import mongoose from "mongoose";
-
 // Tool: Make a phone call
 const makeCallTool = tool(
   async ({ userId, contactName, contactPhone }) => {
