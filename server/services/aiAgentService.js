@@ -1,5 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import mongoose from "mongoose";
@@ -996,7 +996,7 @@ const makeCallTool = tool(
         contactName: resolvedName || phone,
         contactPhone: phone,
         fromNumber: user.phoneNumber,
-        message: `Ready to call ${resolvedName || phone}. Choose your calling method above.`
+        message: `Ready to call ${resolvedName || phone}. Choose a calling method: Browser Call (VoIP) or Call via My Phone.`
       });
     } catch (error) {
       console.error("Make call error:", error);
@@ -1843,8 +1843,8 @@ User ID: ${userId}`;
 
     const messages = [
       new SystemMessage(systemPrompt),
-      ...chatHistory.map(h => h.role === "user" ? new HumanMessage(h.text) : new SystemMessage(h.text)),
-      new HumanMessage(message)
+      ...chatHistory.map((h) => (h.role === "user" ? new HumanMessage(h.text) : new AIMessage(h.text))),
+      new HumanMessage(message),
     ];
 
     const response = await fullAgentLLM.invoke(messages);

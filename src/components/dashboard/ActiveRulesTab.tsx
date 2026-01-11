@@ -29,6 +29,7 @@ import {
 interface ActiveRulesTabProps {
   externalRules?: ActiveRule[];
   onRulesChange?: (rules: ActiveRule[]) => void;
+  onStartCall?: (call: { number: string; name?: string }) => void;
 }
 
 type RuleType = "auto-reply" | "forward" | "block" | "priority" | "transfer" | "custom" | "message-notify";
@@ -58,7 +59,7 @@ const AI_EXAMPLES = [
   "Mute group messages, only notify direct ones",
 ];
 
-const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) => {
+const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRulesTabProps) => {
   const [rules, setRules] = useState<ActiveRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [aiDraft, setAiDraft] = useState("");
@@ -180,10 +181,23 @@ const ActiveRulesTab = ({ externalRules, onRulesChange }: ActiveRulesTabProps) =
           "Content-Type": "application/json",
           Authorization: token ? `Bearer ${token}` : "",
         },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          chatHistory: [...chat, userMsg]
+            .slice(-12)
+            .map((m) => ({ role: m.role, text: m.text })),
+        }),
       });
 
       const data = await response.json();
+
+      // If the agent returned an action, handle it.
+      if (data?.action?.action === "call" && data?.action?.confirm && data?.action?.contactPhone) {
+        onStartCall?.({
+          number: data.action.contactPhone,
+          name: data.action.contactName,
+        });
+      }
       
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),

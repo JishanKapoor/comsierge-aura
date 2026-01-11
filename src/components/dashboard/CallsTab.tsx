@@ -52,9 +52,11 @@ interface CallsTabProps {
   selectedContactPhone?: string | null;
   onClearSelection?: () => void;
   isActive?: boolean;
+  initialCall?: { number: string; name?: string } | null;
+  onClearInitialCall?: () => void;
 }
 
-const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: CallsTabProps) => {
+const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, initialCall, onClearInitialCall }: CallsTabProps) => {
   const { user } = useAuth();
   const [twilioNumber, setTwilioNumber] = useState<string | null>(null);
   
@@ -307,6 +309,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true }: C
       onClearSelection?.();
     }
   }, [selectedContactPhone, contacts]);
+
+  // If another tab (like Rules AI) requests a call, open the call mode dialog here.
+  useEffect(() => {
+    if (!isActive) return;
+    if (!initialCall?.number) return;
+    setPendingCall({ number: initialCall.number, name: initialCall.name });
+    setShowCallModeDialog(true);
+    onClearInitialCall?.();
+  }, [initialCall, isActive]);
 
   useEffect(() => {
     if (!activeCall) return;

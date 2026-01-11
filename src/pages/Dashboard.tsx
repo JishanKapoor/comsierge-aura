@@ -38,6 +38,7 @@ const Dashboard = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("inbox");
   const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
+  const [pendingCallRequest, setPendingCallRequest] = useState<{ number: string; name?: string } | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   
@@ -234,7 +235,13 @@ const Dashboard = () => {
       case "calls":
         return (
           <div key="calls" style={paddedStyle}>
-            <CallsTab selectedContactPhone={selectedContactPhone} onClearSelection={() => setSelectedContactPhone(null)} isActive={isActive} />
+            <CallsTab
+              selectedContactPhone={selectedContactPhone}
+              onClearSelection={() => setSelectedContactPhone(null)}
+              isActive={isActive}
+              initialCall={pendingCallRequest}
+              onClearInitialCall={() => setPendingCallRequest(null)}
+            />
           </div>
         );
       case "contacts":
@@ -246,7 +253,12 @@ const Dashboard = () => {
       case "rules":
         return (
           <div key="rules" style={paddedStyle}>
-            <ActiveRulesTab />
+            <ActiveRulesTab
+              onStartCall={(call) => {
+                setPendingCallRequest(call);
+                setActiveTab("calls");
+              }}
+            />
           </div>
         );
       case "support":
