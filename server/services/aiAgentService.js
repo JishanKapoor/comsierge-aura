@@ -2,12 +2,14 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
+import mongoose from "mongoose";
 import Rule from "../models/Rule.js";
 import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Reminder from "../models/Reminder.js";
 import User from "../models/User.js";
+import TwilioAccount from "../models/TwilioAccount.js";
 
 // Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
