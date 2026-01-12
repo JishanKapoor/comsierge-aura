@@ -756,6 +756,9 @@ const deleteRuleTool = tool(
     try {
       console.log("Deleting rule:", { userId, ruleDescription, ruleId, ruleType, targetContact });
       
+      // Escape special regex characters helper
+      const escapeRegex = (str) => str ? str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+      
       // Try multiple matching strategies
       let result = null;
       
@@ -764,23 +767,26 @@ const deleteRuleTool = tool(
         result = await Rule.findOneAndDelete({ userId, _id: ruleId });
       }
       
-      // 2. Try by description regex
+      // 2. Try by description regex (escaped)
       if (!result && ruleDescription) {
+        const escapedDesc = escapeRegex(ruleDescription);
         result = await Rule.findOneAndDelete({
           userId,
-          rule: { $regex: ruleDescription.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: "i" }
+          rule: { $regex: escapedDesc, $options: "i" }
         });
       }
       
-      // 3. Try by type + target contact
+      // 3. Try by type + target contact (escaped)
       if (!result && (ruleType || targetContact)) {
         const query = { userId, active: true };
         if (ruleType) query.type = ruleType;
         if (targetContact) {
+          const escapedTarget = escapeRegex(targetContact);
           query.$or = [
-            { "transferDetails.contactName": { $regex: targetContact, $options: "i" } },
-            { "conditions.sourceContactName": { $regex: targetContact, $options: "i" } },
-            { rule: { $regex: targetContact, $options: "i" } }
+            { "transferDetails.contactName": { $regex: escapedTarget, $options: "i" } },
+            { "conditions.sourceContactName": { $regex: escapedTarget, $options: "i" } },
+            { "conditions.sourceContactPhone": { $regex: escapedTarget, $options: "i" } },
+            { rule: { $regex: escapedTarget, $options: "i" } }
           ];
         }
         result = await Rule.findOneAndDelete(query);
@@ -796,6 +802,15 @@ const deleteRuleTool = tool(
         } else if (lower.includes("auto-reply") || lower.includes("auto reply")) {
           result = await Rule.findOneAndDelete({ userId, type: "auto-reply", active: true });
         }
+      }
+      
+      // 5. Last resort - if user says "turn that off" or similar, delete most recent active rule
+      if (!result && ruleDescription && (
+        ruleDescription.toLowerCase().includes("that") || 
+        ruleDescription.toLowerCase().includes("it") ||
+        ruleDescription.toLowerCase().includes("off")
+      )) {
+        result = await Rule.findOneAndDelete({ userId, active: true }, { sort: { createdAt: -1 } });
       }
       
       if (result) {
