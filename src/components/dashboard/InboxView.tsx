@@ -4153,7 +4153,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 {(transferMode === "messages" || transferMode === "both") && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
-                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5">
+                    <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
                       <button
                         type="button"
                         onClick={() => setTransferType("all")}
