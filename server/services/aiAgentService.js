@@ -118,36 +118,51 @@ function parseNaturalTime(timeStr, referenceDate = new Date()) {
   return null;
 }
 
-// Resolve contact by name or phone
-async function resolveContact(userId, nameOrPhone) {
+// AI-powered contact resolution - no regex!
+async function resolveContactWithAI(userId, nameOrPhone) {
   if (!nameOrPhone) return null;
   
-  // Try by name first (exact, then partial)
-  let contact = await Contact.findOne({
-    userId,
-    name: { $regex: `^${nameOrPhone}$`, $options: "i" }
-  });
+  // Get all contacts for this user
+  const allContacts = await Contact.find({ userId }).limit(500);
   
-  if (!contact) {
-    contact = await Contact.findOne({
-      userId,
-      name: { $regex: nameOrPhone, $options: "i" }
-    });
+  if (allContacts.length === 0) return null;
+  
+  // If it looks like a phone number (mostly digits), try direct match first
+  const digits = nameOrPhone.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const phoneMatch = allContacts.find(c => 
+      c.phone && c.phone.replace(/\D/g, '').includes(digits.slice(-10))
+    );
+    if (phoneMatch) return phoneMatch;
   }
   
-  // Try by phone
-  if (!contact) {
-    const digits = nameOrPhone.replace(/\D/g, '');
-    if (digits.length >= 7) {
-      contact = await Contact.findOne({
-        userId,
-        phone: { $regex: digits.slice(-10) }
-      });
-    }
-  }
+  // Use AI to find the best match
+  const contactList = allContacts.map(c => `${c.name} (${c.phone})`).join('\n');
   
-  return contact;
+  const matchResponse = await llm.invoke([
+    new SystemMessage(`You are matching a user's input to their contact list.
+Find the contact that best matches the input. Return ONLY the exact name from the list, nothing else.
+If no good match exists, return "NO_MATCH".
+Be flexible with nicknames, typos, partial names (e.g. "jk" matches "JK F", "mom" matches "Mom", "john" matches "John Smith").`),
+    new HumanMessage(`Input: "${nameOrPhone}"
+
+Contact list:
+${contactList}
+
+Best matching contact name:`)
+  ]);
+  
+  const matchedName = matchResponse.content.trim();
+  
+  if (matchedName === "NO_MATCH") return null;
+  
+  // Find the contact with that name
+  return allContacts.find(c => c.name === matchedName) || 
+         allContacts.find(c => c.name.toLowerCase() === matchedName.toLowerCase());
 }
+
+// Alias for backward compatibility
+const resolveContact = resolveContactWithAI;
 
 // ==================== TOOLS ====================
 
@@ -162,19 +177,8 @@ const createTransferRuleTool = tool(
       let resolvedName = targetName;
       
       if (!targetPhone || targetPhone === "TBD") {
-        // Try exact match first
-        let targetContact = await Contact.findOne({
-          userId,
-          name: { $regex: `^${targetName}$`, $options: "i" }
-        });
-        
-        // If not found, try partial match
-        if (!targetContact) {
-           targetContact = await Contact.findOne({
-            userId,
-            name: { $regex: targetName, $options: "i" }
-          });
-        }
+        // Use AI to find the contact
+        const targetContact = await resolveContactWithAI(userId, targetName);
         
         if (targetContact) {
           resolvedPhone = targetContact.phone;
@@ -192,11 +196,8 @@ const createTransferRuleTool = tool(
       let resolvedSourcePhone = sourcePhone;
       let resolvedSourceName = sourceContact;
       
-      if (!sourcePhone) {
-        const srcContact = await Contact.findOne({
-          userId,
-          name: { $regex: sourceContact, $options: "i" }
-        });
+      if (!sourcePhone && sourceContact) {
+        const srcContact = await resolveContactWithAI(userId, sourceContact);
         if (srcContact) {
           resolvedSourcePhone = srcContact.phone;
           resolvedSourceName = srcContact.name;
@@ -290,12 +291,18 @@ const blockContactTool = tool(
 
       // Also set isBlocked on the conversation so it takes effect immediately
       if (sourcePhone) {
-        const normalizedPhone = sourcePhone.replace(/\D/g, '');
-        await Conversation.updateMany(
-          { userId, contactPhone: { $regex: normalizedPhone } },
-          { isBlocked: true }
-        );
-        console.log("Updated conversation isBlocked for phone:", normalizedPhone);
+        const normalizedPhone = sourcePhone.replace(/\D/g, '').slice(-10);
+        // Find all conversations and use AI to match phone numbers
+        const allConvos = await Conversation.find({ userId });
+        const matchingConvos = allConvos.filter(c => {
+          const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+          return convoDigits === normalizedPhone;
+        });
+        for (const convo of matchingConvos) {
+          convo.isBlocked = true;
+          await convo.save();
+        }
+        console.log("Updated conversation isBlocked for phone:", normalizedPhone, "count:", matchingConvos.length);
       }
 
       return `Done. Blocked ${sourceContact}. They won't be able to reach you.`;
@@ -334,12 +341,18 @@ const unblockContactTool = tool(
 
       // Set isBlocked to false on the conversation
       if (sourcePhone) {
-        const normalizedPhone = sourcePhone.replace(/\D/g, '');
-        await Conversation.updateMany(
-          { userId, contactPhone: { $regex: normalizedPhone } },
-          { isBlocked: false }
-        );
-        console.log("Updated conversation isBlocked=false for phone:", normalizedPhone);
+        const normalizedPhone = sourcePhone.replace(/\D/g, '').slice(-10);
+        // Find all conversations and match phone numbers directly
+        const allConvos = await Conversation.find({ userId });
+        const matchingConvos = allConvos.filter(c => {
+          const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+          return convoDigits === normalizedPhone;
+        });
+        for (const convo of matchingConvos) {
+          convo.isBlocked = false;
+          await convo.save();
+        }
+        console.log("Updated conversation isBlocked=false for phone:", normalizedPhone, "count:", matchingConvos.length);
       }
 
       return `Done. Unblocked ${sourceContact}. They can now message you again.`;
@@ -365,29 +378,15 @@ const updateContactTool = tool(
     try {
       console.log("Updating contact:", { userId, currentName, currentPhone, newName });
       
-      // Find contact by name OR phone
+      // Find contact using AI matching
       let contact = null;
       
       if (currentName) {
-        contact = await Contact.findOne({ 
-          userId, 
-          name: { $regex: `^${currentName}$`, $options: "i" }
-        });
-        // Try partial match if exact didn't work
-        if (!contact) {
-          contact = await Contact.findOne({ 
-            userId, 
-            name: { $regex: currentName, $options: "i" }
-          });
-        }
+        contact = await resolveContactWithAI(userId, currentName);
       }
       
       if (!contact && currentPhone) {
-        const normalizedPhone = currentPhone.replace(/\D/g, '');
-        contact = await Contact.findOne({ 
-          userId, 
-          phone: { $regex: normalizedPhone } 
-        });
+        contact = await resolveContactWithAI(userId, currentPhone);
       }
 
       if (!contact) {
@@ -399,28 +398,44 @@ const updateContactTool = tool(
       await contact.save();
 
       // Update Conversation model to reflect the new name immediately
-      const normalizedPhone = contact.phone.replace(/\D/g, '');
-      await Conversation.updateMany(
-        { userId, contactPhone: { $regex: normalizedPhone } },
-        { contactName: newName }
-      );
+      const normalizedPhone = contact.phone.replace(/\D/g, '').slice(-10);
       
-      // Update Message contactName
-      await Message.updateMany(
-        { userId, contactPhone: { $regex: normalizedPhone } },
-        { contactName: newName }
-      );
+      // Update conversations using direct matching
+      const allConvos = await Conversation.find({ userId });
+      for (const convo of allConvos) {
+        const convoDigits = (convo.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (convoDigits === normalizedPhone) {
+          convo.contactName = newName;
+          await convo.save();
+        }
+      }
+      
+      // Update Messages using direct matching
+      const allMessages = await Message.find({ userId });
+      for (const msg of allMessages) {
+        const msgDigits = (msg.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (msgDigits === normalizedPhone) {
+          msg.contactName = newName;
+          await msg.save();
+        }
+      }
       
       // Update transfer rules that reference this contact
       const Rule = (await import("../models/Rule.js")).default;
-      await Rule.updateMany(
-        { userId, "transferDetails.contactPhone": { $regex: normalizedPhone } },
-        { $set: { "transferDetails.contactName": newName } }
-      );
-      await Rule.updateMany(
-        { userId, "conditions.sourceContactPhone": { $regex: normalizedPhone } },
-        { $set: { "conditions.sourceContactName": newName } }
-      );
+      const allRules = await Rule.find({ userId });
+      for (const rule of allRules) {
+        const rulePhone = (rule.transferDetails?.contactPhone || '').replace(/\D/g, '').slice(-10);
+        const sourcePhone = (rule.conditions?.sourceContactPhone || '').replace(/\D/g, '').slice(-10);
+        if (rulePhone === normalizedPhone || sourcePhone === normalizedPhone) {
+          if (rule.transferDetails?.contactPhone && rulePhone === normalizedPhone) {
+            rule.transferDetails.contactName = newName;
+          }
+          if (rule.conditions?.sourceContactPhone && sourcePhone === normalizedPhone) {
+            rule.conditions.sourceContactName = newName;
+          }
+          await rule.save();
+        }
+      }
 
       return `Done. Renamed "${oldName}" to "${newName}".`;
     } catch (error) {
@@ -440,19 +455,31 @@ const updateContactTool = tool(
   }
 );
 
-// Tool: Search Contacts
+// Tool: Search Contacts (AI-powered)
 const searchContactsTool = tool(
   async ({ userId, query }) => {
     try {
-      const contacts = await Contact.find({
-        userId,
-        $or: [
-          { name: { $regex: query, $options: "i" } },
-          { phone: { $regex: query.replace(/\D/g, '') } },
-        ]
-      }).limit(5);
-      if (contacts.length === 0) return "No contacts found.";
-      return contacts.map(c => `${c.name}: ${c.phone}`).join(", ");
+      // Get all contacts
+      const allContacts = await Contact.find({ userId }).limit(200);
+      
+      if (allContacts.length === 0) return "No contacts found.";
+      
+      // Use AI to find matching contacts
+      const contactList = allContacts.map(c => `${c.name}: ${c.phone}`).join('\n');
+      
+      const matchResponse = await llm.invoke([
+        new SystemMessage(`Find contacts matching the user's search query. Return up to 5 matching contacts in the format "Name: Phone", one per line.
+Be flexible - match partial names, nicknames, phone number fragments.
+If no matches, return "No contacts found."`),
+        new HumanMessage(`Search query: "${query}"
+
+All contacts:
+${contactList}
+
+Matching contacts:`)
+      ]);
+      
+      return matchResponse.content.trim();
     } catch (error) {
       return `Error: ${error.message}`;
     }
@@ -494,7 +521,7 @@ const markPriorityTool = tool(
   }
 );
 
-// Tool: Get Last Message
+// Tool: Get Last Message (AI-powered contact matching)
 const getLastMessageTool = tool(
   async ({ userId, contactPhone, contactName }) => {
     try {
@@ -502,10 +529,7 @@ const getLastMessageTool = tool(
       let resolvedName = contactName;
 
       if (contactName && !contactPhone) {
-        const contact = await Contact.findOne({
-          userId,
-          name: { $regex: contactName, $options: "i" },
-        });
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) {
           resolvedPhone = contact.phone;
           resolvedName = contact.name;
@@ -516,13 +540,12 @@ const getLastMessageTool = tool(
         return `Could not find contact "${contactName}". Try using their exact name or provide a phone number.`;
       }
 
+      // Get last message - use phone digit matching (simple string contains, not regex)
       const phoneDigits = resolvedPhone.replace(/\D/g, "").slice(-10);
-      const phoneRegex = new RegExp(phoneDigits);
-
-      const last = await Message.findOne({
-        userId,
-        contactPhone: { $regex: phoneRegex },
-      }).sort({ createdAt: -1 });
+      
+      // Find messages for this contact
+      const messages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(500);
+      const last = messages.find(m => m.contactPhone && m.contactPhone.replace(/\D/g, "").includes(phoneDigits));
 
       if (!last) {
         return `No messages found with ${resolvedName || resolvedPhone}.`;
@@ -555,7 +578,7 @@ const getLastMessageTool = tool(
   }
 );
 
-// Tool: Get Last Message FROM Contact (incoming only)
+// Tool: Get Last Message FROM Contact (incoming only, AI-powered)
 const getLastIncomingMessageTool = tool(
   async ({ userId, contactPhone, contactName }) => {
     try {
@@ -563,10 +586,7 @@ const getLastIncomingMessageTool = tool(
       let resolvedName = contactName;
 
       if (contactName && !contactPhone) {
-        const contact = await Contact.findOne({
-          userId,
-          name: { $regex: contactName, $options: "i" },
-        });
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) {
           resolvedPhone = contact.phone;
           resolvedName = contact.name;
@@ -578,14 +598,10 @@ const getLastIncomingMessageTool = tool(
       }
 
       const phoneDigits = resolvedPhone.replace(/\D/g, "").slice(-10);
-      const phoneRegex = new RegExp(phoneDigits);
 
       // Only get INCOMING messages (from them to you)
-      const last = await Message.findOne({
-        userId,
-        contactPhone: { $regex: phoneRegex },
-        direction: "incoming"
-      }).sort({ createdAt: -1 });
+      const messages = await Message.find({ userId, direction: "incoming" }).sort({ createdAt: -1 }).limit(500);
+      const last = messages.find(m => m.contactPhone && m.contactPhone.replace(/\D/g, "").includes(phoneDigits));
 
       if (!last) {
         return `No messages received FROM ${resolvedName || resolvedPhone}. They haven't texted you.`;
@@ -612,40 +628,48 @@ const getLastIncomingMessageTool = tool(
   }
 );
 
-// Tool: Search Messages
+// Tool: Search Messages (AI-powered semantic search)
 const searchMessagesTool = tool(
   async ({ userId, query, contactPhone }) => {
     try {
-      console.log("Searching messages for:", query);
+      console.log("AI searching messages for:", query);
       
-      // Build search criteria
-      const searchRegex = new RegExp(query, "i");
-
-      const filter = {
-        userId,
-        body: { $regex: searchRegex },
-      };
-
+      // Get recent messages
+      let messages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(200);
+      
+      // Filter by contact if specified
       if (contactPhone) {
-        const normalizedPhone = contactPhone.replace(/\D/g, "").slice(-10);
-        filter.contactPhone = { $regex: new RegExp(normalizedPhone) };
+        const phoneDigits = contactPhone.replace(/\D/g, "").slice(-10);
+        messages = messages.filter(m => m.contactPhone && m.contactPhone.replace(/\D/g, "").includes(phoneDigits));
       }
-
-      const messages = await Message.find(filter).sort({ createdAt: -1 }).limit(20);
       
       if (messages.length === 0) {
-        return `No messages found containing "${query}".`;
+        return "No messages found.";
       }
       
-      // Format results with direction
-      const results = messages.map(m => {
+      // Format messages for AI
+      const msgList = messages.map(m => {
         const contact = m.contactName || m.contactPhone || "Unknown";
         const date = new Date(m.createdAt).toLocaleDateString();
         const sender = m.direction === "outgoing" ? "You" : contact;
         return `[${date}] ${sender}: ${m.body}`;
-      });
+      }).join('\n');
       
-      return `Found ${messages.length} messages:\n${results.join("\n")}`;
+      // Use AI to find relevant messages
+      const searchResponse = await llm.invoke([
+        new SystemMessage(`Search through the user's messages and find ones relevant to their query.
+Return the matching messages in the same format they were given.
+If nothing matches, say "No messages found matching your search."
+Be smart - understand synonyms, context, and intent.`),
+        new HumanMessage(`Search query: "${query}"
+
+Messages:
+${msgList}
+
+Relevant messages:`)
+      ]);
+      
+      return searchResponse.content.trim();
     } catch (error) {
       console.error("Search messages error:", error);
       return `Error searching: ${error.message}`;
@@ -673,17 +697,23 @@ const searchMessagesByDateTool = tool(
       const end = endDate ? new Date(endDate) : new Date();
       end.setHours(23, 59, 59, 999); // End of day
       
-      const filter = {
+      // Get all messages in date range
+      let messages = await Message.find({
         userId,
         createdAt: { $gte: start, $lte: end },
-      };
+      }).sort({ createdAt: -1 }).limit(200);
 
-      if (contactPhone) {
+      // Filter by phone if provided
+      if (contactPhone && messages.length > 0) {
         const phoneDigits = contactPhone.replace(/\D/g, "").slice(-10);
-        filter.contactPhone = { $regex: new RegExp(phoneDigits) };
+        messages = messages.filter(m => {
+          const msgDigits = (m.contactPhone || '').replace(/\D/g, '').slice(-10);
+          return msgDigits === phoneDigits;
+        });
       }
-
-      const messages = await Message.find(filter).sort({ createdAt: -1 }).limit(50);
+      
+      // Limit to 50 after filtering
+      messages = messages.slice(0, 50);
       
       if (messages.length === 0) {
         return `No messages found between ${start.toLocaleDateString()} and ${end.toLocaleDateString()}.`;
@@ -824,21 +854,18 @@ Return the ID of the rule to delete:`)
   }
 );
 
-// Tool: Summarize Conversation
+// Tool: Summarize Conversation (AI-powered)
 const summarizeConversationTool = tool(
   async ({ userId, contactPhone, contactName }) => {
     try {
       console.log("Summarizing conversation:", { userId, contactPhone, contactName });
       
-      // If we have a name but no phone, look up the contact first
+      // If we have a name but no phone, use AI to find contact
       let resolvedPhone = contactPhone;
       let resolvedName = contactName;
       
       if (contactName && !contactPhone) {
-        const contact = await Contact.findOne({
-          userId,
-          name: { $regex: contactName, $options: "i" }
-        });
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) {
           resolvedPhone = contact.phone;
           resolvedName = contact.name;
@@ -850,15 +877,13 @@ const summarizeConversationTool = tool(
         return `Could not find contact "${contactName}". Try using their exact name.`;
       }
       
-      // Normalize phone for matching
-      const phoneDigits = resolvedPhone.replace(/\D/g, '');
-      const phoneRegex = new RegExp(phoneDigits.slice(-10));
+      // Get messages using phone digit matching
+      const phoneDigits = resolvedPhone.replace(/\D/g, '').slice(-10);
       
-      // Get messages directly by phone
-      const messages = await Message.find({
-        userId,
-        contactPhone: { $regex: phoneRegex }
-      }).sort({ createdAt: -1 }).limit(30);
+      const allMessages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(500);
+      const messages = allMessages.filter(m => 
+        m.contactPhone && m.contactPhone.replace(/\D/g, '').includes(phoneDigits)
+      ).slice(0, 30);
       
       if (messages.length === 0) {
         return `No messages found with ${resolvedName || resolvedPhone}.`;
@@ -1093,43 +1118,38 @@ const makeCallTool = tool(
     try {
       console.log("📞 Make call request:", { userId, contactName, contactPhone });
       
-      // Resolve contact phone if not provided
+      // Resolve contact phone using AI
       let phone = contactPhone;
       let resolvedName = contactName;
       
       if (!phone && contactName) {
-        // Convert userId to ObjectId for proper query
-        const userObjectId = new mongoose.Types.ObjectId(userId);
-        
-        // First try Contacts collection
-        let contact = await Contact.findOne({
-          userId: userObjectId,
-          name: { $regex: contactName, $options: "i" }
-        });
-        
-        // If not found, also try by phone field having the name
-        if (!contact) {
-          contact = await Contact.findOne({
-            userId: userObjectId,
-            phone: { $regex: contactName, $options: "i" }
-          });
-        }
+        // Use AI to find the contact
+        const contact = await resolveContactWithAI(userId, contactName);
         
         if (contact && contact.phone) {
           phone = contact.phone;
           resolvedName = contact.name || contactName;
-          console.log("Found in Contacts:", resolvedName, phone);
+          console.log("Found contact:", resolvedName, phone);
         } else {
-          // Try Conversations collection
-          const conversation = await Conversation.findOne({
-            userId: userObjectId,
-            contactName: { $regex: contactName, $options: "i" }
-          });
+          // Also try in Conversations
+          const allConvos = await Conversation.find({ userId }).limit(200);
           
-          if (conversation && conversation.contactPhone) {
-            phone = conversation.contactPhone;
-            resolvedName = conversation.contactName || contactName;
-            console.log("Found in Conversations:", resolvedName, phone);
+          if (allConvos.length > 0) {
+            const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+            
+            const matchResponse = await llm.invoke([
+              new SystemMessage(`Find the conversation that best matches the user's input. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+              new HumanMessage(`Input: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+            ]);
+            
+            const matchedPhone = matchResponse.content.trim();
+            if (matchedPhone !== "NO_MATCH") {
+              const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+              if (convo) {
+                phone = convo.contactPhone;
+                resolvedName = convo.contactName || contactName;
+              }
+            }
           }
         }
         
@@ -1184,28 +1204,29 @@ const sendMessageTool = tool(
       let name = contactName;
       
       if (!phone && contactName) {
-        // Convert userId to ObjectId
-        const userObjectId = new mongoose.Types.ObjectId(userId);
-        
-        // Try Contacts first
-        let contact = await Contact.findOne({
-          userId: userObjectId,
-          name: { $regex: contactName, $options: "i" }
-        });
+        // Use AI to find contact
+        const contact = await resolveContactWithAI(userId, contactName);
         
         if (contact && contact.phone) {
           phone = contact.phone;
           name = contact.name || contactName;
         } else {
-          // Try Conversations
-          const conversation = await Conversation.findOne({
-            userId: userObjectId,
-            contactName: { $regex: contactName, $options: "i" }
-          });
-          
-          if (conversation && conversation.contactPhone) {
-            phone = conversation.contactPhone;
-            name = conversation.contactName || contactName;
+          // Try Conversations with AI
+          const allConvos = await Conversation.find({ userId }).limit(200);
+          if (allConvos.length > 0) {
+            const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+            const matchResponse = await llm.invoke([
+              new SystemMessage(`Find the conversation that best matches the input. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+              new HumanMessage(`Input: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+            ]);
+            const matchedPhone = matchResponse.content.trim();
+            if (matchedPhone !== "NO_MATCH") {
+              const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+              if (convo) {
+                phone = convo.contactPhone;
+                name = convo.contactName || contactName;
+              }
+            }
           }
         }
         
@@ -1340,15 +1361,18 @@ const executeSendMessageTool = tool(
         await savedMessage.save();
         
         // Update conversation
-        await Conversation.findOneAndUpdate(
-          { userId, contactPhone: { $regex: toNumber.replace(/\D/g, '').slice(-10) } },
-          { 
-            lastMessage: messageText,
-            lastMessageAt: new Date(),
-            $inc: { messageCount: 1 }
-          },
-          { upsert: false }
-        );
+        const phoneDigits = toNumber.replace(/\D/g, '').slice(-10);
+        const allConvos = await Conversation.find({ userId });
+        const matchingConvo = allConvos.find(c => {
+          const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+          return convoDigits === phoneDigits;
+        });
+        if (matchingConvo) {
+          matchingConvo.lastMessage = messageText;
+          matchingConvo.lastMessageAt = new Date();
+          matchingConvo.messageCount = (matchingConvo.messageCount || 0) + 1;
+          await matchingConvo.save();
+        }
       } catch (dbError) {
         console.error("DB save error (message still sent):", dbError);
       }
@@ -1509,7 +1533,7 @@ const createReminderTool = tool(
       let resolvedName = contactName;
       
       if (contactName && !contactPhone) {
-        resolvedContact = await resolveContact(userId, contactName);
+        resolvedContact = await resolveContactWithAI(userId, contactName);
         if (resolvedContact) {
           resolvedPhone = resolvedContact.phone;
           resolvedName = resolvedContact.name;
@@ -1609,15 +1633,29 @@ const listRemindersTool = tool(
 const completeReminderTool = tool(
   async ({ userId, reminderTitle, action }) => {
     try {
-      const reminder = await Reminder.findOne({
+      // Get all active reminders and use AI to find the best match
+      const allReminders = await Reminder.find({
         userId,
-        title: { $regex: reminderTitle, $options: "i" },
         isCompleted: false
       });
       
-      if (!reminder) {
+      if (allReminders.length === 0) {
+        return "You have no active reminders.";
+      }
+      
+      // Use AI to find the best matching reminder
+      const reminderList = allReminders.map((r, i) => `${i}: ${r.title}`).join('\n');
+      const matchResponse = await llm.invoke([
+        new SystemMessage(`Find the reminder that best matches the user's input. Return ONLY the index number (0, 1, 2, etc). If no match found, return "NO_MATCH".`),
+        new HumanMessage(`User wants to ${action}: "${reminderTitle}"\n\nReminders:\n${reminderList}\n\nIndex:`)
+      ]);
+      
+      const matchIndex = parseInt(matchResponse.content.trim());
+      if (isNaN(matchIndex) || matchIndex < 0 || matchIndex >= allReminders.length) {
         return `Could not find reminder matching "${reminderTitle}".`;
       }
+      
+      const reminder = allReminders[matchIndex];
       
       if (action === "complete") {
         reminder.isCompleted = true;
@@ -1651,23 +1689,28 @@ const extractEventsTool = tool(
     try {
       console.log("Extracting events from messages:", { userId, contactName });
       
-      // Resolve contact
+      // Resolve contact using AI
       let phone = contactPhone;
       if (contactName && !contactPhone) {
-        const contact = await resolveContact(userId, contactName);
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) phone = contact.phone;
       }
       
       // Get recent messages
-      let query = { userId };
-      if (phone) {
-        const digits = phone.replace(/\D/g, '');
-        query.contactPhone = { $regex: digits.slice(-10) };
+      let messages = await Message.find({ userId })
+        .sort({ createdAt: -1 })
+        .limit(200);
+      
+      // Filter by phone if provided
+      if (phone && messages.length > 0) {
+        const digits = phone.replace(/\D/g, '').slice(-10);
+        messages = messages.filter(m => {
+          const msgDigits = (m.contactPhone || '').replace(/\D/g, '').slice(-10);
+          return msgDigits === digits;
+        });
       }
       
-      const messages = await Message.find(query)
-        .sort({ createdAt: -1 })
-        .limit(50);
+      messages = messages.slice(0, 50);
       
       if (messages.length === 0) {
         return "No messages found to analyze.";
@@ -1853,7 +1896,7 @@ const createSmartRuleTool = tool(
           targetPhone = targetName.startsWith('+') ? targetName : `+1${targetName.replace(/\D/g, '')}`;
           targetName = targetPhone;
         } else {
-          const target = await resolveContact(userId, targetName);
+          const target = await resolveContactWithAI(userId, targetName);
           if (target) {
             targetPhone = target.phone;
             targetName = target.name;
@@ -1867,7 +1910,7 @@ const createSmartRuleTool = tool(
       let sourcePhone = null;
       let sourceName = parsed.filters?.from_contact;
       if (sourceName) {
-        const source = await resolveContact(userId, sourceName);
+        const source = await resolveContactWithAI(userId, sourceName);
         if (source) {
           sourcePhone = source.phone;
           sourceName = source.name;
@@ -2038,11 +2081,11 @@ const getUnreadSummaryTool = tool(
 const analyzeConversationTool = tool(
   async ({ userId, contactName, contactPhone }) => {
     try {
-      // Resolve contact
+      // Resolve contact using AI
       let phone = contactPhone;
       let name = contactName;
       if (contactName && !contactPhone) {
-        const contact = await resolveContact(userId, contactName);
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) {
           phone = contact.phone;
           name = contact.name;
@@ -2053,11 +2096,13 @@ const analyzeConversationTool = tool(
         return `Could not find contact "${contactName}".`;
       }
       
-      const digits = phone.replace(/\D/g, '');
-      const messages = await Message.find({
-        userId,
-        contactPhone: { $regex: digits.slice(-10) }
-      }).sort({ createdAt: -1 }).limit(50);
+      const digits = phone.replace(/\D/g, '').slice(-10);
+      // Get all messages and filter by phone
+      let allMessages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(200);
+      const messages = allMessages.filter(m => {
+        const msgDigits = (m.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return msgDigits === digits;
+      }).slice(0, 50);
       
       if (messages.length === 0) {
         return `No messages found with ${name || phone}.`;
@@ -2099,11 +2144,11 @@ Be concise. Use plain text only, no markdown or emojis.`),
 const suggestReplyTool = tool(
   async ({ userId, contactName, contactPhone, context }) => {
     try {
-      // Resolve contact
+      // Resolve contact using AI
       let phone = contactPhone;
       let name = contactName;
       if (contactName && !contactPhone) {
-        const contact = await resolveContact(userId, contactName);
+        const contact = await resolveContactWithAI(userId, contactName);
         if (contact) {
           phone = contact.phone;
           name = contact.name;
@@ -2114,11 +2159,13 @@ const suggestReplyTool = tool(
         return `Could not find contact "${contactName}".`;
       }
       
-      const digits = phone.replace(/\D/g, '');
-      const messages = await Message.find({
-        userId,
-        contactPhone: { $regex: digits.slice(-10) }
-      }).sort({ createdAt: -1 }).limit(10);
+      const digits = phone.replace(/\D/g, '').slice(-10);
+      // Get all messages and filter by phone
+      let allMessages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(100);
+      const messages = allMessages.filter(m => {
+        const msgDigits = (m.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return msgDigits === digits;
+      }).slice(0, 10);
       
       if (messages.length === 0) {
         return "No conversation history to base suggestions on.";
@@ -2379,38 +2426,33 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
         name = phone;
         console.log("Contact is a phone number:", phone);
       } else {
-        // Look up contact by name
-        console.log("Looking up contact by name:", name);
-        const userObjectId = new mongoose.Types.ObjectId(userId);
+        // Look up contact by name using AI-powered matching
+        console.log("Looking up contact by name using AI:", name);
         
-        // Try exact match first, then partial
-        let contact = await Contact.findOne({
-          userId: userObjectId,
-          name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
-        });
-        
-        if (!contact) {
-          contact = await Contact.findOne({
-            userId: userObjectId,
-            name: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-          });
-        }
+        const contact = await resolveContactWithAI(userId, name);
         
         if (contact && contact.phone) {
           phone = contact.phone;
           name = contact.name;
-          console.log("Found contact:", name, phone);
+          console.log("Found contact via AI:", name, phone);
         } else {
-          // Try Conversations
-          const conversation = await Conversation.findOne({
-            userId: userObjectId,
-            contactName: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-          });
-          
-          if (conversation && conversation.contactPhone) {
-            phone = conversation.contactPhone;
-            name = conversation.contactName;
-            console.log("Found in conversations:", name, phone);
+          // Try Conversations with AI matching
+          const allConvos = await Conversation.find({ userId }).limit(200);
+          if (allConvos.length > 0) {
+            const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+            const matchResponse = await llm.invoke([
+              new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+              new HumanMessage(`Input name: "${name}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+            ]);
+            const matchedPhone = matchResponse.content.trim();
+            if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+              const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+              if (convo) {
+                phone = convo.contactPhone;
+                name = convo.contactName || name;
+                console.log("Found in conversations via AI:", name, phone);
+              }
+            }
           }
         }
       }
@@ -2497,14 +2539,17 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
           
           // Update conversation
           const phoneDigits = toNumber.replace(/\D/g, '').slice(-10);
-          await Conversation.findOneAndUpdate(
-            { userId, contactPhone: { $regex: phoneDigits } },
-            { 
-              lastMessage: pendingAction.messageText,
-              lastMessageAt: new Date(),
-              $inc: { messageCount: 1 }
-            }
-          );
+          const allConvos = await Conversation.find({ userId });
+          const matchingConvo = allConvos.find(c => {
+            const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+            return convoDigits === phoneDigits;
+          });
+          if (matchingConvo) {
+            matchingConvo.lastMessage = pendingAction.messageText;
+            matchingConvo.lastMessageAt = new Date();
+            matchingConvo.messageCount = (matchingConvo.messageCount || 0) + 1;
+            await matchingConvo.save();
+          }
           
           return `Message sent to ${name}: "${pendingAction.messageText}"`;
         } catch (sendError) {
