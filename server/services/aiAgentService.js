@@ -1951,15 +1951,33 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       if (msg.role === "assistant" && msg.text) {
         // Check if it contains a pending send_message action
         if (msg.text.includes("Ready to send to") && msg.text.includes('Reply "yes" to send')) {
-          // Extract contact and message from the confirmation text
-          const nameMatch = msg.text.match(/Ready to send to ([^:]+):/);
-          const msgMatch = msg.text.match(/"([^"]+)"\n\nReply "yes"/);
-          if (nameMatch && msgMatch) {
+          // Parse: Ready to send to NAME_OR_PHONE:\n\n"MESSAGE"\n\nReply "yes"
+          // More robust extraction
+          const lines = msg.text.split('\n');
+          let contactInfo = null;
+          let messageContent = null;
+          
+          // Find "Ready to send to X:"
+          for (const line of lines) {
+            if (line.startsWith("Ready to send to ")) {
+              contactInfo = line.replace("Ready to send to ", "").replace(":", "").trim();
+              break;
+            }
+          }
+          
+          // Find the message in quotes
+          const quoteMatch = msg.text.match(/"([^"]+)"/);
+          if (quoteMatch) {
+            messageContent = quoteMatch[1];
+          }
+          
+          if (contactInfo && messageContent) {
             pendingAction = {
               type: "send_message",
-              contactName: nameMatch[1].trim(),
-              messageText: msgMatch[1]
+              contactName: contactInfo,
+              messageText: messageContent
             };
+            console.log("Found pending action:", pendingAction);
           }
           break;
         }
@@ -1972,53 +1990,117 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
     
     if (isConfirmation && pendingAction && pendingAction.type === "send_message") {
       console.log("User confirmed pending send_message action:", pendingAction);
-      // Resolve contact phone from name
-      const userObjectId = new mongoose.Types.ObjectId(userId);
+      
       let phone = null;
       let name = pendingAction.contactName;
       
-      // Check if contactName is already a phone number
-      const isPhoneNumber = /^\+?\d{10,}$/.test(pendingAction.contactName.replace(/[\s\-\(\)]/g, ''));
+      // Check if contactName is already a phone number (starts with + or is all digits)
+      const cleanedContact = pendingAction.contactName.replace(/[\s\-\(\)]/g, '');
+      const isPhoneNumber = /^\+?\d{10,}$/.test(cleanedContact);
+      
       if (isPhoneNumber) {
         // It's already a phone number, use it directly
-        phone = pendingAction.contactName;
-        name = pendingAction.contactName;
+        phone = cleanedContact.startsWith('+') ? cleanedContact : `+1${cleanedContact}`;
+        name = phone;
+        console.log("Contact is a phone number:", phone);
       } else {
-        // Escape regex special characters for contact name search
-        const escapedName = pendingAction.contactName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Look up contact by name
+        console.log("Looking up contact by name:", name);
+        const userObjectId = new mongoose.Types.ObjectId(userId);
         
-        // Try Contacts first
+        // Try exact match first, then partial
         let contact = await Contact.findOne({
           userId: userObjectId,
-          name: { $regex: escapedName, $options: "i" }
+          name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
         });
+        
+        if (!contact) {
+          contact = await Contact.findOne({
+            userId: userObjectId,
+            name: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+          });
+        }
         
         if (contact && contact.phone) {
           phone = contact.phone;
           name = contact.name;
+          console.log("Found contact:", name, phone);
         } else {
           // Try Conversations
           const conversation = await Conversation.findOne({
             userId: userObjectId,
-            contactName: { $regex: escapedName, $options: "i" }
+            contactName: new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
           });
           
           if (conversation && conversation.contactPhone) {
             phone = conversation.contactPhone;
             name = conversation.contactName;
+            console.log("Found in conversations:", name, phone);
           }
         }
       }
       
       if (phone) {
-        // Execute the send
-        const result = await executeSendMessageTool.invoke({
-          userId,
-          contactPhone: phone,
-          messageText: pendingAction.messageText,
-          contactName: name
-        });
-        return result;
+        try {
+          // Execute the send directly here instead of calling tool
+          console.log("Sending SMS to:", phone, "Message:", pendingAction.messageText);
+          
+          const user = await User.findById(userId);
+          if (!user?.phoneNumber) {
+            return "You don't have a phone number configured. Please set one up in Settings first.";
+          }
+          
+          const twilioAccount = await TwilioAccount.findOne({ userId });
+          if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
+            return "Twilio not configured. Please set up Twilio in Settings.";
+          }
+          
+          const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+          const fromNumber = normalizePhoneForSms(user.phoneNumber);
+          const toNumber = normalizePhoneForSms(phone);
+          
+          console.log("Twilio send - From:", fromNumber, "To:", toNumber);
+          
+          const twilioMessage = await client.messages.create({
+            body: pendingAction.messageText,
+            from: fromNumber,
+            to: toNumber,
+          });
+          
+          console.log("SMS sent! SID:", twilioMessage.sid);
+          
+          // Save to database
+          const savedMessage = new Message({
+            userId,
+            contactPhone: toNumber,
+            contactName: name,
+            direction: "outgoing",
+            body: pendingAction.messageText,
+            status: "sent",
+            twilioSid: twilioMessage.sid,
+            fromNumber,
+            toNumber,
+            isRead: true,
+          });
+          await savedMessage.save();
+          console.log("Message saved to DB");
+          
+          // Update conversation
+          const phoneDigits = toNumber.replace(/\D/g, '').slice(-10);
+          await Conversation.findOneAndUpdate(
+            { userId, contactPhone: { $regex: phoneDigits } },
+            { 
+              lastMessage: pendingAction.messageText,
+              lastMessageAt: new Date(),
+              $inc: { messageCount: 1 }
+            }
+          );
+          
+          return `Message sent to ${name}: "${pendingAction.messageText}"`;
+        } catch (sendError) {
+          console.error("Send error:", sendError);
+          return `Failed to send message: ${sendError.message}`;
+        }
       } else {
         return `Could not find phone number for "${pendingAction.contactName}". Please provide their number.`;
       }
