@@ -1977,25 +1977,36 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       let phone = null;
       let name = pendingAction.contactName;
       
-      // Try Contacts first
-      let contact = await Contact.findOne({
-        userId: userObjectId,
-        name: { $regex: pendingAction.contactName, $options: "i" }
-      });
-      
-      if (contact && contact.phone) {
-        phone = contact.phone;
-        name = contact.name;
+      // Check if contactName is already a phone number
+      const isPhoneNumber = /^\+?\d{10,}$/.test(pendingAction.contactName.replace(/[\s\-\(\)]/g, ''));
+      if (isPhoneNumber) {
+        // It's already a phone number, use it directly
+        phone = pendingAction.contactName;
+        name = pendingAction.contactName;
       } else {
-        // Try Conversations
-        const conversation = await Conversation.findOne({
+        // Escape regex special characters for contact name search
+        const escapedName = pendingAction.contactName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Try Contacts first
+        let contact = await Contact.findOne({
           userId: userObjectId,
-          contactName: { $regex: pendingAction.contactName, $options: "i" }
+          name: { $regex: escapedName, $options: "i" }
         });
         
-        if (conversation && conversation.contactPhone) {
-          phone = conversation.contactPhone;
-          name = conversation.contactName;
+        if (contact && contact.phone) {
+          phone = contact.phone;
+          name = contact.name;
+        } else {
+          // Try Conversations
+          const conversation = await Conversation.findOne({
+            userId: userObjectId,
+            contactName: { $regex: escapedName, $options: "i" }
+          });
+          
+          if (conversation && conversation.contactPhone) {
+            phone = conversation.contactPhone;
+            name = conversation.contactName;
+          }
         }
       }
       
