@@ -493,6 +493,63 @@ const markPriorityTool = tool(
   }
 );
 
+// Tool: Get Last Message
+const getLastMessageTool = tool(
+  async ({ userId, contactPhone, contactName }) => {
+    try {
+      let resolvedPhone = contactPhone;
+      let resolvedName = contactName;
+
+      if (contactName && !contactPhone) {
+        const contact = await Contact.findOne({
+          userId,
+          name: { $regex: contactName, $options: "i" },
+        });
+        if (contact) {
+          resolvedPhone = contact.phone;
+          resolvedName = contact.name;
+        }
+      }
+
+      if (!resolvedPhone) {
+        return `Could not find contact "${contactName}". Try using their exact name or provide a phone number.`;
+      }
+
+      const phoneDigits = resolvedPhone.replace(/\D/g, "").slice(-10);
+      const phoneRegex = new RegExp(phoneDigits);
+
+      const last = await Message.findOne({
+        userId,
+        contactPhone: { $regex: phoneRegex },
+      }).sort({ createdAt: -1 });
+
+      if (!last) {
+        return `No messages found with ${resolvedName || resolvedPhone}.`;
+      }
+
+      const dt = new Date(last.createdAt);
+      const when = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      const direction = last.direction === "outgoing" ? "→" : "←";
+      const displayName = resolvedName || last.contactName || resolvedPhone;
+      const text = last.body || "";
+
+      return `Last message with ${displayName} (${resolvedPhone})\n[${when}] ${direction} ${text}`;
+    } catch (error) {
+      console.error("Get last message error:", error);
+      return `Error getting last message: ${error.message}`;
+    }
+  },
+  {
+    name: "get_last_message",
+    description: "Get the most recent message with a contact. Use when user asks: last message from X, show last text from X, what did X say last.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      contactName: z.string().optional().describe("Contact name"),
+    }),
+  }
+);
+
 // Tool: Search Messages
 const searchMessagesTool = tool(
   async ({ userId, query, contactPhone }) => {
@@ -501,31 +558,18 @@ const searchMessagesTool = tool(
       
       // Build search criteria
       const searchRegex = new RegExp(query, "i");
-      
-      // Find conversations for this user
-      let conversationFilter = { userId };
+
+      const filter = {
+        userId,
+        body: { $regex: searchRegex },
+      };
+
       if (contactPhone) {
-        conversationFilter.contactPhone = contactPhone;
+        const normalizedPhone = contactPhone.replace(/\D/g, "").slice(-10);
+        filter.contactPhone = { $regex: new RegExp(normalizedPhone) };
       }
-      
-      const conversations = await Conversation.find(conversationFilter).select('_id contactPhone contactName');
-      const conversationIds = conversations.map(c => c._id);
-      
-      // Search messages - try by conversationId first
-      let messages = await Message.find({
-        conversationId: { $in: conversationIds },
-        body: { $regex: searchRegex }
-      }).sort({ createdAt: -1 }).limit(20);
-      
-      // Fallback: search by userId and contactPhone if no results
-      if (messages.length === 0 && contactPhone) {
-        const normalizedPhone = contactPhone.replace(/\D/g, '');
-        messages = await Message.find({
-          userId,
-          contactPhone: { $regex: normalizedPhone },
-          body: { $regex: searchRegex }
-        }).sort({ createdAt: -1 }).limit(20);
-      }
+
+      const messages = await Message.find(filter).sort({ createdAt: -1 }).limit(20);
       
       if (messages.length === 0) {
         return `No messages found containing "${query}".`;
@@ -533,8 +577,7 @@ const searchMessagesTool = tool(
       
       // Format results
       const results = messages.map(m => {
-        const conv = conversations.find(c => c._id.toString() === m.conversationId?.toString());
-        const contact = conv?.contactName || m.contactName || "Unknown";
+        const contact = m.contactName || m.contactPhone || "Unknown";
         const date = new Date(m.createdAt).toLocaleDateString();
         return `[${date}] ${contact}: ${m.body}`;
       });
@@ -567,20 +610,17 @@ const searchMessagesByDateTool = tool(
       const end = endDate ? new Date(endDate) : new Date();
       end.setHours(23, 59, 59, 999); // End of day
       
-      // Find conversations for this user
-      let conversationFilter = { userId };
+      const filter = {
+        userId,
+        createdAt: { $gte: start, $lte: end },
+      };
+
       if (contactPhone) {
-        conversationFilter.contactPhone = contactPhone;
+        const phoneDigits = contactPhone.replace(/\D/g, "").slice(-10);
+        filter.contactPhone = { $regex: new RegExp(phoneDigits) };
       }
-      
-      const conversations = await Conversation.find(conversationFilter).select('_id contactPhone contactName');
-      const conversationIds = conversations.map(c => c._id);
-      
-      // Search messages in date range
-      const messages = await Message.find({
-        conversationId: { $in: conversationIds },
-        timestamp: { $gte: start, $lte: end }
-      }).sort({ timestamp: -1 }).limit(50);
+
+      const messages = await Message.find(filter).sort({ createdAt: -1 }).limit(50);
       
       if (messages.length === 0) {
         return `No messages found between ${start.toLocaleDateString()} and ${end.toLocaleDateString()}.`;
@@ -588,12 +628,11 @@ const searchMessagesByDateTool = tool(
       
       // Format results
       const results = messages.map(m => {
-        const conv = conversations.find(c => c._id.toString() === m.conversationId.toString());
-        const contact = conv?.contactName || conv?.contactPhone || "Unknown";
-        const date = new Date(m.timestamp).toLocaleDateString();
-        const time = new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const contact = m.contactName || m.contactPhone || "Unknown";
+        const date = new Date(m.createdAt).toLocaleDateString();
+        const time = new Date(m.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const direction = m.direction === 'outgoing' ? '→' : '←';
-        return `[${date} ${time}] ${direction} ${contact}: ${m.content}`;
+        return `[${date} ${time}] ${direction} ${contact}: ${m.body}`;
       });
       
       return `Found ${messages.length} messages:\n${results.join("\n")}`;
@@ -797,6 +836,7 @@ const conversationTools = [
   updateContactTool,
   searchContactsTool,
   markPriorityTool,
+  getLastMessageTool,
   searchMessagesTool,
   searchMessagesByDateTool,
   getRulesTool,
@@ -816,6 +856,7 @@ const toolMap = {
   update_contact: updateContactTool,
   search_contacts: searchContactsTool,
   mark_priority: markPriorityTool,
+  get_last_message: getLastMessageTool,
   search_messages: searchMessagesTool,
   search_messages_by_date: searchMessagesByDateTool,
   get_rules: getRulesTool,
@@ -2066,6 +2107,7 @@ const fullAgentTools = [
   deleteRuleTool,
   createSmartRuleTool,
   // Messages
+  getLastMessageTool,
   searchMessagesTool,
   searchMessagesByDateTool,
   summarizeConversationTool,
@@ -2098,6 +2140,7 @@ const fullAgentToolMap = {
   get_rules: getRulesTool,
   delete_rule: deleteRuleTool,
   create_smart_rule: createSmartRuleTool,
+  get_last_message: getLastMessageTool,
   search_messages: searchMessagesTool,
   search_messages_by_date: searchMessagesByDateTool,
   summarize_conversation: summarizeConversationTool,
@@ -2125,6 +2168,29 @@ const fullAgentLLM = new ChatOpenAI({
 export async function rulesAgentChat(userId, message, chatHistory = []) {
   try {
     console.log("Rules Agent Chat:", { userId, message });
+
+    const trimmedMessage = (message || "").trim();
+    const lowerMessage = trimmedMessage.toLowerCase();
+
+    // Fast-path: last message requests (fixes "show me his last message" loops)
+    if (lowerMessage.includes("last message")) {
+      const fromMatch = trimmedMessage.match(/last message\s+from\s+(.+)$/i);
+      if (fromMatch && fromMatch[1]) {
+        return await getLastMessageTool.invoke({ userId, contactName: fromMatch[1].trim() });
+      }
+
+      if (/(his|her|their)\s+last message/i.test(trimmedMessage)) {
+        for (let i = chatHistory.length - 1; i >= 0; i--) {
+          const t = chatHistory[i]?.text;
+          if (typeof t === "string") {
+            const m = t.match(/([^:\n]+):\s*(\+\d{7,})/);
+            if (m) {
+              return await getLastMessageTool.invoke({ userId, contactName: m[1].trim(), contactPhone: m[2].trim() });
+            }
+          }
+        }
+      }
+    }
     
     // Check for pending clarification in chat history
     let pendingClarification = null;
@@ -2185,51 +2251,45 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       return result;
     }
     
-    // Extract pending action from chat history for confirmation handling
-    let pendingAction = null;
-    for (let i = chatHistory.length - 1; i >= 0; i--) {
-      const msg = chatHistory[i];
-      if (msg.role === "assistant" && msg.text) {
-        // Check if it contains a pending send_message action
-        if (msg.text.includes("Ready to send to") && msg.text.includes('Reply "yes" to send')) {
-          // Parse: Ready to send to NAME_OR_PHONE:\n\n"MESSAGE"\n\nReply "yes"
-          // More robust extraction
-          const lines = msg.text.split('\n');
-          let contactInfo = null;
-          let messageContent = null;
-          
-          // Find "Ready to send to X:"
-          for (const line of lines) {
-            if (line.startsWith("Ready to send to ")) {
-              contactInfo = line.replace("Ready to send to ", "").replace(":", "").trim();
-              break;
+    // Only attempt pending-send confirmation logic when user is actually confirming.
+    const isConfirmation = ["yes", "send it", "confirm", "do it", "send", "yep", "yeah", "ok", "okay", "sure"].includes(lowerMessage);
+
+    if (isConfirmation) {
+      // Extract pending action from chat history for confirmation handling
+      let pendingAction = null;
+      for (let i = chatHistory.length - 1; i >= 0; i--) {
+        const msg = chatHistory[i];
+        if (msg.role === "assistant" && msg.text) {
+          if (msg.text.includes("Ready to send to") && msg.text.includes('Reply "yes" to send')) {
+            const lines = msg.text.split("\n");
+            let contactInfo = null;
+            let messageContent = null;
+
+            for (const line of lines) {
+              if (line.startsWith("Ready to send to ")) {
+                contactInfo = line.replace("Ready to send to ", "").replace(":", "").trim();
+                break;
+              }
             }
+
+            const quoteMatch = msg.text.match(/"([^"]+)"/);
+            if (quoteMatch) {
+              messageContent = quoteMatch[1];
+            }
+
+            if (contactInfo && messageContent) {
+              pendingAction = {
+                type: "send_message",
+                contactName: contactInfo,
+                messageText: messageContent,
+              };
+            }
+            break;
           }
-          
-          // Find the message in quotes
-          const quoteMatch = msg.text.match(/"([^"]+)"/);
-          if (quoteMatch) {
-            messageContent = quoteMatch[1];
-          }
-          
-          if (contactInfo && messageContent) {
-            pendingAction = {
-              type: "send_message",
-              contactName: contactInfo,
-              messageText: messageContent
-            };
-            console.log("Found pending action:", pendingAction);
-          }
-          break;
         }
       }
-    }
-    
-    // Check if user is confirming a pending action
-    const lowerMessage = message.toLowerCase().trim();
-    const isConfirmation = ["yes", "send it", "confirm", "do it", "send", "yep", "yeah", "ok", "okay", "sure"].includes(lowerMessage);
-    
-    if (isConfirmation && pendingAction && pendingAction.type === "send_message") {
+
+      if (pendingAction && pendingAction.type === "send_message") {
       console.log("User confirmed pending send_message action:", pendingAction);
       
       let phone = null;
@@ -2380,6 +2440,7 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       } else {
         return `Could not find phone number for "${pendingAction.contactName}". Please provide their number.`;
       }
+      }
     }
     
     const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge SMS/call management.
@@ -2411,6 +2472,7 @@ RULES & AUTOMATION:
   * Time-based: "auto-reply after 6pm"
 
 MESSAGES & ANALYSIS:
+- get_last_message: Get the most recent message with a contact
 - search_messages: Search ALL messages for keywords
 - search_messages_by_date: Search messages in date range
 - summarize_conversation: Summarize chat with a specific contact
@@ -2444,6 +2506,7 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "any emergency messages" -> search_messages with query="emergency"
 - "summarize my chats from jk" -> summarize_conversation with contactName="jk"
 - "what did jk say" -> summarize_conversation with contactName="jk"
+- "show me the last message from jk" -> get_last_message with contactName="jk"
 - "change jk to john" -> update_contact with currentName="jk", newName="john"
 - "forward calls from jk to bob" -> create_transfer_rule
 - "remind me to call mom in 30 min" -> create_reminder
