@@ -1,8 +1,13 @@
 import * as chrono from "chrono-node";
 
-const EMERGENCY_RE = /(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\b|\bsos\b)/i;
-const DEADLINE_RE = /(\bdeadline\b|\bdue\b|\bdue\s+by\b|\bby\s+end\s+of\s+day\b|\beod\b|\bsubmit\b|\bpayment\s+due\b|\binvoice\b)/i;
-const MEETING_RE = /(\bmeeting\b|\bappointment\b|\bschedule\b|\breschedule\b|\bcall\b|\bzoom\b|\binterview\b|\bcalendar\b)/i;
+const EMERGENCY_RE = /(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\s+me\b|\bsos\b)/i;
+// Deadline must have actual due date context, not just the word
+const DEADLINE_RE = /(\bdeadline\s+(is|by|on|at)\b|\bdue\s+(by|on|at|today|tomorrow|friday|monday|tuesday|wednesday|thursday|saturday|sunday)\b|\bdue\s+date\b|\bsubmit\s+by\b|\bpayment\s+due\b)/i;
+// Meeting must have time context or action words, not just the word "meeting"
+const MEETING_RE = /(\bmeeting\s+(at|@|is|for)\s*\d|\bappointment\s+(at|@|is|for|on)\b|\bschedule[d]?\s+(call|meeting|appointment)\b|\breschedule\b|\bcall\s+(at|@)\s*\d|\bzoom\s+(at|@|call|meeting)\b|\binterview\s+(at|@|is|on)\b)/i;
+
+// Generic short messages that should NEVER be priority
+const NEVER_PRIORITY_RE = /^(spam|spam message|test|testing|hello|hi|hey|important|check|checking)[!?.\s]*$/i;
 
 /**
  * Returns a small, deterministic priority context derived from message text.
@@ -17,15 +22,32 @@ export function detectPriorityContext({
   const now = nowOverride instanceof Date ? nowOverride : new Date();
   const raw = String(text || "").trim();
   if (!raw) return null;
+  
+  // Short generic messages are NEVER priority, even if they contain trigger words
+  if (raw.length <= 25 && NEVER_PRIORITY_RE.test(raw)) {
+    return null;
+  }
 
   let kind = null;
 
   if (EMERGENCY_RE.test(raw)) {
+    // Make sure it's not just someone saying "spam" with "help" nearby
+    if (/spam/i.test(raw)) return null;
     kind = "emergency";
   } else if (DEADLINE_RE.test(raw)) {
     kind = "deadline";
   } else if (MEETING_RE.test(raw) || String(category || "").toLowerCase() === "meeting") {
-    kind = "meeting";
+    // For category-based detection, require actual meeting context
+    if (String(category || "").toLowerCase() === "meeting" && !MEETING_RE.test(raw)) {
+      // AI said meeting category but no time context - treat as important instead
+      if (String(aiPriority || "").toLowerCase() === "high") {
+        kind = "important";
+      } else {
+        return null;
+      }
+    } else {
+      kind = "meeting";
+    }
   } else if (String(aiPriority || "").toLowerCase() === "high") {
     // High priority without a clear time signal (often "important")
     kind = "important";

@@ -1292,15 +1292,31 @@ router.post("/webhook/sms", async (req, res) => {
           ) {
             return "low";
           }
+          
+          // Short test/generic messages are low priority
+          // "Spam message", "Test", "Testing", "Hello", "Important" without context are NOT high priority
+          if (
+            t.length > 0 &&
+            t.length <= 25 &&
+            /^(test|testing|spam|spam message|important|hello|hi there|check|checking)[!?.\s]*$/i.test(t)
+          ) {
+            return "low";
+          }
 
           // Urgent/emergency language should always be treated as high.
+          // Must have actual urgent keywords, not just contain the word
           if (/(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\b)/i.test(t)) {
+            // But "spam message" with "help" at the end is not an emergency
+            if (/spam/i.test(t)) {
+              return "low";
+            }
             return "high";
           }
 
-          // Scheduling/time-sensitive messages should be treated as high.
+          // Scheduling/time-sensitive messages should be treated as high
+          // BUT only if they have an actual time reference (not just the word "meeting")
           if (
-            /(\bmeeting\b|\bappointment\b|\bschedule\b|\breschedule\b|\bcall\s+me\b|\bdeadline\b|\bdue\b|\btoday\b|\btomorrow\b|\btonight\b|\bnext\s+week\b|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)/i.test(t)
+            /(\bmeeting\s+(at|@)\s*\d|\bappointment\s+(at|@|is|for)\s*\d|\bschedule[d]?\s+(at|@|for)\s*\d|\bcall\s+me\s*(at|@|now|asap|back)\b|\bdeadline\s+(is|by|at|on)\b|\bdue\s+(by|at|on|today|tomorrow)\b|\b(today|tomorrow|tonight)\s+(at|@)\s*\d|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)/i.test(t)
           ) {
             return "high";
           }
@@ -1553,8 +1569,27 @@ router.post("/webhook/sms", async (req, res) => {
           
           // Check priority filter for messages
           // "all" = transfer all messages
-          // "high-priority" = only transfer high priority messages
+          // "high-priority" = only transfer high priority messages (NOT spam/held)
           if (transferPriority === "high-priority") {
+            // CRITICAL: Never transfer spam/held messages even if somehow marked "priority"
+            const isSpamOrHeld = isHeld || messageStatus === "spam" || spamAnalysis?.isSpam === true;
+            if (isSpamOrHeld) {
+              console.log(`      ⏭️ Message is spam/held - never transferred for high-priority rule`);
+              continue;
+            }
+            
+            // Check AI priority - must actually be high priority from AI analysis
+            const aiPriority = aiAnalysis?.priority || "low";
+            const hasKnownPriorityKind = priorityContext?.kind && ["emergency", "meeting", "deadline", "important"].includes(priorityContext.kind);
+            
+            // Must have EITHER:
+            // 1. AI says high priority, OR
+            // 2. Detected a known priority pattern (emergency/meeting/deadline)
+            if (aiPriority !== "high" && !hasKnownPriorityKind) {
+              console.log(`      ⏭️ Message is not high priority (AI: ${aiPriority}, kind: ${priorityContext?.kind}), skipping`);
+              continue;
+            }
+            
             if (!isPriority) {
               console.log(`      ⏭️ Message is not high priority, skipping (rule requires high-priority)`);
               continue;
