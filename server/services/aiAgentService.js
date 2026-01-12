@@ -118,7 +118,7 @@ function parseNaturalTime(timeStr, referenceDate = new Date()) {
   return null;
 }
 
-// AI-powered contact resolution - no regex!
+// AI-powered contact resolution - uses LLM for intelligent matching
 async function resolveContactWithAI(userId, nameOrPhone) {
   if (!nameOrPhone) return null;
   
