@@ -4153,16 +4153,20 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 {(transferMode === "messages" || transferMode === "both") && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
-                    <div className="relative rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                      <select
-                        value={transferType}
-                        onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
-                        className="w-full appearance-none bg-transparent pr-8 text-sm text-gray-700 focus:outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="high-priority">High Priority</option>
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <p className="text-xs font-medium text-gray-700">Include</p>
+                      <div className="relative">
+                        <select
+                          value={transferType}
+                          onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
+                          className="w-36 appearance-none bg-transparent pr-7 text-xs font-medium text-gray-800 focus:outline-none"
+                          aria-label="Message priority level"
+                        >
+                          <option value="all">All</option>
+                          <option value="high-priority">High Priority</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      </div>
                     </div>
                   </div>
                 )}
