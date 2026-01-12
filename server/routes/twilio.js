@@ -1889,6 +1889,39 @@ router.post("/webhook/voice", async (req, res) => {
       
       const normalize = (p) => p ? p.replace(/[^\d+]/g, "") : "";
       const callerPhone = normalize(From);
+      
+      // Helper to build phone variations for robust contact lookup
+      const normalizeToE164ish = (value) => {
+        if (!value) return "";
+        const cleaned = String(value).replace(/[^\d+]/g, "");
+        if (cleaned.startsWith("+")) return cleaned;
+        const digits = String(value).replace(/\D/g, "");
+        if (digits.length === 10) return `+1${digits}`;
+        if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+        return cleaned;
+      };
+
+      const buildPhoneVariations = (raw) => {
+        const normalized = normalizeToE164ish(raw);
+        const digitsOnly = String(raw || "").replace(/\D/g, "");
+        const last10 = digitsOnly.slice(-10);
+
+        const variations = Array.from(
+          new Set(
+            [
+              raw,
+              normalized,
+              normalized.replace(/^\+1/, ""),
+              normalized.replace(/^\+/, ""),
+              digitsOnly,
+              digitsOnly.length === 11 && digitsOnly.startsWith("1") ? digitsOnly.slice(1) : digitsOnly,
+              `+1${last10}`,
+              last10,
+            ].filter(Boolean)
+          )
+        );
+        return { variations, last10 };
+      };
 
       // Find user by phone number
       let user = await User.findOne({ phoneNumber: To });
@@ -1924,12 +1957,10 @@ router.post("/webhook/voice", async (req, res) => {
           return res.send(response.toString());
         }
         
-        // Check caller info against contacts
-        let contact = await Contact.findOne({ userId: user._id, phone: From });
-        if (!contact) {
-          const altCallerPhone = From.startsWith("+") ? From.substring(1) : "+" + From;
-          contact = await Contact.findOne({ userId: user._id, phone: altCallerPhone });
-        }
+        // Check caller info against contacts - use phone variations for robust lookup
+        const { variations: callerVariations } = buildPhoneVariations(From);
+        console.log(`   🔍 Looking up contact with variations:`, callerVariations);
+        const contact = await Contact.findOne({ userId: user._id, phone: { $in: callerVariations } });
         
         const callerInfo = {
           isSavedContact: !!contact,

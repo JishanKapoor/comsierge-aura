@@ -46,7 +46,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Device } from "@twilio/voice-sdk";
 import { CallSkeleton } from "./LoadingSkeletons";
 
-type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail" | "routed";
+type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail" | "routed" | "blocked";
 
 interface CallsTabProps {
   selectedContactPhone?: string | null;
@@ -185,8 +185,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   const loadCalls = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoadingCalls(true);
     try {
-      // For voicemail and routed filters, we need to fetch all calls and filter client-side
-      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed") ? undefined : filter;
+      // For voicemail, routed, and blocked filters, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed" || filter === "blocked") ? undefined : filter;
       const callRecords = await fetchCalls(apiFilter);
       
       // Helper functions for formatting (inside callback to avoid closure issues)
@@ -335,7 +335,18 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   // Filter calls - API already filters by type, just do client-side search
   // For voicemail filter, we filter client-side since API doesn't have voicemail filter
   // For routed filter, show only forwarded or transferred calls
+  // Blocked calls only appear in "blocked" filter, not in any other filter
   const filteredCalls = calls.filter((call) => {
+    const isBlockedCall = call.status === "blocked" || call.isBlocked;
+    
+    // Blocked filter - show only blocked calls
+    if (filter === "blocked") {
+      if (!isBlockedCall) return false;
+    } else {
+      // All other filters - exclude blocked calls
+      if (isBlockedCall) return false;
+    }
+    
     // Voicemail filter - show only calls with voicemails
     if (filter === "voicemail" && !call.hasVoicemail) return false;
     
@@ -353,8 +364,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   const refreshCalls = async () => {
     setIsLoadingCalls(true);
     try {
-      // For voicemail and routed filters, we need to fetch all calls and filter client-side
-      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed") ? undefined : filter;
+      // For voicemail, routed, and blocked filters, we need to fetch all calls and filter client-side
+      const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed" || filter === "blocked") ? undefined : filter;
       const callRecords = await fetchCalls(apiFilter);
       
       // Build a set of blocked phone numbers from contacts
@@ -1397,7 +1408,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
 
       {/* Filters */}
       <div className="flex gap-1.5 flex-wrap">
-        {(["all", "missed", "incoming", "outgoing", "routed", "voicemail"] as Filter[]).map((f) => (
+        {(["all", "missed", "incoming", "outgoing", "routed", "voicemail", "blocked"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -1407,10 +1418,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
               f === "voicemail" ? " flex items-center gap-1" : ""
             }${
               f === "routed" ? " flex items-center gap-1" : ""
+            }${
+              f === "blocked" ? " flex items-center gap-1" : ""
             }`}
           >
             {f === "voicemail" && <Voicemail className="w-3 h-3" />}
             {f === "routed" && <ArrowRightLeft className="w-3 h-3" />}
+            {f === "blocked" && <Ban className="w-3 h-3" />}
             {f}
           </button>
         ))}
@@ -1537,7 +1551,12 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
                 <div className="text-right shrink-0 hidden sm:block">
                   <p className="text-xs text-gray-500">{call.timestamp}</p>
                   <p className="text-xs text-gray-400 flex items-center gap-1 justify-end mt-0.5">
-                    {call.hasVoicemail ? (
+                    {call.status === "blocked" || call.isBlocked ? (
+                      <>
+                        <Ban className="w-3 h-3 text-red-500" />
+                        Blocked
+                      </>
+                    ) : call.hasVoicemail ? (
                       <>
                         <Voicemail className="w-3 h-3 text-amber-500" />
                         {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}

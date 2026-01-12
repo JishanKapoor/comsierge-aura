@@ -2319,7 +2319,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       : contacts.find(c => c.id === transferTo)?.phone || "";
     const contactName = isCustomNumber 
       ? transferTo.replace("custom:", "") 
-      : contacts.find(c => c.id === transferTo)?.name || "selected contact";
+      : contacts.find(c => c.id === transferTo)?.name || contactPhone || "selected contact";
 
     // Prevent transferring to the same number (Person A -> Person A)
     if (selectedMessage) {
@@ -4143,7 +4143,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 {/* Priority filter - only for messages or both */}
                 {(transferMode === "messages" || transferMode === "both") && (
                   <div className="space-y-2">
-                    <p className="text-xs text-gray-500">Priority level</p>
+                    <p className="text-xs text-gray-500">Message Priority Level</p>
                     <div className="flex gap-1.5">
                       <button
                         type="button"
@@ -4169,36 +4169,6 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       >
                         High Priority
                       </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Priority category filter - only when high priority is selected */}
-                {(transferMode === "messages" || transferMode === "both") && transferType === "high-priority" && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-500">Category</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {([
-                        { id: "all", label: "All" },
-                        { id: "emergency", label: "Emergency" },
-                        { id: "meetings", label: "Meetings" },
-                        { id: "deadlines", label: "Deadlines" },
-                        { id: "important", label: "Important" },
-                      ] as const).map((filter) => (
-                        <button
-                          key={filter.id}
-                          type="button"
-                          onClick={() => setPriorityFilter(filter.id)}
-                          className={cn(
-                            "px-2 py-1 rounded text-xs transition-colors",
-                            priorityFilter === filter.id
-                              ? "bg-indigo-500 text-white"
-                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                          )}
-                        >
-                          {filter.label}
-                        </button>
-                      ))}
                     </div>
                   </div>
                 )}
