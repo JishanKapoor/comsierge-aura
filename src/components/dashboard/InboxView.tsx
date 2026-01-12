@@ -4155,17 +4155,33 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
                     <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                       <p className="text-xs font-medium text-gray-700">Include</p>
-                      <div className="relative">
-                        <select
-                          value={transferType}
-                          onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
-                          className="w-36 appearance-none bg-transparent pr-7 text-xs font-medium text-gray-800 focus:outline-none"
-                          aria-label="Message priority level"
-                        >
-                          <option value="all">All</option>
-                          <option value="high-priority">High Priority</option>
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <div className="rounded-lg border border-gray-200 bg-gray-100 p-0.5">
+                        <div className="flex gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setTransferType("all")}
+                            className={cn(
+                              "px-3 py-1 rounded-md text-xs font-medium transition-colors",
+                              transferType === "all"
+                                ? "bg-white text-gray-900 shadow-sm"
+                                : "text-gray-500 hover:text-gray-700"
+                            )}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setTransferType("high-priority")}
+                            className={cn(
+                              "px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+                              transferType === "high-priority"
+                                ? "bg-white text-gray-900 shadow-sm"
+                                : "text-gray-500 hover:text-gray-700"
+                            )}
+                          >
+                            High Priority
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
