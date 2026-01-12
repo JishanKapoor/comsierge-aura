@@ -4153,14 +4153,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 {(transferMode === "messages" || transferMode === "both") && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
-                    <select
-                      value={transferType}
-                      onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
-                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                    >
-                      <option value="all">All</option>
-                      <option value="high-priority">High Priority</option>
-                    </select>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <select
+                        value={transferType}
+                        onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
+                        className="w-full bg-transparent text-sm text-gray-700 focus:outline-none"
+                      >
+                        <option value="all">All</option>
+                        <option value="high-priority">High Priority</option>
+                      </select>
+                    </div>
                   </div>
                 )}
 
