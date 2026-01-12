@@ -3,6 +3,7 @@ import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import mongoose from "mongoose";
+import twilio from "twilio";
 import Rule from "../models/Rule.js";
 import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
@@ -19,6 +20,16 @@ const llm = new ChatOpenAI({
 });
 
 // ==================== HELPER FUNCTIONS ====================
+
+// Normalize phone number to E.164 format
+function normalizePhoneForSms(phone) {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) return '+1' + digits;
+  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
+  if (digits.length > 10) return '+' + digits;
+  return phone;
+}
 
 // Parse natural language time to Date
 function parseNaturalTime(timeStr, referenceDate = new Date()) {
@@ -639,20 +650,56 @@ const getRulesTool = tool(
 
 // Tool: Delete Rule
 const deleteRuleTool = tool(
-  async ({ userId, ruleDescription }) => {
+  async ({ userId, ruleDescription, ruleId, ruleType, targetContact }) => {
     try {
-      console.log("Deleting rule:", { userId, ruleDescription });
+      console.log("Deleting rule:", { userId, ruleDescription, ruleId, ruleType, targetContact });
       
-      // Find and delete rule matching description
-      const result = await Rule.findOneAndDelete({
-        userId,
-        rule: { $regex: ruleDescription, $options: "i" }
-      });
+      // Try multiple matching strategies
+      let result = null;
+      
+      // 1. Try by ID if provided
+      if (ruleId) {
+        result = await Rule.findOneAndDelete({ userId, _id: ruleId });
+      }
+      
+      // 2. Try by description regex
+      if (!result && ruleDescription) {
+        result = await Rule.findOneAndDelete({
+          userId,
+          rule: { $regex: ruleDescription.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: "i" }
+        });
+      }
+      
+      // 3. Try by type + target contact
+      if (!result && (ruleType || targetContact)) {
+        const query = { userId, active: true };
+        if (ruleType) query.type = ruleType;
+        if (targetContact) {
+          query.$or = [
+            { "transferDetails.contactName": { $regex: targetContact, $options: "i" } },
+            { "conditions.sourceContactName": { $regex: targetContact, $options: "i" } },
+            { rule: { $regex: targetContact, $options: "i" } }
+          ];
+        }
+        result = await Rule.findOneAndDelete(query);
+      }
+      
+      // 4. If ruleDescription mentions "transfer" or "forward", try finding transfer rules
+      if (!result && ruleDescription) {
+        const lower = ruleDescription.toLowerCase();
+        if (lower.includes("transfer") || lower.includes("forward")) {
+          result = await Rule.findOneAndDelete({ userId, type: "transfer", active: true });
+        } else if (lower.includes("block")) {
+          result = await Rule.findOneAndDelete({ userId, type: "block", active: true });
+        } else if (lower.includes("auto-reply") || lower.includes("auto reply")) {
+          result = await Rule.findOneAndDelete({ userId, type: "auto-reply", active: true });
+        }
+      }
       
       if (result) {
         return `Rule deleted: "${result.rule}"`;
       } else {
-        return `Could not find a rule matching "${ruleDescription}". Use "show my rules" to see your active rules.`;
+        return `Could not find a rule matching "${ruleDescription || targetContact || ruleType}". Use "show my rules" to see your active rules.`;
       }
     } catch (error) {
       console.error("Delete rule error:", error);
@@ -661,10 +708,13 @@ const deleteRuleTool = tool(
   },
   {
     name: "delete_rule",
-    description: "Delete a specific rule. Use when user says 'stop forwarding', 'remove rule', 'delete the auto-reply', 'cancel transfer'.",
+    description: "Delete/disable/turn off a specific rule. Use when user says 'stop forwarding', 'remove rule', 'delete the auto-reply', 'cancel transfer', 'turn that off', 'disable rule'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      ruleDescription: z.string().describe("Part of rule description to match"),
+      ruleDescription: z.string().optional().describe("Part of rule description to match"),
+      ruleId: z.string().optional().describe("Rule ID if known"),
+      ruleType: z.enum(["transfer", "auto-reply", "block", "priority", "custom"]).optional().describe("Type of rule to delete"),
+      targetContact: z.string().optional().describe("Contact name the rule involves"),
     }),
   }
 );
@@ -1089,6 +1139,96 @@ const sendMessageTool = tool(
   }
 );
 
+// Tool: Execute Send Message (actually sends the SMS via Twilio)
+const executeSendMessageTool = tool(
+  async ({ userId, contactPhone, messageText, contactName }) => {
+    try {
+      console.log("🚀 Executing SMS send:", { userId, contactPhone, messageText });
+      
+      // Get user's Twilio account
+      const user = await User.findById(userId);
+      if (!user?.phoneNumber) {
+        return "You don't have a phone number configured. Please set one up in Settings first.";
+      }
+      
+      // Get Twilio credentials
+      const twilioAccount = await TwilioAccount.findOne({ userId });
+      if (!twilioAccount) {
+        return "No Twilio account found. Please configure Twilio in Settings.";
+      }
+      
+      // Decrypt credentials
+      const accountSid = twilioAccount.accountSid;
+      const authToken = twilioAccount.authToken;
+      
+      if (!accountSid || !authToken) {
+        return "Twilio credentials not properly configured.";
+      }
+      
+      // Initialize Twilio client
+      const client = twilio(accountSid, authToken);
+      
+      // Normalize phone numbers
+      const fromNumber = normalizePhoneForSms(user.phoneNumber);
+      const toNumber = normalizePhoneForSms(contactPhone);
+      
+      // Send the message
+      const twilioMessage = await client.messages.create({
+        body: messageText,
+        from: fromNumber,
+        to: toNumber,
+      });
+      
+      console.log("✅ SMS sent via Twilio:", twilioMessage.sid);
+      
+      // Save to database
+      try {
+        const savedMessage = new Message({
+          userId,
+          contactPhone: toNumber,
+          contactName: contactName || toNumber,
+          direction: "outgoing",
+          body: messageText,
+          status: "sent",
+          twilioSid: twilioMessage.sid,
+          fromNumber,
+          toNumber,
+          isRead: true,
+        });
+        await savedMessage.save();
+        
+        // Update conversation
+        await Conversation.findOneAndUpdate(
+          { userId, contactPhone: { $regex: toNumber.replace(/\D/g, '').slice(-10) } },
+          { 
+            lastMessage: messageText,
+            lastMessageAt: new Date(),
+            $inc: { messageCount: 1 }
+          },
+          { upsert: false }
+        );
+      } catch (dbError) {
+        console.error("DB save error (message still sent):", dbError);
+      }
+      
+      return `Message sent to ${contactName || contactPhone}: "${messageText}"`;
+    } catch (error) {
+      console.error("Execute send message error:", error);
+      return `Failed to send message: ${error.message}`;
+    }
+  },
+  {
+    name: "execute_send_message",
+    description: "Actually send an SMS after user confirmation. Use when user says 'yes', 'send it', 'confirm', 'do it' after being asked to confirm sending a message.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactPhone: z.string().describe("Phone number to send to"),
+      messageText: z.string().describe("Message text to send"),
+      contactName: z.string().optional().describe("Contact name for records"),
+    }),
+  }
+);
+
 // Tool: List all contacts
 const listContactsTool = tool(
   async ({ userId, filter }) => {
@@ -1425,39 +1565,63 @@ const createSmartRuleTool = tool(
       
       // Use LLM to parse the rule intent
       const parseResponse = await llm.invoke([
-        new SystemMessage(`Parse this rule request and return JSON with:
+        new SystemMessage(`Parse this rule request into a structured format. Return JSON:
 {
-  "type": "transfer" | "auto-reply" | "block" | "priority" | "hold",
-  "sourceKeyword": "keyword to match in messages (if any)",
-  "sourceContactName": "specific contact name (if mentioned)",
-  "targetContactName": "contact to forward to (for transfer rules)",
+  "type": "transfer" | "auto-reply" | "block" | "priority" | "message-notify",
+  "sourceKeyword": "keyword/phrase to match in message content (e.g., 'baig', 'urgent', 'bank'). null if no keyword filter",
+  "sourceContactName": "specific sender name if the rule is FROM a specific person (e.g., 'Mark'). null if applies to all",
+  "targetContactName": "person to forward/notify TO (e.g., 'Jeremy', 'John'). Required for transfer rules",
   "mode": "calls" | "messages" | "both",
-  "autoReplyMessage": "message text (for auto-reply)",
-  "schedule": { "startTime": "HH:MM", "endTime": "HH:MM", "days": ["Monday"...] } or null,
+  "triggerCondition": "always" | "no-answer" | "busy",
+  "autoReplyMessage": "the reply text (for auto-reply rules)",
+  "schedule": { "startTime": "HH:MM", "endTime": "HH:MM", "days": ["Monday","Tuesday",...] } or null,
   "priority": "all" | "high-priority",
-  "summary": "brief description of what this rule does"
+  "summary": "brief human-readable description of this rule"
 }
+
+EXAMPLES:
+- "if I receive a message about baig send to jeremy" ->
+  {"type":"transfer","sourceKeyword":"baig","sourceContactName":null,"targetContactName":"jeremy","mode":"messages","triggerCondition":"always","priority":"all","summary":"Forward messages containing 'baig' to jeremy"}
+
+- "if mark texts me, forward to john" ->
+  {"type":"transfer","sourceKeyword":null,"sourceContactName":"mark","targetContactName":"john","mode":"messages","triggerCondition":"always","priority":"all","summary":"Forward messages from Mark to John"}
+
+- "if I don't pick up the phone, forward to mark" ->
+  {"type":"transfer","sourceKeyword":null,"sourceContactName":null,"targetContactName":"mark","mode":"calls","triggerCondition":"no-answer","priority":"all","summary":"Forward missed calls to Mark"}
+
+- "forward all calls from boss to assistant" ->
+  {"type":"transfer","sourceKeyword":null,"sourceContactName":"boss","targetContactName":"assistant","mode":"calls","triggerCondition":"always","priority":"all","summary":"Forward calls from Boss to Assistant"}
+
+- "auto reply 'in a meeting' after 6pm" ->
+  {"type":"auto-reply","autoReplyMessage":"in a meeting","schedule":{"startTime":"18:00","endTime":"23:59"},"summary":"Auto-reply 'in a meeting' after 6pm"}
+
 Only return valid JSON, nothing else.`),
         new HumanMessage(ruleDescription)
       ]);
       
       let parsed;
       try {
-        parsed = JSON.parse(parseResponse.content);
+        // Clean up potential markdown code blocks
+        let content = parseResponse.content.trim();
+        if (content.startsWith('```json')) content = content.slice(7);
+        if (content.startsWith('```')) content = content.slice(3);
+        if (content.endsWith('```')) content = content.slice(0, -3);
+        parsed = JSON.parse(content.trim());
       } catch (e) {
-        return `Could not understand the rule. Try being more specific, like "forward bank messages to John" or "auto-reply to work contacts after 6pm".`;
+        console.error("Failed to parse LLM response:", parseResponse.content);
+        return `Could not understand the rule. Try being more specific, like "forward messages about X to John" or "if I miss a call, forward to Mark".`;
       }
       
       // Resolve target contact for transfer rules
       let targetPhone = null;
       let targetName = parsed.targetContactName;
-      if (parsed.type === "transfer" && targetName) {
+      if ((parsed.type === "transfer" || parsed.type === "message-notify") && targetName) {
         const target = await resolveContact(userId, targetName);
         if (target) {
           targetPhone = target.phone;
           targetName = target.name;
         } else {
-          return `Could not find contact "${targetName}". Save them as a contact first.`;
+          return `Could not find contact "${targetName}". Save them as a contact first or provide their phone number.`;
         }
       }
       
@@ -1483,8 +1647,9 @@ Only return valid JSON, nothing else.`),
           sourceContactPhone: sourcePhone,
           sourceContactName: sourceName,
           schedule: parsed.schedule,
+          triggerCondition: parsed.triggerCondition || "always",
         },
-        transferDetails: parsed.type === "transfer" ? {
+        transferDetails: parsed.type === "transfer" || parsed.type === "message-notify" ? {
           mode: parsed.mode || "both",
           priority: parsed.priority || "all",
           contactName: targetName,
@@ -1504,7 +1669,7 @@ Only return valid JSON, nothing else.`),
   },
   {
     name: "create_smart_rule",
-    description: "Create any type of rule from natural language. Use for complex rules like: 'forward bank messages to accountant', 'hold spam messages', 'auto-reply after 6pm', 'block messages with crypto'",
+    description: "Create any type of rule from natural language. Use for complex rules like: 'if I receive a message about X send to Y', 'forward messages from Mark to John', 'if I don't pick up forward to Z', 'auto-reply after 6pm'",
     schema: z.object({
       userId: z.string().describe("User ID"),
       ruleDescription: z.string().describe("Natural language description of the rule"),
@@ -1703,6 +1868,7 @@ const fullAgentTools = [
   // Actions
   makeCallTool,
   sendMessageTool,
+  executeSendMessageTool,
   confirmActionTool,
   // Contacts
   listContactsTool,
@@ -1737,6 +1903,7 @@ const fullAgentTools = [
 const fullAgentToolMap = {
   make_call: makeCallTool,
   send_message: sendMessageTool,
+  execute_send_message: executeSendMessageTool,
   confirm_action: confirmActionTool,
   list_contacts: listContactsTool,
   search_contacts: searchContactsTool,
@@ -1777,6 +1944,75 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
   try {
     console.log("Rules Agent Chat:", { userId, message });
     
+    // Extract pending action from chat history for confirmation handling
+    let pendingAction = null;
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+      const msg = chatHistory[i];
+      if (msg.role === "assistant" && msg.text) {
+        // Check if it contains a pending send_message action
+        if (msg.text.includes("Ready to send to") && msg.text.includes('Reply "yes" to send')) {
+          // Extract contact and message from the confirmation text
+          const nameMatch = msg.text.match(/Ready to send to ([^:]+):/);
+          const msgMatch = msg.text.match(/"([^"]+)"\n\nReply "yes"/);
+          if (nameMatch && msgMatch) {
+            pendingAction = {
+              type: "send_message",
+              contactName: nameMatch[1].trim(),
+              messageText: msgMatch[1]
+            };
+          }
+          break;
+        }
+      }
+    }
+    
+    // Check if user is confirming a pending action
+    const lowerMessage = message.toLowerCase().trim();
+    const isConfirmation = ["yes", "send it", "confirm", "do it", "send", "yep", "yeah", "ok", "okay", "sure"].includes(lowerMessage);
+    
+    if (isConfirmation && pendingAction && pendingAction.type === "send_message") {
+      console.log("User confirmed pending send_message action:", pendingAction);
+      // Resolve contact phone from name
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+      let phone = null;
+      let name = pendingAction.contactName;
+      
+      // Try Contacts first
+      let contact = await Contact.findOne({
+        userId: userObjectId,
+        name: { $regex: pendingAction.contactName, $options: "i" }
+      });
+      
+      if (contact && contact.phone) {
+        phone = contact.phone;
+        name = contact.name;
+      } else {
+        // Try Conversations
+        const conversation = await Conversation.findOne({
+          userId: userObjectId,
+          contactName: { $regex: pendingAction.contactName, $options: "i" }
+        });
+        
+        if (conversation && conversation.contactPhone) {
+          phone = conversation.contactPhone;
+          name = conversation.contactName;
+        }
+      }
+      
+      if (phone) {
+        // Execute the send
+        const result = await executeSendMessageTool.invoke({
+          userId,
+          contactPhone: phone,
+          messageText: pendingAction.messageText,
+          contactName: name
+        });
+        return result;
+      } else {
+        return `Could not find phone number for "${pendingAction.contactName}". Please provide their number.`;
+      }
+    }
+    
     const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge SMS/call management.
 
 CRITICAL FORMATTING RULES:
@@ -1794,12 +2030,16 @@ CONTACTS:
 - block_contact / unblock_contact: Block/unblock
 
 RULES & AUTOMATION:
-- create_transfer_rule: Forward calls/messages (must specify source contact)
+- create_transfer_rule: Forward calls/messages from a specific contact to another
 - create_auto_reply: Set auto-reply message
 - mark_priority: Mark as high priority
 - get_rules: List active rules  
-- delete_rule: Remove a rule
-- create_smart_rule: Natural language rule creation (e.g. "forward bank messages to my accountant")
+- delete_rule: Remove/disable/turn off a rule (supports matching by description, type, or contact)
+- create_smart_rule: Natural language rule creation for complex rules like:
+  * "if I receive a message about X, forward to Y"
+  * "forward messages containing 'urgent' to my assistant"
+  * "if Mark calls and I don't answer, forward to John"
+  * Time-based: "auto-reply after 6pm"
 
 MESSAGES & ANALYSIS:
 - search_messages: Search ALL messages for keywords
@@ -1819,7 +2059,16 @@ PROACTIVE:
 
 ACTIONS:
 - make_call: Call someone
-- send_message: Send SMS
+- send_message: Prepare to send SMS (shows confirmation first)
+- execute_send_message: Actually send the SMS after user confirms with "yes"
+
+CONFIRMATION FLOW FOR SENDING MESSAGES:
+1. User says "send hey to John" -> use send_message tool -> shows "Ready to send... Reply yes to send"
+2. User says "yes" -> use execute_send_message tool with the contact and message
+
+IMPORTANT FOR RULE DELETION:
+- "turn that off" or "disable it" after showing a rule -> use delete_rule
+- Can match by: rule description text, rule type (transfer/block/auto-reply), or contact name involved
 
 CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "do I have any meetings" -> search_messages with query="meeting"
@@ -1829,11 +2078,13 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "change jk to john" -> update_contact with currentName="jk", newName="john"
 - "forward calls from jk to bob" -> create_transfer_rule
 - "remind me to call mom in 30 min" -> create_reminder
-- "forward bank messages to accountant" -> create_smart_rule
+- "forward messages about baig to jeremy" -> create_smart_rule
+- "if mark texts me, notify jeremy" -> create_smart_rule  
 - "what did I miss" -> get_unread_summary
 - "analyze my chat with john" -> analyze_conversation
 - "what should I say to sarah" -> suggest_reply
-- "any appointments from yesterday" -> extract_events OR search_messages_by_date
+- "turn that off" or "disable the transfer rule" -> delete_rule
+- "yes" after "Ready to send..." -> execute_send_message
 
 Be direct. Execute tools immediately. No confirmation needed for read operations.
 For complex rules described in natural language, use create_smart_rule.

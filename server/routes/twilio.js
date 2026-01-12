@@ -1537,8 +1537,19 @@ router.post("/webhook/sms", async (req, res) => {
           const transferPriorityFilter = transferDetails.priorityFilter;
           const transferTargetPhone = transferDetails.contactPhone;
           const sourceContactPhone = rule.conditions?.sourceContactPhone;
+          const ruleKeyword = rule.conditions?.keyword;
           
-          console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${transferMode}, priority: ${transferPriority})`);
+          console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${transferMode}, priority: ${transferPriority}, keyword: ${ruleKeyword || 'none'})`);
+
+          // Check keyword match if rule has a keyword condition
+          if (ruleKeyword) {
+            const keywordRegex = new RegExp(ruleKeyword, 'i');
+            if (!keywordRegex.test(Body)) {
+              console.log(`      ⏭️ Message does not contain keyword "${ruleKeyword}"`);
+              continue;
+            }
+            console.log(`      ✅ Message contains keyword "${ruleKeyword}"`);
+          }
 
           // If this transfer rule is scoped to a specific conversation, only apply it for that sender.
           if (sourceContactPhone) {
