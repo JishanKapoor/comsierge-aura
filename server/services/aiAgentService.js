@@ -750,88 +750,76 @@ const getRulesTool = tool(
   }
 );
 
-// Tool: Delete Rule
+// Tool: Delete Rule (AI-powered matching)
 const deleteRuleTool = tool(
-  async ({ userId, ruleDescription, ruleId, ruleType, targetContact }) => {
+  async ({ userId, userRequest }) => {
     try {
-      console.log("Deleting rule:", { userId, ruleDescription, ruleId, ruleType, targetContact });
+      console.log("AI Delete Rule:", { userId, userRequest });
       
-      // Escape special regex characters helper
-      const escapeRegex = (str) => str ? str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+      // 1. Get all active rules
+      const allRules = await Rule.find({ userId, active: true }).sort({ createdAt: -1 });
       
-      // Try multiple matching strategies
-      let result = null;
-      
-      // 1. Try by ID if provided
-      if (ruleId) {
-        result = await Rule.findOneAndDelete({ userId, _id: ruleId });
+      if (allRules.length === 0) {
+        return "You don't have any active rules to delete.";
       }
       
-      // 2. Try by description regex (escaped)
-      if (!result && ruleDescription) {
-        const escapedDesc = escapeRegex(ruleDescription);
-        result = await Rule.findOneAndDelete({
-          userId,
-          rule: { $regex: escapedDesc, $options: "i" }
-        });
+      // 2. If only one rule, just delete it
+      if (allRules.length === 1) {
+        const deleted = await Rule.findByIdAndDelete(allRules[0]._id);
+        return `Deleted your only rule: "${deleted.rule}"`;
       }
       
-      // 3. Try by type + target contact (escaped)
-      if (!result && (ruleType || targetContact)) {
-        const query = { userId, active: true };
-        if (ruleType) query.type = ruleType;
-        if (targetContact) {
-          const escapedTarget = escapeRegex(targetContact);
-          query.$or = [
-            { "transferDetails.contactName": { $regex: escapedTarget, $options: "i" } },
-            { "conditions.sourceContactName": { $regex: escapedTarget, $options: "i" } },
-            { "conditions.sourceContactPhone": { $regex: escapedTarget, $options: "i" } },
-            { rule: { $regex: escapedTarget, $options: "i" } }
-          ];
-        }
-        result = await Rule.findOneAndDelete(query);
-      }
+      // 3. Use AI to match the user's request to the right rule
+      const rulesDescription = allRules.map((r, i) => 
+        `${i + 1}. [ID: ${r._id}] [${r.type.toUpperCase()}] ${r.rule}`
+      ).join("\n");
       
-      // 4. If ruleDescription mentions "transfer" or "forward", try finding transfer rules
-      if (!result && ruleDescription) {
-        const lower = ruleDescription.toLowerCase();
-        if (lower.includes("transfer") || lower.includes("forward")) {
-          result = await Rule.findOneAndDelete({ userId, type: "transfer", active: true });
-        } else if (lower.includes("block")) {
-          result = await Rule.findOneAndDelete({ userId, type: "block", active: true });
-        } else if (lower.includes("auto-reply") || lower.includes("auto reply")) {
-          result = await Rule.findOneAndDelete({ userId, type: "auto-reply", active: true });
-        }
-      }
+      const matchResponse = await llm.invoke([
+        new SystemMessage(`You are matching a user's delete request to one of their rules.
+Given the user's request and the list of rules, return ONLY the ID of the rule they want to delete.
+If user says "turn that off", "delete it", "the first one", etc - pick the most recently mentioned or first rule.
+If user mentions a contact name, type (transfer/block/etc), or keywords - match to that rule.
+Return ONLY the MongoDB ObjectId, nothing else.`),
+        new HumanMessage(`User request: "${userRequest}"
+
+Available rules:
+${rulesDescription}
+
+Return the ID of the rule to delete:`)
+      ]);
       
-      // 5. Last resort - if user says "turn that off" or similar, delete most recent active rule
-      if (!result && ruleDescription && (
-        ruleDescription.toLowerCase().includes("that") || 
-        ruleDescription.toLowerCase().includes("it") ||
-        ruleDescription.toLowerCase().includes("off")
-      )) {
-        result = await Rule.findOneAndDelete({ userId, active: true }, { sort: { createdAt: -1 } });
-      }
+      const ruleId = matchResponse.content.trim();
+      console.log("AI matched rule ID:", ruleId);
       
-      if (result) {
-        return `Rule deleted: "${result.rule}"`;
+      // 4. Delete the matched rule
+      const deleted = await Rule.findOneAndDelete({ _id: ruleId, userId });
+      
+      if (deleted) {
+        return `Done! Deleted rule: "${deleted.rule}"`;
       } else {
-        return `Could not find a rule matching "${ruleDescription || targetContact || ruleType}". Use "show my rules" to see your active rules.`;
+        // Fallback: delete the most recent rule
+        const fallback = await Rule.findOneAndDelete({ userId, active: true }, { sort: { createdAt: -1 } });
+        if (fallback) {
+          return `Deleted most recent rule: "${fallback.rule}"`;
+        }
+        return "Could not find the rule to delete. Try 'show my rules' to see what's available.";
       }
     } catch (error) {
       console.error("Delete rule error:", error);
+      // Fallback on error: just delete most recent
+      try {
+        const fallback = await Rule.findOneAndDelete({ userId, active: true }, { sort: { createdAt: -1 } });
+        if (fallback) return `Deleted rule: "${fallback.rule}"`;
+      } catch (e) {}
       return `Error deleting rule: ${error.message}`;
     }
   },
   {
     name: "delete_rule",
-    description: "Delete/disable/turn off a specific rule. Use when user says 'stop forwarding', 'remove rule', 'delete the auto-reply', 'cancel transfer', 'turn that off', 'disable rule'.",
+    description: "Delete/disable/turn off a rule. Use when user says 'stop forwarding', 'remove rule', 'delete the auto-reply', 'cancel transfer', 'turn that off', 'disable rule', 'delete it'.",
     schema: z.object({
-      userId: z.string().describe("User ID - REQUIRED"),
-      ruleDescription: z.string().optional().describe("Part of rule description to match"),
-      ruleId: z.string().optional().describe("Rule ID if known"),
-      ruleType: z.enum(["transfer", "auto-reply", "block", "priority", "custom"]).optional().describe("Type of rule to delete"),
-      targetContact: z.string().optional().describe("Contact name the rule involves"),
+      userId: z.string().describe("User ID"),
+      userRequest: z.string().describe("The user's full request about which rule to delete - pass exactly what they said"),
     }),
   }
 );
