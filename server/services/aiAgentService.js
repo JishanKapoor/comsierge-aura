@@ -36,6 +36,11 @@ function parseNaturalTime(timeStr, referenceDate = new Date()) {
   const now = referenceDate;
   const lower = timeStr.toLowerCase().trim();
   
+  // Handle "now" or immediate
+  if (lower === "now" || lower === "immediately" || lower === "right now" || lower === "asap") {
+    return new Date(now.getTime() + 5000); // 5 seconds from now
+  }
+  
   // Relative times
   if (lower.includes("in ")) {
     const match = lower.match(/in\s+(\d+)\s*(sec|second|min|minute|hour|hr|day|week)/i);
@@ -1553,13 +1558,30 @@ const createReminderTool = tool(
         contactName: resolvedName || null,
       });
       
-      const timeStr = scheduledAt.toLocaleString("en-US", { 
-        weekday: "short", month: "short", day: "numeric", 
-        hour: "numeric", minute: "2-digit", second: "2-digit"
-      });
+      // Calculate relative time for display
+      const now = new Date();
+      const diffMs = scheduledAt.getTime() - now.getTime();
+      const diffSec = Math.round(diffMs / 1000);
+      const diffMin = Math.round(diffMs / 60000);
+      
+      let timeStr;
+      if (diffSec < 60) {
+        timeStr = `in ${diffSec} seconds`;
+      } else if (diffMin < 60) {
+        timeStr = `in ${diffMin} minute${diffMin > 1 ? 's' : ''}`;
+      } else if (diffMin < 1440) { // Less than 24 hours
+        const hours = Math.floor(diffMin / 60);
+        const mins = diffMin % 60;
+        timeStr = `in ${hours} hour${hours > 1 ? 's' : ''}${mins > 0 ? ` ${mins} min` : ''}`;
+      } else {
+        timeStr = scheduledAt.toLocaleString("en-US", { 
+          weekday: "short", month: "short", day: "numeric", 
+          hour: "numeric", minute: "2-digit"
+        });
+      }
       
       const notifyMethod = reminderType === "call" ? "I'll call you" : "I'll text you";
-      return `Got it! ${notifyMethod} at ${timeStr} to remind you: "${title}"${resolvedName ? ` (regarding ${resolvedName})` : ""}`;
+      return `Got it! ${notifyMethod} ${timeStr} to remind you: "${title}"${resolvedName ? ` (regarding ${resolvedName})` : ""}`;
     } catch (error) {
       console.error("Create reminder error:", error);
       return `Error creating reminder: ${error.message}`;
@@ -1918,13 +1940,22 @@ const createSmartRuleTool = tool(
       }
       
       // Build conditions object
+      // Normalize priority to match schema enum: "all" or "high-priority"
+      let priorityValue = parsed.filters?.priority || "all";
+      if (priorityValue === "high" || priorityValue === "important" || priorityValue === "urgent") {
+        priorityValue = "high-priority";
+      }
+      if (priorityValue !== "all" && priorityValue !== "high-priority") {
+        priorityValue = "all"; // Default to "all" for invalid values
+      }
+      
       const conditions = {
         keyword: parsed.filters?.keywords?.join(',') || null,
         excludeKeywords: parsed.filters?.exclude_keywords || [],
         sourceContactPhone: sourcePhone,
         sourceContactName: sourceName,
         fromUnknown: parsed.filters?.from_unknown || false,
-        priority: parsed.filters?.priority || "all",
+        priority: priorityValue,
         hasAttachment: parsed.filters?.has_attachment || false,
         sentiment: parsed.filters?.sentiment || null,
         schedule: parsed.conditions?.time_window || null,
@@ -1946,7 +1977,7 @@ const createSmartRuleTool = tool(
       // Build transfer details
       const transferDetails = {
         mode: "messages", // default
-        priority: parsed.filters?.priority || "all",
+        priority: priorityValue, // Use normalized priority
         contactName: targetName,
         contactPhone: targetPhone,
         forwardToEmail: parsed.action?.forward_to_email || null,
