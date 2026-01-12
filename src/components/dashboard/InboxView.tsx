@@ -4076,83 +4076,92 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           {/* Modal */}
           <div className="fixed inset-0 flex items-center justify-center z-50 pointer-events-none p-4">
             <div
-              className="bg-[#F5F5F5] rounded-lg shadow-lg w-full max-w-sm pointer-events-auto overflow-hidden flex flex-col"
+              className="bg-[#F5F5F5] rounded-xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
-                <h2 className="text-sm font-medium text-gray-800">Transfer Conversation</h2>
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+                <h2 className="text-sm font-semibold text-gray-800">Transfer Conversation</h2>
                 <button
                   onClick={() => setShowTransferModal(false)}
-                  className="p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors"
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               <div
-                className="px-4 py-4 space-y-4 overflow-y-auto max-h-[60vh]"
+                className="px-6 py-5 space-y-5 overflow-y-auto max-h-[60vh]"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
                 {/* Transfer Mode: Calls, Messages, Both */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500">What to transfer</p>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTransferMode("calls");
-                        setTransferType("all");
-                      }}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        transferMode === "calls" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      Calls
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTransferMode("messages")}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        transferMode === "messages" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      Messages
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTransferMode("both")}
-                      className={cn(
-                        "px-3 py-1.5 rounded text-xs transition-colors",
-                        transferMode === "both" 
-                          ? "bg-indigo-500 text-white" 
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      Both
-                    </button>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
+                      <ArrowRightLeft className="w-3 h-3 text-indigo-600" />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-800">What to transfer</p>
+                  </div>
+                  <p className="text-[11px] text-gray-500 -mt-1">Choose whether this rule transfers calls, messages, or both.</p>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-1">
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferMode("calls");
+                          setTransferType("all");
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferMode === "calls"
+                            ? "bg-white text-gray-900 border border-gray-200"
+                            : "text-gray-600 hover:bg-white/60"
+                        )}
+                      >
+                        Calls
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTransferMode("messages")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferMode === "messages"
+                            ? "bg-white text-gray-900 border border-gray-200"
+                            : "text-gray-600 hover:bg-white/60"
+                        )}
+                      >
+                        Messages
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTransferMode("both")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferMode === "both"
+                            ? "bg-white text-gray-900 border border-gray-200"
+                            : "text-gray-600 hover:bg-white/60"
+                        )}
+                      >
+                        Both
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {/* Priority filter - only for messages or both */}
                 {(transferMode === "messages" || transferMode === "both") && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-500">Message Priority Level</p>
-                    <div className="flex gap-1.5">
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
+                    <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                       <button
                         type="button"
                         onClick={() => setTransferType("all")}
                         className={cn(
-                          "px-3 py-1.5 rounded text-xs transition-colors",
+                          "px-3 py-1.5 rounded-md text-xs transition-colors",
                           transferType === "all" 
-                            ? "bg-indigo-500 text-white" 
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            ? "bg-white text-gray-900 border border-gray-200" 
+                            : "text-gray-600 hover:bg-white/60"
                         )}
                       >
                         All
@@ -4161,10 +4170,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         type="button"
                         onClick={() => setTransferType("high-priority")}
                         className={cn(
-                          "px-3 py-1.5 rounded text-xs transition-colors",
+                          "px-3 py-1.5 rounded-md text-xs transition-colors",
                           transferType === "high-priority"
-                            ? "bg-indigo-500 text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            ? "bg-white text-gray-900 border border-gray-200"
+                            : "text-gray-600 hover:bg-white/60"
                         )}
                       >
                         High Priority
@@ -4174,8 +4183,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 )}
 
                 {/* Contact Selection */}
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500">Transfer to</p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                      <UserPlus className="w-3 h-3 text-green-600" />
+                    </div>
+                    <p className="text-xs font-semibold text-gray-800">Transfer to</p>
+                  </div>
+                  <p className="text-[11px] text-gray-500 -mt-1">Pick a contact or enter a phone number.</p>
 
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -4193,7 +4208,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           }
                         }
                       }}
-                      className="w-full pl-8 pr-3 py-1.5 rounded text-xs bg-white text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:border-gray-300"
+                      className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-white text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
@@ -4202,9 +4217,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       type="button"
                       onClick={() => setTransferTo(`custom:${transferContactSearch.trim()}`)}
                       className={cn(
-                        "w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors border border-dashed rounded text-xs",
+                        "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border border-dashed rounded-lg text-sm",
                         transferTo === `custom:${transferContactSearch.trim()}`
-                          ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700"
                           : "border-gray-300 text-gray-600 hover:bg-gray-50"
                       )}
                     >
@@ -4214,7 +4229,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   )}
 
                   <div
-                    className="max-h-32 overflow-y-auto border border-gray-200 rounded"
+                    className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg bg-white"
                     style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                   >
                     {filteredTransferContacts.map((contact) => (
@@ -4223,7 +4238,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         type="button"
                         onClick={() => setTransferTo(contact.id)}
                         className={cn(
-                          "w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors text-xs",
+                          "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
                           transferTo === contact.id ? "bg-indigo-50" : "hover:bg-gray-50"
                         )}
                       >
@@ -4231,33 +4246,33 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           {contact.name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={cn("truncate", transferTo === contact.id ? "text-indigo-700 font-medium" : "text-gray-700")}>
+                          <p className={cn("text-sm truncate", transferTo === contact.id ? "text-indigo-700 font-medium" : "text-gray-700")}>
                             {contact.name}
                           </p>
-                          <p className="text-[11px] text-gray-400 truncate">{contact.phone}</p>
+                          <p className="text-xs text-gray-400 truncate">{contact.phone}</p>
                         </div>
                         {transferTo === contact.id && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
                       </button>
                     ))}
                     {filteredTransferContacts.length === 0 && (
-                      <p className="text-[11px] text-gray-400 text-center py-3">No contacts</p>
+                      <p className="text-xs text-gray-400 text-center py-4">No contacts</p>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* Footer */}
-              <div className="px-4 py-3 border-t border-gray-200 flex gap-2 shrink-0">
+              <div className="px-6 py-4 border-t border-gray-100 flex gap-2 shrink-0">
                 <Button
                   variant="outline"
                   onClick={() => setShowTransferModal(false)}
-                  className="flex-1 h-8 text-xs border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  className="flex-1 h-9 text-sm border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleTransferSubmit}
-                  className="flex-1 h-8 text-xs bg-indigo-500 hover:bg-indigo-600 text-white"
+                  className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
                 >
                   Transfer
                 </Button>
