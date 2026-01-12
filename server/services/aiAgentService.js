@@ -1151,10 +1151,45 @@ const executeSendMessageTool = tool(
         return "You don't have a phone number configured. Please set one up in Settings first.";
       }
       
-      // Get Twilio credentials
-      const twilioAccount = await TwilioAccount.findOne({ userId });
+      // Normalize phone numbers
+      const fromNumber = normalizePhoneForSms(user.phoneNumber);
+      const toNumber = normalizePhoneForSms(contactPhone);
+      
+      // Look up Twilio account by the user's phone number (not userId)
+      let twilioAccount = await TwilioAccount.findOne({ 
+        phoneNumbers: user.phoneNumber 
+      });
+      
+      // Try normalized version
+      if (!twilioAccount && fromNumber) {
+        twilioAccount = await TwilioAccount.findOne({ 
+          phoneNumbers: fromNumber 
+        });
+      }
+      
+      // Try phone assignments
       if (!twilioAccount) {
-        return "No Twilio account found. Please configure Twilio in Settings.";
+        twilioAccount = await TwilioAccount.findOne({
+          "phoneAssignments.phoneNumber": { $in: [user.phoneNumber, fromNumber] }
+        });
+      }
+      
+      // Fallback: search all accounts for matching phone
+      if (!twilioAccount) {
+        const allAccounts = await TwilioAccount.find({});
+        const phoneDigits = fromNumber.replace(/\D/g, '').slice(-10);
+        for (const acc of allAccounts) {
+          const normalizedPhones = (acc.phoneNumbers || []).map(p => p.replace(/\D/g, '').slice(-10));
+          if (normalizedPhones.includes(phoneDigits)) {
+            twilioAccount = acc;
+            break;
+          }
+        }
+      }
+      
+      if (!twilioAccount) {
+        console.log("No Twilio account found for phone:", user.phoneNumber);
+        return "No Twilio account found for your phone number. Please contact support.";
       }
       
       // Decrypt credentials
@@ -1165,12 +1200,10 @@ const executeSendMessageTool = tool(
         return "Twilio credentials not properly configured.";
       }
       
+      console.log("Found Twilio account:", accountSid.slice(0, 8) + "...");
+      
       // Initialize Twilio client
       const client = twilio(accountSid, authToken);
-      
-      // Normalize phone numbers
-      const fromNumber = normalizePhoneForSms(user.phoneNumber);
-      const toNumber = normalizePhoneForSms(contactPhone);
       
       // Send the message
       const twilioMessage = await client.messages.create({
@@ -2258,14 +2291,49 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
             return "You don't have a phone number configured. Please set one up in Settings first.";
           }
           
-          const twilioAccount = await TwilioAccount.findOne({ userId });
-          if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
-            return "Twilio not configured. Please set up Twilio in Settings.";
-          }
-          
-          const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
           const fromNumber = normalizePhoneForSms(user.phoneNumber);
           const toNumber = normalizePhoneForSms(phone);
+          
+          // Look up Twilio account by the user's phone number (not userId)
+          let twilioAccount = await TwilioAccount.findOne({ 
+            phoneNumbers: user.phoneNumber 
+          });
+          
+          // Try normalized version
+          if (!twilioAccount && fromNumber) {
+            twilioAccount = await TwilioAccount.findOne({ 
+              phoneNumbers: fromNumber 
+            });
+          }
+          
+          // Try phone assignments
+          if (!twilioAccount) {
+            twilioAccount = await TwilioAccount.findOne({
+              "phoneAssignments.phoneNumber": { $in: [user.phoneNumber, fromNumber] }
+            });
+          }
+          
+          // Fallback: search all accounts for matching phone
+          if (!twilioAccount) {
+            const allAccounts = await TwilioAccount.find({});
+            const phoneDigits = fromNumber.replace(/\D/g, '').slice(-10);
+            for (const acc of allAccounts) {
+              const normalizedPhones = (acc.phoneNumbers || []).map(p => p.replace(/\D/g, '').slice(-10));
+              if (normalizedPhones.includes(phoneDigits)) {
+                twilioAccount = acc;
+                break;
+              }
+            }
+          }
+          
+          if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
+            console.log("No Twilio account found for phone:", user.phoneNumber);
+            return "Twilio not configured for your phone number. Please contact support.";
+          }
+          
+          console.log("Found Twilio account:", twilioAccount.accountSid.slice(0, 8) + "...");
+          
+          const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
           
           console.log("Twilio send - From:", fromNumber, "To:", toNumber);
           
