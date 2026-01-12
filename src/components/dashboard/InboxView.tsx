@@ -4153,32 +4153,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 {(transferMode === "messages" || transferMode === "both") && (
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-gray-800">Message Priority Level</p>
-                    <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
-                      <button
-                        type="button"
-                        onClick={() => setTransferType("all")}
-                        className={cn(
-                          "px-3 py-1.5 rounded-md text-xs transition-colors",
-                          transferType === "all" 
-                            ? "bg-white text-gray-900 border border-gray-200" 
-                            : "text-gray-600 hover:bg-white/60"
-                        )}
-                      >
-                        All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTransferType("high-priority")}
-                        className={cn(
-                          "px-3 py-1.5 rounded-md text-xs transition-colors",
-                          transferType === "high-priority"
-                            ? "bg-white text-gray-900 border border-gray-200"
-                            : "text-gray-600 hover:bg-white/60"
-                        )}
-                      >
-                        High Priority
-                      </button>
-                    </div>
+                    <select
+                      value={transferType}
+                      onChange={(e) => setTransferType(e.target.value as "all" | "high-priority")}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    >
+                      <option value="all">All</option>
+                      <option value="high-priority">High Priority</option>
+                    </select>
                   </div>
                 )}
 
