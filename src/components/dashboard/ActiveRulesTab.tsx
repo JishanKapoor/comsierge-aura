@@ -10,6 +10,7 @@ import {
   Check,
   Send,
   Phone,
+  PhoneCall,
   Bell,
   Ban,
   Trash2,
@@ -29,7 +30,7 @@ import {
 interface ActiveRulesTabProps {
   externalRules?: ActiveRule[];
   onRulesChange?: (rules: ActiveRule[]) => void;
-  onStartCall?: (call: { number: string; name?: string }) => void;
+  onStartCall?: (call: { number: string; name?: string; method?: "browser" | "bridge" }) => void;
 }
 
 type RuleType = "auto-reply" | "forward" | "block" | "priority" | "transfer" | "custom" | "message-notify";
@@ -67,6 +68,10 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
   const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
+  
+  // Call mode dialog state
+  const [showCallModeDialog, setShowCallModeDialog] = useState(false);
+  const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
 
   // Reusable function to load rules from API
   const loadRules = useCallback(async (showLoading = false) => {
@@ -191,12 +196,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
       const data = await response.json();
 
-      // If the agent returned an action, handle it.
+      // If the agent returned a call action, show the call mode dialog
       if (data?.action?.action === "call" && data?.action?.confirm && data?.action?.contactPhone) {
-        onStartCall?.({
+        setPendingCall({
           number: data.action.contactPhone,
           name: data.action.contactName,
         });
+        setShowCallModeDialog(true);
       }
       
       const aiMsg: ChatMessage = {
@@ -250,6 +256,29 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   };
 
   const activeRulesCount = rules.filter((r) => r.active).length;
+
+  // Call mode handlers
+  const handleBrowserCall = () => {
+    if (!pendingCall) return;
+    setShowCallModeDialog(false);
+    onStartCall?.({
+      number: pendingCall.number,
+      name: pendingCall.name,
+      method: "browser",
+    });
+    setPendingCall(null);
+  };
+
+  const handleBridgeCall = () => {
+    if (!pendingCall) return;
+    setShowCallModeDialog(false);
+    onStartCall?.({
+      number: pendingCall.number,
+      name: pendingCall.name,
+      method: "bridge",
+    });
+    setPendingCall(null);
+  };
 
   return (
     <div className="space-y-4 pb-4">
@@ -510,6 +539,60 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
           <div className="p-6 text-center text-gray-400 text-xs">No rules yet</div>
         )}
       </div>
+
+      {/* Call Mode Selection Dialog */}
+      {showCallModeDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-lg w-full max-w-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-800">Choose Calling Method</h3>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded h-7 w-7 text-gray-500 hover:bg-gray-100" 
+                onClick={() => {
+                  setShowCallModeDialog(false);
+                  setPendingCall(null);
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-4">
+                How would you like to place this call to <strong>{pendingCall?.name || pendingCall?.number}</strong>?
+              </p>
+
+              <button
+                onClick={handleBrowserCall}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all group text-left"
+              >
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0 group-hover:bg-indigo-200">
+                  <Phone className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Browser Call (VoIP)</p>
+                  <p className="text-xs text-gray-500">Call directly from this device using microphone</p>
+                </div>
+              </button>
+
+              <button
+                onClick={handleBridgeCall}
+                className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-green-300 hover:bg-green-50 transition-all group text-left"
+              >
+                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0 group-hover:bg-green-200">
+                  <PhoneCall className="w-4 h-4 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Call via My Phone</p>
+                  <p className="text-xs text-gray-500">We'll ring your phone, then connect you to them</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

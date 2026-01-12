@@ -38,7 +38,7 @@ const Dashboard = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("inbox");
   const [selectedContactPhone, setSelectedContactPhone] = useState<string | null>(null);
-  const [pendingCallRequest, setPendingCallRequest] = useState<{ number: string; name?: string } | null>(null);
+  const [pendingCallRequest, setPendingCallRequest] = useState<{ number: string; name?: string; method?: "browser" | "bridge" } | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   

@@ -52,7 +52,7 @@ interface CallsTabProps {
   selectedContactPhone?: string | null;
   onClearSelection?: () => void;
   isActive?: boolean;
-  initialCall?: { number: string; name?: string } | null;
+  initialCall?: { number: string; name?: string; method?: "browser" | "bridge" } | null;
   onClearInitialCall?: () => void;
 }
 
@@ -311,14 +311,49 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
     }
   }, [selectedContactPhone, contacts]);
 
-  // If another tab (like Rules AI) requests a call, open the call mode dialog here.
+  // If another tab (like Rules AI) requests a call, either:
+  // - If method is specified, directly start that call type
+  // - If no method, show the call mode dialog
   useEffect(() => {
     if (!isActive) return;
     if (!initialCall?.number) return;
+    
     setPendingCall({ number: initialCall.number, name: initialCall.name });
-    setShowCallModeDialog(true);
+    
+    if (initialCall.method === "browser") {
+      // Directly trigger browser call (will be handled after pendingCall is set)
+      // We need a slight delay to ensure pendingCall state is set
+      setTimeout(() => {
+        setShowCallModeDialog(false);
+        // Trigger browser call by dispatching to the handler
+        const browserCallEvent = new CustomEvent("triggerBrowserCall");
+        window.dispatchEvent(browserCallEvent);
+      }, 50);
+    } else if (initialCall.method === "bridge") {
+      // Show bridge dialog directly
+      setTimeout(() => {
+        setShowCallModeDialog(false);
+        setShowBridgeDialog(true);
+        setBridgeNumber(user?.forwardingNumber || "");
+      }, 50);
+    } else {
+      // No method specified, show the call mode selection dialog
+      setShowCallModeDialog(true);
+    }
+    
     onClearInitialCall?.();
   }, [initialCall, isActive]);
+
+  // Listen for browser call trigger from AI-initiated calls
+  useEffect(() => {
+    const handleTriggerBrowserCall = () => {
+      if (pendingCall) {
+        handleBrowserCall();
+      }
+    };
+    window.addEventListener("triggerBrowserCall", handleTriggerBrowserCall);
+    return () => window.removeEventListener("triggerBrowserCall", handleTriggerBrowserCall);
+  }, [pendingCall]);
 
   useEffect(() => {
     if (!activeCall) return;
