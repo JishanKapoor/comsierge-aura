@@ -1532,26 +1532,47 @@ router.post("/webhook/sms", async (req, res) => {
         
         for (const rule of transferRules) {
           const transferDetails = rule.transferDetails || {};
+          const conditions = rule.conditions || {};
+          const actions = rule.actions || {};
           const transferMode = transferDetails.mode || "both";
           const transferPriority = transferDetails.priority || "all";
           const transferPriorityFilter = transferDetails.priorityFilter;
           const transferTargetPhone = transferDetails.contactPhone;
-          const sourceContactPhone = rule.conditions?.sourceContactPhone;
-          const ruleKeyword = rule.conditions?.keyword;
+          const sourceContactPhone = conditions.sourceContactPhone;
+          const ruleKeyword = conditions.keyword;
+          const excludeKeywords = conditions.excludeKeywords || [];
+          const exclusions = actions.exclusions || {};
+          const schedule = conditions.schedule;
+          const needsAI = conditions.needsAIAnalysis;
+          const sentiment = conditions.sentiment;
           
           console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${transferMode}, priority: ${transferPriority}, keyword: ${ruleKeyword || 'none'})`);
 
-          // Check keyword match if rule has a keyword condition
+          // === KEYWORD MATCHING ===
           if (ruleKeyword) {
-            const keywordRegex = new RegExp(ruleKeyword, 'i');
-            if (!keywordRegex.test(Body)) {
-              console.log(`      ⏭️ Message does not contain keyword "${ruleKeyword}"`);
+            // Support comma-separated keywords (OR logic)
+            const keywords = ruleKeyword.split(',').map(k => k.trim()).filter(k => k);
+            const bodyLower = Body.toLowerCase();
+            const hasKeyword = keywords.some(kw => bodyLower.includes(kw.toLowerCase()));
+            
+            if (!hasKeyword) {
+              console.log(`      ⏭️ Message does not contain any keyword from: "${ruleKeyword}"`);
               continue;
             }
-            console.log(`      ✅ Message contains keyword "${ruleKeyword}"`);
+            console.log(`      ✅ Message contains keyword from: "${ruleKeyword}"`);
           }
 
-          // If this transfer rule is scoped to a specific conversation, only apply it for that sender.
+          // === EXCLUDE KEYWORDS ===
+          if (excludeKeywords.length > 0) {
+            const bodyLower = Body.toLowerCase();
+            const hasExcluded = excludeKeywords.some(kw => bodyLower.includes(kw.toLowerCase()));
+            if (hasExcluded) {
+              console.log(`      ⏭️ Message contains excluded keyword`);
+              continue;
+            }
+          }
+
+          // === SOURCE CONTACT MATCHING ===
           if (sourceContactPhone) {
             const fromNorm = normalizeToE164ish(From);
             const { variations: fromVars } = buildPhoneVariations(fromNorm);
@@ -1563,6 +1584,97 @@ router.post("/webhook/sms", async (req, res) => {
               continue;
             }
           }
+
+          // === CONTACT EXCLUSIONS ===
+          if (exclusions.contacts && exclusions.contacts.length > 0) {
+            const senderName = contact?.name?.toLowerCase() || '';
+            const isExcluded = exclusions.contacts.some(ex => 
+              senderName.includes(ex.toLowerCase()) || ex.toLowerCase() === 'family'
+            );
+            if (isExcluded) {
+              console.log(`      ⏭️ Sender "${senderName}" is in exclusion list`);
+              continue;
+            }
+          }
+
+          // === TIME WINDOW CHECK ===
+          if (schedule && schedule.start && schedule.end) {
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+            const currentTime = currentHours * 60 + currentMinutes;
+            
+            const [startH, startM] = schedule.start.split(':').map(Number);
+            const [endH, endM] = schedule.end.split(':').map(Number);
+            const startTime = startH * 60 + (startM || 0);
+            const endTime = endH * 60 + (endM || 0);
+            
+            const inTimeWindow = currentTime >= startTime && currentTime <= endTime;
+            
+            // Check day of week if specified
+            let inDayWindow = true;
+            if (schedule.days && schedule.days.length > 0) {
+              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              const today = dayNames[now.getDay()];
+              inDayWindow = schedule.days.some(d => 
+                d.toLowerCase().startsWith(today.toLowerCase())
+              );
+            }
+            
+            if (!inTimeWindow || !inDayWindow) {
+              console.log(`      ⏭️ Outside time window (${schedule.start}-${schedule.end})`);
+              continue;
+            }
+          }
+
+          // === TIME EXCLUSION (e.g., "never at night") ===
+          if (exclusions.timeExclude) {
+            const now = new Date();
+            const hour = now.getHours();
+            
+            if (exclusions.timeExclude === 'night' && (hour >= 22 || hour < 6)) {
+              // Check if it's an emergency
+              const isEmergency = priorityContext?.kind === 'emergency' || 
+                                  aiAnalysis?.priority === 'high' && Body.toLowerCase().includes('urgent');
+              if (!isEmergency) {
+                console.log(`      ⏭️ Night time exclusion (non-emergency)`);
+                continue;
+              }
+            }
+            if (exclusions.timeExclude === 'weekend') {
+              const day = now.getDay();
+              if (day === 0 || day === 6) {
+                console.log(`      ⏭️ Weekend exclusion`);
+                continue;
+              }
+            }
+          }
+
+          // === AI SENTIMENT ANALYSIS ===
+          if (needsAI || sentiment) {
+            // Use existing AI analysis if available
+            const msgSentiment = aiAnalysis?.sentiment || null;
+            
+            if (sentiment === 'angry' && msgSentiment !== 'negative' && msgSentiment !== 'angry') {
+              console.log(`      ⏭️ Sentiment filter: need angry, got ${msgSentiment}`);
+              continue;
+            }
+            if (sentiment === 'stressful' && msgSentiment !== 'urgent' && msgSentiment !== 'stressed') {
+              // More lenient - check for urgent/important indicators
+              const hasStressWords = /urgent|asap|emergency|deadline|immediately/i.test(Body);
+              if (!hasStressWords) {
+                console.log(`      ⏭️ Sentiment filter: need stressful, message seems calm`);
+                continue;
+              }
+            }
+            if (sentiment === 'important') {
+              // Use AI priority
+              if (aiAnalysis?.priority !== 'high' && !isPriority) {
+                console.log(`      ⏭️ Sentiment filter: need important, got ${aiAnalysis?.priority}`);
+                continue;
+              }
+            }
+          }
           
           // Check if rule applies to messages
           if (transferMode !== "messages" && transferMode !== "both") {
@@ -1570,7 +1682,7 @@ router.post("/webhook/sms", async (req, res) => {
             continue;
           }
           
-          // Check schedule
+          // Check schedule expiry
           if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
             if (new Date() > new Date(rule.schedule.endTime)) {
               console.log(`      ⏭️ Transfer rule expired, skipping`);

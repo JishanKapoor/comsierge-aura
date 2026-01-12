@@ -1557,77 +1557,169 @@ Do NOT use emojis. Do NOT use markdown. Plain text only.`),
   }
 );
 
-// Tool: Create Smart Rule from Natural Language
-const createSmartRuleTool = tool(
-  async ({ userId, ruleDescription }) => {
-    try {
-      console.log("Creating smart rule:", { userId, ruleDescription });
-      
-      // Use LLM to parse the rule intent
-      const parseResponse = await llm.invoke([
-        new SystemMessage(`Parse this rule request into a structured format. Return JSON:
+// ==================== ADVANCED RULE PARSING SYSTEM ====================
+
+/**
+ * Advanced Rule Parser - Handles complex multi-condition rules
+ * Uses a state-machine like approach for clarification flows
+ */
+const RULE_PARSE_SCHEMA = `
 {
-  "type": "transfer" | "auto-reply" | "block" | "priority" | "message-notify",
-  "sourceKeyword": "keyword/phrase to match in message content (e.g., 'baig', 'urgent', 'bank'). null if no keyword filter",
-  "sourceContactName": "specific sender name if the rule is FROM a specific person (e.g., 'Mark'). null if applies to all",
-  "targetContactName": "person to forward/notify TO (e.g., 'Jeremy', 'John'). Required for transfer rules",
-  "mode": "calls" | "messages" | "both",
-  "triggerCondition": "always" | "no-answer" | "busy",
-  "autoReplyMessage": "the reply text (for auto-reply rules)",
-  "schedule": { "startTime": "HH:MM", "endTime": "HH:MM", "days": ["Monday","Tuesday",...] } or null,
-  "priority": "all" | "high-priority",
-  "summary": "brief human-readable description of this rule"
+  "type": "forward" | "mute" | "block" | "hold" | "auto_reply" | "prioritize" | "pause",
+  "action": {
+    "forward_to": "contact name or phone (if forwarding)",
+    "forward_to_email": "email address (if forwarding to email)",
+    "auto_reply_message": "message text (if auto-replying)",
+    "silent": false // true if user doesn't want notifications
+  },
+  "filters": {
+    "from_contact": "specific sender name or null for all",
+    "from_unknown": false, // true if only unknown numbers
+    "keywords": ["list", "of", "keywords"], // message content must contain one of these
+    "exclude_keywords": ["spam", "promo"], // exclude if contains these
+    "priority": "all" | "high" | "urgent" | "emergency",
+    "has_attachment": false,
+    "sentiment": null | "angry" | "stressful" | "important" // AI analysis required
+  },
+  "exclusions": {
+    "contacts": ["mom", "family"], // never apply to these
+    "groups": ["family", "work"], // conceptual groups
+    "time_exclude": null | "night" | "weekend" // don't apply during these times
+  },
+  "conditions": {
+    "time_window": { "start": "09:00", "end": "17:00", "days": ["Mon","Tue","Wed","Thu","Fri"] } | null,
+    "only_when": null | "offline" | "traveling" | "asleep" | "not_active",
+    "delay_minutes": 0, // forward only if no reply in X minutes
+    "unread_only": false, // only if message is unread
+    "stop_on_reply": false, // disable rule once user replies
+    "rate_limit": null | "1_per_person_per_day"
+  },
+  "duration": {
+    "type": "permanent" | "temporary" | "until_cancelled",
+    "hours": null, // for temporary rules
+    "end_time": null // specific end date/time
+  },
+  "needs_ai_analysis": false, // true if rule requires sentiment/importance analysis
+  "missing_info": ["recipient", "time"], // what we still need to ask user
+  "confidence": 0.95, // how confident we are in parsing (0-1)
+  "summary": "Human readable rule description"
+}`;
+
+async function parseAdvancedRule(ruleDescription) {
+  const parsePrompt = `You are an expert at parsing natural language into structured rules.
+Parse this rule request and identify ALL conditions, filters, and requirements.
+
+RULE REQUEST: "${ruleDescription}"
+
+Return JSON matching this schema:
+${RULE_PARSE_SCHEMA}
+
+PARSING GUIDELINES:
+1. If the user says "forward" or "send to" - type is "forward", extract recipient
+2. If they mention specific people (from Mom, from boss) - set from_contact
+3. If they mention keywords (about bank, mentions money) - add to keywords array
+4. If they say "except" or "but not" - add to exclusions
+5. If they mention times (after 6pm, during work hours) - set time_window
+6. If they say "urgent" or "important" - set priority filter
+7. If they say words like "feel", "sound", "seem", "would care" - needs_ai_analysis = true
+8. If the rule needs AI judgment - needs_ai_analysis = true
+9. If we need more info (no recipient specified) - add to missing_info
+10. For "forward intelligently" - set needs_ai_analysis = true and type = "forward"
+
+IMPORTANT: 
+- Set missing_info = ["recipient"] if forwarding but no recipient specified
+- Set confidence based on how clear the request is
+- Always provide a summary
+
+Return ONLY valid JSON.`;
+
+  const response = await llm.invoke([
+    new SystemMessage(parsePrompt),
+    new HumanMessage(ruleDescription)
+  ]);
+  
+  let content = response.content.trim();
+  if (content.startsWith('```json')) content = content.slice(7);
+  if (content.startsWith('```')) content = content.slice(3);
+  if (content.endsWith('```')) content = content.slice(0, -3);
+  
+  return JSON.parse(content.trim());
 }
 
-EXAMPLES:
-- "if I receive a message about baig send to jeremy" ->
-  {"type":"transfer","sourceKeyword":"baig","sourceContactName":null,"targetContactName":"jeremy","mode":"messages","triggerCondition":"always","priority":"all","summary":"Forward messages containing 'baig' to jeremy"}
+function generateClarificationQuestion(parsed) {
+  const missing = parsed.missing_info || [];
+  
+  if (missing.includes("recipient")) {
+    return "Who should these messages be forwarded to? Please provide a contact name or phone number.";
+  }
+  if (missing.includes("time")) {
+    return "What time window should this rule apply? (e.g., 'work hours 9-5', 'after 6pm', 'always')";
+  }
+  if (missing.includes("keywords")) {
+    return "What keywords or topics should trigger this rule?";
+  }
+  if (missing.includes("duration")) {
+    return "How long should this rule be active? (e.g., 'permanently', 'for 2 hours', 'until tomorrow')";
+  }
+  if (missing.includes("from_contact")) {
+    return "Which contacts should this rule apply to? (e.g., 'everyone', 'unknown numbers', a specific name)";
+  }
+  
+  return null;
+}
 
-- "if mark texts me, forward to john" ->
-  {"type":"transfer","sourceKeyword":null,"sourceContactName":"mark","targetContactName":"john","mode":"messages","triggerCondition":"always","priority":"all","summary":"Forward messages from Mark to John"}
-
-- "if I don't pick up the phone, forward to mark" ->
-  {"type":"transfer","sourceKeyword":null,"sourceContactName":null,"targetContactName":"mark","mode":"calls","triggerCondition":"no-answer","priority":"all","summary":"Forward missed calls to Mark"}
-
-- "forward all calls from boss to assistant" ->
-  {"type":"transfer","sourceKeyword":null,"sourceContactName":"boss","targetContactName":"assistant","mode":"calls","triggerCondition":"always","priority":"all","summary":"Forward calls from Boss to Assistant"}
-
-- "auto reply 'in a meeting' after 6pm" ->
-  {"type":"auto-reply","autoReplyMessage":"in a meeting","schedule":{"startTime":"18:00","endTime":"23:59"},"summary":"Auto-reply 'in a meeting' after 6pm"}
-
-Only return valid JSON, nothing else.`),
-        new HumanMessage(ruleDescription)
-      ]);
+// Tool: Create Smart Rule from Natural Language
+const createSmartRuleTool = tool(
+  async ({ userId, ruleDescription, clarificationResponse }) => {
+    try {
+      console.log("Creating smart rule:", { userId, ruleDescription, clarificationResponse });
       
-      let parsed;
-      try {
-        // Clean up potential markdown code blocks
-        let content = parseResponse.content.trim();
-        if (content.startsWith('```json')) content = content.slice(7);
-        if (content.startsWith('```')) content = content.slice(3);
-        if (content.endsWith('```')) content = content.slice(0, -3);
-        parsed = JSON.parse(content.trim());
-      } catch (e) {
-        console.error("Failed to parse LLM response:", parseResponse.content);
-        return `Could not understand the rule. Try being more specific, like "forward messages about X to John" or "if I miss a call, forward to Mark".`;
+      // Parse the rule using advanced AI
+      const parsed = await parseAdvancedRule(ruleDescription);
+      console.log("Parsed rule:", JSON.stringify(parsed, null, 2));
+      
+      // Check for clarification needs
+      if (parsed.missing_info && parsed.missing_info.length > 0 && !clarificationResponse) {
+        const question = generateClarificationQuestion(parsed);
+        if (question) {
+          // Store partial parse for continuation
+          return `CLARIFICATION_NEEDED|${JSON.stringify(parsed)}|${question}`;
+        }
       }
       
-      // Resolve target contact for transfer rules
+      // Merge clarification response if provided
+      if (clarificationResponse && parsed.missing_info) {
+        if (parsed.missing_info.includes("recipient")) {
+          parsed.action = parsed.action || {};
+          parsed.action.forward_to = clarificationResponse;
+          parsed.missing_info = parsed.missing_info.filter(i => i !== "recipient");
+        }
+      }
+      
+      // Resolve contacts
       let targetPhone = null;
-      let targetName = parsed.targetContactName;
-      if ((parsed.type === "transfer" || parsed.type === "message-notify") && targetName) {
-        const target = await resolveContact(userId, targetName);
-        if (target) {
-          targetPhone = target.phone;
-          targetName = target.name;
+      let targetName = parsed.action?.forward_to;
+      
+      if (targetName && parsed.type === "forward") {
+        // Check if it's already a phone number
+        const isPhone = /^\+?\d{10,}$/.test(targetName.replace(/[\s\-\(\)]/g, ''));
+        if (isPhone) {
+          targetPhone = targetName.startsWith('+') ? targetName : `+1${targetName.replace(/\D/g, '')}`;
+          targetName = targetPhone;
         } else {
-          return `Could not find contact "${targetName}". Save them as a contact first or provide their phone number.`;
+          const target = await resolveContact(userId, targetName);
+          if (target) {
+            targetPhone = target.phone;
+            targetName = target.name;
+          } else {
+            return `Could not find "${targetName}" in your contacts. Please save them first or provide a phone number.`;
+          }
         }
       }
       
       // Resolve source contact if specified
       let sourcePhone = null;
-      let sourceName = parsed.sourceContactName;
+      let sourceName = parsed.filters?.from_contact;
       if (sourceName) {
         const source = await resolveContact(userId, sourceName);
         if (source) {
@@ -1636,32 +1728,81 @@ Only return valid JSON, nothing else.`),
         }
       }
       
+      // Build conditions object
+      const conditions = {
+        keyword: parsed.filters?.keywords?.join(',') || null,
+        excludeKeywords: parsed.filters?.exclude_keywords || [],
+        sourceContactPhone: sourcePhone,
+        sourceContactName: sourceName,
+        fromUnknown: parsed.filters?.from_unknown || false,
+        priority: parsed.filters?.priority || "all",
+        hasAttachment: parsed.filters?.has_attachment || false,
+        sentiment: parsed.filters?.sentiment || null,
+        schedule: parsed.conditions?.time_window || null,
+        triggerCondition: parsed.conditions?.only_when || "always",
+        delayMinutes: parsed.conditions?.delay_minutes || 0,
+        unreadOnly: parsed.conditions?.unread_only || false,
+        stopOnReply: parsed.conditions?.stop_on_reply || false,
+        rateLimit: parsed.conditions?.rate_limit || null,
+        needsAIAnalysis: parsed.needs_ai_analysis || false,
+      };
+      
+      // Build exclusions
+      const exclusions = {
+        contacts: parsed.exclusions?.contacts || [],
+        groups: parsed.exclusions?.groups || [],
+        timeExclude: parsed.exclusions?.time_exclude || null,
+      };
+      
+      // Build transfer details
+      const transferDetails = {
+        mode: "messages", // default
+        priority: parsed.filters?.priority || "all",
+        contactName: targetName,
+        contactPhone: targetPhone,
+        forwardToEmail: parsed.action?.forward_to_email || null,
+        autoReplyMessage: parsed.action?.auto_reply_message || null,
+        silent: parsed.action?.silent || false,
+      };
+      
+      // Determine mode from context
+      if (ruleDescription.toLowerCase().includes('call')) {
+        transferDetails.mode = ruleDescription.toLowerCase().includes('message') ? 'both' : 'calls';
+      }
+      
       // Create the rule
       const rule = await Rule.create({
         userId,
         rule: parsed.summary || ruleDescription,
-        type: parsed.type,
+        type: parsed.type === "forward" ? "transfer" : parsed.type,
         active: true,
-        conditions: {
-          keyword: parsed.sourceKeyword || null,
-          sourceContactPhone: sourcePhone,
-          sourceContactName: sourceName,
-          schedule: parsed.schedule,
-          triggerCondition: parsed.triggerCondition || "always",
-        },
-        transferDetails: parsed.type === "transfer" || parsed.type === "message-notify" ? {
-          mode: parsed.mode || "both",
-          priority: parsed.priority || "all",
-          contactName: targetName,
-          contactPhone: targetPhone,
-        } : parsed.type === "auto-reply" ? {
-          autoReplyMessage: parsed.autoReplyMessage,
-          sourceContact: sourceName,
-          sourcePhone: sourcePhone,
-        } : null,
+        conditions,
+        actions: { exclusions },
+        transferDetails: parsed.type === "forward" || parsed.type === "transfer" ? transferDetails : 
+                        parsed.type === "auto_reply" ? { autoReplyMessage: parsed.action?.auto_reply_message } : null,
+        schedule: {
+          mode: parsed.duration?.type === "temporary" ? "duration" : "always",
+          durationHours: parsed.duration?.hours || null,
+          endTime: parsed.duration?.end_time ? new Date(parsed.duration.end_time) : null,
+        }
       });
       
-      return `Done. Created rule: "${parsed.summary || ruleDescription}"`;
+      // Build confirmation message
+      let confirmMsg = `Done. Created rule: "${parsed.summary}"`;
+      
+      if (parsed.needs_ai_analysis) {
+        confirmMsg += "\n(This rule uses AI analysis to determine message importance/sentiment)";
+      }
+      
+      if (conditions.schedule) {
+        confirmMsg += `\nActive: ${conditions.schedule.start || ''}${conditions.schedule.end ? ' to ' + conditions.schedule.end : ''}`;
+      }
+      
+      if (exclusions.contacts?.length > 0) {
+        confirmMsg += `\nExcluding: ${exclusions.contacts.join(', ')}`;
+      }
+      
+      return confirmMsg;
     } catch (error) {
       console.error("Smart rule error:", error);
       return `Error creating rule: ${error.message}`;
@@ -1669,10 +1810,18 @@ Only return valid JSON, nothing else.`),
   },
   {
     name: "create_smart_rule",
-    description: "Create any type of rule from natural language. Use for complex rules like: 'if I receive a message about X send to Y', 'forward messages from Mark to John', 'if I don't pick up forward to Z', 'auto-reply after 6pm'",
+    description: `Create sophisticated rules from natural language. Handles:
+- Basic: "Forward bank messages to my accountant", "Mute spam", "Block unknown numbers"
+- Time-based: "Forward to Alex during work hours", "Auto-reply after 6pm", "Mute after 9pm"  
+- Multi-condition: "Forward bank messages except from family", "Forward urgent client messages about payments"
+- Advanced: "Forward if I don't reply in 10 minutes", "Forward intelligently", "Forward messages that sound angry"
+- With exclusions: "Forward everything except from mom", "Mute spam but notify if urgent"
+
+Use this for ANY rule creation request - it handles clarification automatically.`,
     schema: z.object({
       userId: z.string().describe("User ID"),
       ruleDescription: z.string().describe("Natural language description of the rule"),
+      clarificationResponse: z.string().optional().describe("User's response to clarification question"),
     }),
   }
 );
@@ -1943,6 +2092,65 @@ const fullAgentLLM = new ChatOpenAI({
 export async function rulesAgentChat(userId, message, chatHistory = []) {
   try {
     console.log("Rules Agent Chat:", { userId, message });
+    
+    // Check for pending clarification in chat history
+    let pendingClarification = null;
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+      const msg = chatHistory[i];
+      if (msg.role === "assistant" && msg.text && msg.text.startsWith("CLARIFICATION_NEEDED|")) {
+        const parts = msg.text.split("|");
+        if (parts.length >= 3) {
+          pendingClarification = {
+            parsedRule: JSON.parse(parts[1]),
+            question: parts[2],
+            originalDescription: msg.originalDescription
+          };
+        }
+        break;
+      }
+      // Also check for clarification questions in normal text
+      if (msg.role === "assistant" && msg.text && (
+        msg.text.includes("Who should these messages be forwarded to?") ||
+        msg.text.includes("Which contact should receive") ||
+        msg.text.includes("Please provide a contact name or phone")
+      )) {
+        // Look back further for the original rule request
+        for (let j = i - 1; j >= 0; j--) {
+          if (chatHistory[j].role === "user") {
+            pendingClarification = {
+              originalDescription: chatHistory[j].text,
+              question: msg.text
+            };
+            break;
+          }
+        }
+        break;
+      }
+    }
+    
+    // If there's a pending clarification and user responded, complete the rule
+    if (pendingClarification && message.toLowerCase() !== "cancel" && message.toLowerCase() !== "nevermind") {
+      console.log("Completing clarification with response:", message);
+      
+      // Re-run smart rule creation with the clarification
+      const fullDescription = pendingClarification.originalDescription 
+        ? `${pendingClarification.originalDescription}. Forward to: ${message}`
+        : `Forward messages to ${message}`;
+      
+      const result = await createSmartRuleTool.invoke({
+        userId,
+        ruleDescription: fullDescription,
+        clarificationResponse: message
+      });
+      
+      // Check if still needs clarification
+      if (result.startsWith("CLARIFICATION_NEEDED|")) {
+        const parts = result.split("|");
+        return parts[2]; // Return the question
+      }
+      
+      return result;
+    }
     
     // Extract pending action from chat history for confirmation handling
     let pendingAction = null;
@@ -2220,6 +2428,13 @@ User ID: ${userId}`;
       
       // Check if any result is a JSON action needing frontend handling
       for (const result of results) {
+        // Check for clarification needed
+        if (typeof result === 'string' && result.startsWith("CLARIFICATION_NEEDED|")) {
+          const parts = result.split("|");
+          // Return just the question to the user
+          return parts[2];
+        }
+        
         try {
           const parsed = JSON.parse(result);
           if (parsed.action && parsed.confirm) {
