@@ -38,12 +38,13 @@ function parseNaturalTime(timeStr, referenceDate = new Date()) {
   
   // Relative times
   if (lower.includes("in ")) {
-    const match = lower.match(/in\s+(\d+)\s*(min|minute|hour|hr|day|week)/i);
+    const match = lower.match(/in\s+(\d+)\s*(sec|second|min|minute|hour|hr|day|week)/i);
     if (match) {
       const amount = parseInt(match[1]);
       const unit = match[2].toLowerCase();
       const result = new Date(now);
-      if (unit.startsWith("min")) result.setMinutes(result.getMinutes() + amount);
+      if (unit.startsWith("sec")) result.setSeconds(result.getSeconds() + amount);
+      else if (unit.startsWith("min")) result.setMinutes(result.getMinutes() + amount);
       else if (unit.startsWith("hour") || unit === "hr") result.setHours(result.getHours() + amount);
       else if (unit.startsWith("day")) result.setDate(result.getDate() + amount);
       else if (unit.startsWith("week")) result.setDate(result.getDate() + amount * 7);
@@ -1423,16 +1424,16 @@ const confirmActionTool = tool(
 
 // ==================== NEW ADVANCED TOOLS ====================
 
-// Tool: Create Reminder
+// Tool: Create Reminder (with actual call/SMS notification)
 const createReminderTool = tool(
   async ({ userId, title, when, contactName, contactPhone, type, description }) => {
     try {
-      console.log("Creating reminder:", { userId, title, when, contactName });
+      console.log("Creating reminder:", { userId, title, when, type, contactName });
       
       // Parse the time
       const scheduledAt = parseNaturalTime(when);
       if (!scheduledAt) {
-        return `Could not understand the time "${when}". Try "in 30 minutes", "tomorrow at 3pm", or "Monday 9am".`;
+        return `Could not understand the time "${when}". Try "in 30 seconds", "in 5 minutes", "tomorrow at 3pm", or "Monday 9am".`;
       }
       
       // Resolve contact if provided
@@ -1448,11 +1449,14 @@ const createReminderTool = tool(
         }
       }
       
+      // Determine notification method based on type
+      const reminderType = type || "message"; // Default to SMS
+      
       const reminder = await Reminder.create({
         userId,
         title,
         description: description || null,
-        type: type || "personal",
+        type: reminderType,
         scheduledAt,
         contactPhone: resolvedPhone || null,
         contactName: resolvedName || null,
@@ -1460,10 +1464,11 @@ const createReminderTool = tool(
       
       const timeStr = scheduledAt.toLocaleString("en-US", { 
         weekday: "short", month: "short", day: "numeric", 
-        hour: "numeric", minute: "2-digit" 
+        hour: "numeric", minute: "2-digit", second: "2-digit"
       });
       
-      return `Done. Reminder set for ${timeStr}: "${title}"${resolvedName ? ` (re: ${resolvedName})` : ""}`;
+      const notifyMethod = reminderType === "call" ? "I'll call you" : "I'll text you";
+      return `Got it! ${notifyMethod} at ${timeStr} to remind you: "${title}"${resolvedName ? ` (regarding ${resolvedName})` : ""}`;
     } catch (error) {
       console.error("Create reminder error:", error);
       return `Error creating reminder: ${error.message}`;
@@ -1471,14 +1476,14 @@ const createReminderTool = tool(
   },
   {
     name: "create_reminder",
-    description: "Create a reminder. Use for: 'remind me to...', 'set a reminder', 'don't let me forget', 'follow up with X in 30 min'",
+    description: "Schedule a reminder that will CALL or TEXT the user at the specified time. Use for: 'call me in 30 seconds', 'text me in 5 min', 'remind me to...', 'don't let me forget'. Use type='call' when user says 'call me', use type='message' when user says 'text me' or just 'remind me'.",
     schema: z.object({
       userId: z.string().describe("User ID"),
-      title: z.string().describe("What to remind about"),
-      when: z.string().describe("When to remind - e.g. 'in 30 minutes', 'tomorrow 3pm', 'Monday 9am'"),
+      title: z.string().describe("What to remind about - the message content"),
+      when: z.string().describe("When to remind - e.g. 'in 30 seconds', 'in 5 minutes', 'tomorrow 3pm', 'in 1 hour'"),
       contactName: z.string().optional().describe("Related contact name if any"),
       contactPhone: z.string().optional().describe("Related contact phone if any"),
-      type: z.enum(["personal", "call", "message"]).optional().describe("Reminder type"),
+      type: z.enum(["personal", "call", "message"]).optional().describe("'call' = phone call notification, 'message' = SMS notification (default)"),
       description: z.string().optional().describe("Additional details"),
     }),
   }

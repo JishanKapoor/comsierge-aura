@@ -16,6 +16,7 @@ import supportRoutes from "./routes/support.js";
 import remindersRoutes from "./routes/reminders.js";
 import translateRoutes from "./routes/translate.js";
 import mediaRoutes from "./routes/media.js";
+import { startReminderScheduler } from "./services/reminderScheduler.js";
 
 // Load environment variables with explicit path
 const __filename = fileURLToPath(import.meta.url);
@@ -133,6 +134,9 @@ const startServer = async () => {
     // List collections
     const collections = await mongoose.connection.db.listCollections().toArray();
     console.log(`📋 Collections: ${collections.map(c => c.name).join(", ") || "none yet"}`);
+
+    // Start the reminder scheduler
+    startReminderScheduler();
 
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
