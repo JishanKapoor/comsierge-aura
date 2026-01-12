@@ -530,11 +530,15 @@ const getLastMessageTool = tool(
 
       const dt = new Date(last.createdAt);
       const when = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-      const direction = last.direction === "outgoing" ? "→" : "←";
       const displayName = resolvedName || last.contactName || resolvedPhone;
       const text = last.body || "";
+      
+      // Clearly indicate who sent it
+      const whoSent = last.direction === "outgoing" 
+        ? `You sent to ${displayName}` 
+        : `${displayName} sent to you`;
 
-      return `Last message with ${displayName} (${resolvedPhone})\n[${when}] ${direction} ${text}`;
+      return `Last message with ${displayName}:\n[${when}] ${whoSent}: "${text}"`;
     } catch (error) {
       console.error("Get last message error:", error);
       return `Error getting last message: ${error.message}`;
@@ -542,9 +546,66 @@ const getLastMessageTool = tool(
   },
   {
     name: "get_last_message",
-    description: "Get the most recent message with a contact. Use when user asks: last message from X, show last text from X, what did X say last.",
+    description: "Get the most recent message with a contact (could be from you or them). Use when user asks: last message from X, show last text from X, what did X say.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      contactName: z.string().optional().describe("Contact name"),
+    }),
+  }
+);
+
+// Tool: Get Last Message FROM Contact (incoming only)
+const getLastIncomingMessageTool = tool(
+  async ({ userId, contactPhone, contactName }) => {
+    try {
+      let resolvedPhone = contactPhone;
+      let resolvedName = contactName;
+
+      if (contactName && !contactPhone) {
+        const contact = await Contact.findOne({
+          userId,
+          name: { $regex: contactName, $options: "i" },
+        });
+        if (contact) {
+          resolvedPhone = contact.phone;
+          resolvedName = contact.name;
+        }
+      }
+
+      if (!resolvedPhone) {
+        return `Could not find contact "${contactName}".`;
+      }
+
+      const phoneDigits = resolvedPhone.replace(/\D/g, "").slice(-10);
+      const phoneRegex = new RegExp(phoneDigits);
+
+      // Only get INCOMING messages (from them to you)
+      const last = await Message.findOne({
+        userId,
+        contactPhone: { $regex: phoneRegex },
+        direction: "incoming"
+      }).sort({ createdAt: -1 });
+
+      if (!last) {
+        return `No messages received FROM ${resolvedName || resolvedPhone}. They haven't texted you.`;
+      }
+
+      const dt = new Date(last.createdAt);
+      const when = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      const displayName = resolvedName || last.contactName || resolvedPhone;
+
+      return `Last message FROM ${displayName} (to you):\n[${when}] "${last.body}"`;
+    } catch (error) {
+      console.error("Get last incoming message error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "get_last_incoming_message",
+    description: "Get the last message RECEIVED FROM a contact (what THEY sent to you, not what you sent). Use when user asks: 'what did he say', 'his last message to me', 'what did they text me', 'their last message'.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
       contactPhone: z.string().optional().describe("Contact phone"),
       contactName: z.string().optional().describe("Contact name"),
     }),
@@ -576,11 +637,12 @@ const searchMessagesTool = tool(
         return `No messages found containing "${query}".`;
       }
       
-      // Format results
+      // Format results with direction
       const results = messages.map(m => {
         const contact = m.contactName || m.contactPhone || "Unknown";
         const date = new Date(m.createdAt).toLocaleDateString();
-        return `[${date}] ${contact}: ${m.body}`;
+        const sender = m.direction === "outgoing" ? "You" : contact;
+        return `[${date}] ${sender}: ${m.body}`;
       });
       
       return `Found ${messages.length} messages:\n${results.join("\n")}`;
@@ -838,6 +900,7 @@ const conversationTools = [
   searchContactsTool,
   markPriorityTool,
   getLastMessageTool,
+  getLastIncomingMessageTool,
   searchMessagesTool,
   searchMessagesByDateTool,
   getRulesTool,
@@ -858,6 +921,7 @@ const toolMap = {
   search_contacts: searchContactsTool,
   mark_priority: markPriorityTool,
   get_last_message: getLastMessageTool,
+  get_last_incoming_message: getLastIncomingMessageTool,
   search_messages: searchMessagesTool,
   search_messages_by_date: searchMessagesByDateTool,
   get_rules: getRulesTool,
@@ -2113,6 +2177,7 @@ const fullAgentTools = [
   createSmartRuleTool,
   // Messages
   getLastMessageTool,
+  getLastIncomingMessageTool,
   searchMessagesTool,
   searchMessagesByDateTool,
   summarizeConversationTool,
@@ -2146,6 +2211,7 @@ const fullAgentToolMap = {
   delete_rule: deleteRuleTool,
   create_smart_rule: createSmartRuleTool,
   get_last_message: getLastMessageTool,
+  get_last_incoming_message: getLastIncomingMessageTool,
   search_messages: searchMessagesTool,
   search_messages_by_date: searchMessagesByDateTool,
   summarize_conversation: summarizeConversationTool,

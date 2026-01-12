@@ -195,9 +195,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       });
 
       const data = await response.json();
+      
+      console.log("AI Response data:", data);
+      console.log("Action check:", data?.action?.action, data?.action?.confirm, data?.action?.contactPhone);
 
-      // If the agent returned a call action, show the call mode dialog
+      // If the agent returned a call action, show the call mode dialog HERE in this tab
       if (data?.action?.action === "call" && data?.action?.confirm && data?.action?.contactPhone) {
+        console.log("Setting up call modal in ActiveRulesTab");
         setPendingCall({
           number: data.action.contactPhone,
           name: data.action.contactName,
