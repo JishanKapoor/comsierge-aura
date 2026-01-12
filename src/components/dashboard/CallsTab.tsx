@@ -89,6 +89,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   const [isLoadingCalls, setIsLoadingCalls] = useState(true);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
+  const [showExtraCallFilters, setShowExtraCallFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showScheduleCall, setShowScheduleCall] = useState(false);
   const [isCallingLoading, setIsCallingLoading] = useState(false);
@@ -1407,27 +1408,73 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
       </div>
 
       {/* Filters */}
-      <div className="flex gap-1.5 flex-wrap">
-        {(["all", "missed", "incoming", "outgoing", "routed", "voicemail", "blocked"] as Filter[]).map((f) => (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {(["all", "missed", "incoming", "outgoing"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-2.5 py-1 text-xs rounded font-medium capitalize transition-colors ${
               filter === f ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }${
-              f === "voicemail" ? " flex items-center gap-1" : ""
-            }${
-              f === "routed" ? " flex items-center gap-1" : ""
-            }${
-              f === "blocked" ? " flex items-center gap-1" : ""
             }`}
           >
-            {f === "voicemail" && <Voicemail className="w-3 h-3" />}
-            {f === "routed" && <ArrowRightLeft className="w-3 h-3" />}
-            {f === "blocked" && <Ban className="w-3 h-3" />}
             {f}
           </button>
         ))}
+
+        {(() => {
+          const extraFilters: Filter[] = ["routed", "voicemail", "blocked"];
+          const isExtraActive = extraFilters.includes(filter);
+          const isOpen = showExtraCallFilters || isExtraActive;
+
+          return (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isOpen && isExtraActive) {
+                    setFilter("all");
+                    setShowExtraCallFilters(false);
+                    return;
+                  }
+
+                  setShowExtraCallFilters(!isOpen);
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  isExtraActive ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+                aria-label={isOpen ? "Hide extra call filters" : "Show extra call filters"}
+                title={isOpen ? "Hide" : "Show"}
+              >
+                <ChevronRight className={`w-3 h-3 transition-transform ${isOpen ? "rotate-90" : "rotate-0"}`} />
+              </button>
+
+              {isOpen && (
+                <div className="flex items-center gap-1.5">
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {extraFilters.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => {
+                          setFilter(f);
+                          setShowExtraCallFilters(true);
+                        }}
+                        className={`px-2.5 py-1 text-xs rounded font-medium capitalize transition-colors flex items-center gap-1 ${
+                          filter === f ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {f === "voicemail" && <Voicemail className="w-3 h-3" />}
+                        {f === "routed" && <ArrowRightLeft className="w-3 h-3" />}
+                        {f === "blocked" && <Ban className="w-3 h-3" />}
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Calls List */}
