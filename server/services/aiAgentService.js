@@ -3000,13 +3000,18 @@ DND (DO NOT DISTURB):
 - set_dnd: Turn on/off Comsierge Do Not Disturb (auto-reply to all contacts). Use when user says "do not disturb", "DND", "turn on dnd"
 
 ACTIONS:
-- make_call: Call someone (if user says "call me", first get_phone_info to get their forwarding number, then call that)
-- send_message: Prepare to send SMS (shows confirmation first)
+- make_call: Call someone
+- send_message: Prepare to send SMS (shows confirmation first) - CAN send to ANY number including the user's own forwarding number
 - execute_send_message: Actually send the SMS after user confirms with "yes"
 
-SPECIAL CASES:
-- "call me" = call the user's forwarding number (use get_phone_info first to find it)
-- "text me" = send SMS to the user's forwarding number
+CRITICAL - "TEXT ME" / "CALL ME" HANDLING:
+When user says "text me" or "send me a message" or "call me":
+1. First use get_phone_info to get their forwarding number
+2. Then use send_message (for text) or make_call (for call) with that forwarding number as the destination
+3. You CAN and SHOULD send messages/calls to the user - this is a core feature!
+
+DELAYED MESSAGES:
+For "text me in X minutes/seconds", use create_reminder to remind the user, mentioning they should receive the text.
 
 CONFIRMATION FLOW FOR SENDING MESSAGES:
 1. User says "send hey to John" -> use send_message tool -> shows "Ready to send... Reply yes to send"
@@ -3039,6 +3044,9 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "where do my calls go" -> get_phone_info
 - "show my inactive rules" -> get_rules with includeInactive=true
 - "disabled rules" -> get_rules with includeInactive=true
+- "text me hi" -> get_phone_info (to get forwarding number) then send_message to that number
+- "call me" -> get_phone_info (to get forwarding number) then make_call to that number
+- "send me a test message" -> get_phone_info then send_message to forwarding number
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
 
