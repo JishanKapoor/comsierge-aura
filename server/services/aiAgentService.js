@@ -2714,6 +2714,10 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "change my forwarding number to 555-1234" -> update_forwarding_number
 - "what number are calls forwarded to" -> get_phone_info
 - "what is my twilio number" -> get_phone_info
+- "show me my routing number" -> get_phone_info (routing = forwarding in this phone context)
+- "where do my calls go" -> get_phone_info
+
+IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
 
 Be direct. Execute tools immediately. No confirmation needed for read operations.
 For complex rules described in natural language, use create_smart_rule.
