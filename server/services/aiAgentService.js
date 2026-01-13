@@ -1628,6 +1628,62 @@ const listSupportTicketsTool = tool(
   }
 );
 
+// Tool: Set Do Not Disturb (Comsierge DND)
+const setDNDTool = tool(
+  async ({ userId, enabled, autoReplyMessage, startTime, endTime }) => {
+    try {
+      console.log("Setting DND:", { userId, enabled, autoReplyMessage, startTime, endTime });
+      
+      if (!enabled) {
+        // Disable DND - delete any DND rules
+        await Rule.deleteMany({ 
+          userId, 
+          type: "auto-reply",
+          rule: { $regex: /do not disturb|dnd/i }
+        });
+        return "Do Not Disturb has been turned off. You'll receive all notifications normally.";
+      }
+      
+      // Create DND auto-reply rule
+      const dndMessage = autoReplyMessage || "I'm currently unavailable. I'll get back to you as soon as possible.";
+      
+      const ruleDesc = startTime && endTime 
+        ? `Do Not Disturb auto-reply from ${startTime} to ${endTime}`
+        : "Do Not Disturb - auto-reply to all messages";
+      
+      await Rule.create({
+        userId,
+        type: "auto-reply",
+        rule: ruleDesc,
+        active: true,
+        autoReplyDetails: {
+          message: dndMessage,
+          startTime: startTime || null,
+          endTime: endTime || null,
+          allContacts: true
+        }
+      });
+      
+      const timeInfo = startTime && endTime ? ` from ${startTime} to ${endTime}` : "";
+      return `Do Not Disturb is now ON${timeInfo}. Auto-reply message: "${dndMessage}"`;
+    } catch (error) {
+      console.error("Set DND error:", error);
+      return `Error setting DND: ${error.message}`;
+    }
+  },
+  {
+    name: "set_dnd",
+    description: "Set Comsierge Do Not Disturb mode. Creates auto-reply for all contacts. Use when user says: 'do not disturb', 'DND', 'turn on dnd', 'mute notifications'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      enabled: z.boolean().describe("true to enable DND, false to disable"),
+      autoReplyMessage: z.string().optional().describe("Custom auto-reply message during DND"),
+      startTime: z.string().optional().describe("Start time for scheduled DND (e.g. '10pm', '22:00')"),
+      endTime: z.string().optional().describe("End time for scheduled DND (e.g. '7am', '07:00')"),
+    }),
+  }
+);
+
 // Tool: Confirm action
 const confirmActionTool = tool(
   async ({ userId, action, confirmed, actionData }) => {
@@ -2434,6 +2490,8 @@ const fullAgentTools = [
   // Support
   createSupportTicketTool,
   listSupportTicketsTool,
+  // DND
+  setDNDTool,
 ];
 
 const fullAgentToolMap = {
@@ -2468,6 +2526,7 @@ const fullAgentToolMap = {
   update_forwarding_number: updateForwardingNumberTool,
   create_support_ticket: createSupportTicketTool,
   list_support_tickets: listSupportTicketsTool,
+  set_dnd: setDNDTool,
 };
 
 // Full Agent LLM
@@ -2759,11 +2818,14 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
     
     const systemPrompt = `You are Aura, a powerful AI assistant for Comsierge SMS/call management.
 
-CRITICAL FORMATTING RULES:
+CRITICAL RULES:
 - NEVER use emojis
 - NEVER use markdown (no **, no ##, no *)
 - Use plain text only
 - Be concise and direct
+- NEVER mention iPhone, Android, iOS, or any device settings - Comsierge is a standalone service
+- When user says "do not disturb" or "DND", they mean Comsierge DND (auto-reply/forward rules), NOT phone settings
+- For support tickets: ALWAYS ask clarifying questions first before creating the ticket
 
 TOOLS BY CATEGORY:
 
@@ -2807,8 +2869,11 @@ PHONE SETTINGS:
 - update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
 
 SUPPORT:
-- create_support_ticket: Create a support ticket (use when user says "raise a ticket", "support ticket", "report an issue", "file a complaint")
+- create_support_ticket: Create a support ticket - BUT FIRST ask: 1) What exactly is happening? 2) When did it start? 3) Any error messages? Only create after getting details.
 - list_support_tickets: Show user's support tickets (use when user says "show my tickets", "my support tickets", "ticket status")
+
+DND (DO NOT DISTURB):
+- set_dnd: Turn on/off Comsierge Do Not Disturb (auto-reply to all contacts). Use when user says "do not disturb", "DND", "turn on dnd"
 
 ACTIONS:
 - make_call: Call someone (if user says "call me", first get_phone_info to get their forwarding number, then call that)
