@@ -1,10 +1,12 @@
 import twilio from 'twilio';
 import Reminder from '../models/Reminder.js';
 import ScheduledMessage from '../models/ScheduledMessage.js';
+import AICall from '../models/AICall.js';
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
 import User from '../models/User.js';
 import TwilioAccount from '../models/TwilioAccount.js';
+import { initiateAICall } from './aiCallService.js';
 
 // Process due reminders and scheduled messages - called every 30 seconds
 export async function processReminders() {
@@ -13,6 +15,9 @@ export async function processReminders() {
     
     // Process scheduled messages first
     await processScheduledMessages(now);
+    
+    // Process scheduled AI calls
+    await processScheduledAICalls(now);
     
     // Find ALL reminders for debugging
     const allReminders = await Reminder.find({
@@ -263,6 +268,35 @@ async function sendScheduledMessage(scheduledMsg) {
     matchingConvo.lastMessageAt = new Date();
     matchingConvo.messageCount = (matchingConvo.messageCount || 0) + 1;
     await matchingConvo.save();
+  }
+}
+
+// Process scheduled AI calls
+async function processScheduledAICalls(now) {
+  try {
+    const dueAICalls = await AICall.find({
+      status: 'pending',
+      scheduledAt: { $lte: now, $ne: null }
+    });
+
+    if (dueAICalls.length === 0) return;
+
+    console.log(`🤖 Processing ${dueAICalls.length} scheduled AI call(s)...`);
+
+    for (const aiCall of dueAICalls) {
+      try {
+        await initiateAICall(aiCall._id);
+        console.log(`✅ Initiated scheduled AI call to ${aiCall.contactName || aiCall.contactPhone}`);
+      } catch (error) {
+        console.error(`❌ Failed to initiate AI call ${aiCall._id}:`, error);
+        await AICall.findByIdAndUpdate(aiCall._id, {
+          status: 'failed',
+          errorMessage: error.message
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error in processScheduledAICalls:', error);
   }
 }
 

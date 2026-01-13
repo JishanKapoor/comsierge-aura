@@ -16,6 +16,7 @@ import supportRoutes from "./routes/support.js";
 import remindersRoutes from "./routes/reminders.js";
 import translateRoutes from "./routes/translate.js";
 import mediaRoutes from "./routes/media.js";
+import aiCallsRoutes from "./routes/ai-calls.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 
 // Load environment variables with explicit path
@@ -76,6 +77,7 @@ app.use("/api/support", supportRoutes);
 app.use("/api/reminders", remindersRoutes);
 app.use("/api/translate", translateRoutes);
 app.use("/api/media", mediaRoutes);
+app.use("/api/ai-calls", aiCallsRoutes);
 
 // Root route - shows API info
 app.get("/", (req, res) => {

@@ -12,6 +12,8 @@ import Reminder from "../models/Reminder.js";
 import ScheduledMessage from "../models/ScheduledMessage.js";
 import User from "../models/User.js";
 import TwilioAccount from "../models/TwilioAccount.js";
+import AICall from "../models/AICall.js";
+import { initiateAICall as startAICall } from "./aiCallService.js";
 
 // Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
@@ -1836,6 +1838,502 @@ const setDNDTool = tool(
   }
 );
 
+// ==================== AI CALL TOOLS ====================
+
+// Tool: Make an autonomous AI call
+const makeAICallTool = tool(
+  async ({ userId, contactName, contactPhone, objective, scriptPoints, scheduledAt, voiceStyle }) => {
+    try {
+      console.log("Creating AI call:", { userId, contactName, contactPhone, objective });
+      
+      // Get user's timezone
+      const user = await User.findById(userId);
+      const timezone = user?.timezone || "America/New_York";
+      
+      // Resolve contact phone if only name provided
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (!phone && contactName) {
+        const contact = await Contact.findOne({
+          userId,
+          $or: [
+            { name: { $regex: new RegExp(contactName, "i") } },
+            { customName: { $regex: new RegExp(contactName, "i") } },
+          ]
+        });
+        if (contact) {
+          phone = contact.phoneNumber;
+          name = contact.customName || contact.name;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find a phone number for ${contactName || "the contact"}. Please provide a phone number.`;
+      }
+      
+      // Normalize phone
+      phone = normalizePhoneForSms(phone);
+      
+      // Parse scheduled time if provided
+      let scheduleDate = null;
+      if (scheduledAt) {
+        scheduleDate = parseNaturalTime(scheduledAt, new Date());
+        if (scheduleDate <= new Date()) {
+          scheduleDate = null; // If in past, make immediate
+        }
+      }
+      
+      // Create the AI call record
+      const aiCall = await AICall.create({
+        userId,
+        contactPhone: phone,
+        contactName: name || "Unknown",
+        objective,
+        scriptPoints: scriptPoints || [],
+        scheduledAt: scheduleDate,
+        voiceStyle: voiceStyle || "friendly",
+        status: "pending"
+      });
+      
+      // If no scheduled time, initiate immediately
+      if (!scheduleDate) {
+        try {
+          await startAICall(aiCall._id);
+          return `AI call initiated to ${name || phone}. Objective: "${objective}". I'll summarize the conversation for you when it's done.`;
+        } catch (callError) {
+          aiCall.status = "failed";
+          aiCall.errorMessage = callError.message;
+          await aiCall.save();
+          return `Failed to initiate AI call: ${callError.message}`;
+        }
+      } else {
+        const formattedTime = formatInTimezone(scheduleDate, timezone);
+        return `AI call scheduled to ${name || phone} for ${formattedTime}. Objective: "${objective}". I'll make the call then and report back.`;
+      }
+    } catch (error) {
+      console.error("Make AI call error:", error);
+      return `Error creating AI call: ${error.message}`;
+    }
+  },
+  {
+    name: "make_ai_call",
+    description: "Make an autonomous AI call where the AI has a conversation on behalf of the user. Use when user says: 'have AI call X', 'AI call X and ask about Y', 'call X and check on them', 'AI should call X'. The AI will make the call, follow the objective/script, and report back with a summary.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name to call"),
+      contactPhone: z.string().optional().describe("Phone number to call (if no contact name)"),
+      objective: z.string().describe("What the AI should accomplish on the call. E.g. 'Check in and ask how his day is going'"),
+      scriptPoints: z.array(z.string()).optional().describe("Specific points the AI should cover in order"),
+      scheduledAt: z.string().optional().describe("When to make the call. E.g. 'in 1 hour', 'tomorrow at 3pm', 'now'"),
+      voiceStyle: z.enum(["friendly", "professional", "casual", "formal"]).optional().describe("How the AI should sound"),
+    }),
+  }
+);
+
+// Tool: List AI calls
+const listAICallsTool = tool(
+  async ({ userId, status }) => {
+    try {
+      const user = await User.findById(userId);
+      const timezone = user?.timezone || "America/New_York";
+      
+      const query = { userId };
+      if (status) query.status = status;
+      
+      const aiCalls = await AICall.find(query)
+        .sort({ createdAt: -1 })
+        .limit(10);
+      
+      if (aiCalls.length === 0) {
+        return status 
+          ? `No ${status} AI calls found.`
+          : "You don't have any AI calls yet. Would you like me to make one?";
+      }
+      
+      const callList = aiCalls.map(c => {
+        let info = `• ${c.contactName || c.contactPhone} - ${c.status}`;
+        if (c.scheduledAt) {
+          info += ` (scheduled for ${formatInTimezone(c.scheduledAt, timezone)})`;
+        }
+        if (c.objective) {
+          info += `\n  Objective: "${c.objective.substring(0, 50)}${c.objective.length > 50 ? '...' : ''}"`;
+        }
+        if (c.summary && c.status === "completed") {
+          info += `\n  Summary: "${c.summary.substring(0, 100)}${c.summary.length > 100 ? '...' : ''}"`;
+        }
+        return info;
+      }).join("\n\n");
+      
+      return `Your AI calls:\n\n${callList}`;
+    } catch (error) {
+      return `Error listing AI calls: ${error.message}`;
+    }
+  },
+  {
+    name: "list_ai_calls",
+    description: "List the user's AI calls. Shows status, objectives, and summaries.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      status: z.enum(["pending", "in-progress", "completed", "failed", "cancelled", "no-answer"]).optional()
+        .describe("Filter by status"),
+    }),
+  }
+);
+
+// Tool: Cancel an AI call
+const cancelAICallTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      const query = { userId, status: "pending" };
+      
+      if (contactName) {
+        query.contactName = { $regex: new RegExp(contactName, "i") };
+      } else if (contactPhone) {
+        query.contactPhone = normalizePhoneForSms(contactPhone);
+      } else {
+        // Cancel the most recent pending call
+        const recentCall = await AICall.findOne(query).sort({ createdAt: -1 });
+        if (!recentCall) {
+          return "No pending AI calls to cancel.";
+        }
+        recentCall.status = "cancelled";
+        await recentCall.save();
+        return `Cancelled AI call to ${recentCall.contactName || recentCall.contactPhone}.`;
+      }
+      
+      const aiCall = await AICall.findOne(query);
+      if (!aiCall) {
+        return `No pending AI call found for ${contactName || contactPhone}.`;
+      }
+      
+      aiCall.status = "cancelled";
+      await aiCall.save();
+      
+      return `Cancelled AI call to ${aiCall.contactName || aiCall.contactPhone}.`;
+    } catch (error) {
+      return `Error cancelling AI call: ${error.message}`;
+    }
+  },
+  {
+    name: "cancel_ai_call",
+    description: "Cancel a pending AI call. Can specify contact name or phone, or cancels the most recent pending call.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name of the call to cancel"),
+      contactPhone: z.string().optional().describe("Phone number of the call to cancel"),
+    }),
+  }
+);
+
+// Tool: Get AI call result/summary
+const getAICallResultTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      const user = await User.findById(userId);
+      const timezone = user?.timezone || "America/New_York";
+      
+      const query = { userId, status: "completed" };
+      
+      if (contactName) {
+        query.contactName = { $regex: new RegExp(contactName, "i") };
+      } else if (contactPhone) {
+        query.contactPhone = normalizePhoneForSms(contactPhone);
+      }
+      
+      const aiCall = await AICall.findOne(query).sort({ completedAt: -1 });
+      
+      if (!aiCall) {
+        return `No completed AI call found${contactName ? ` for ${contactName}` : contactPhone ? ` for ${contactPhone}` : ""}.`;
+      }
+      
+      let result = `AI Call to ${aiCall.contactName || aiCall.contactPhone}\n`;
+      result += `Completed: ${formatInTimezone(aiCall.completedAt, timezone)}\n`;
+      result += `Objective: ${aiCall.objective}\n\n`;
+      
+      if (aiCall.summary) {
+        result += `Summary: ${aiCall.summary}\n\n`;
+      }
+      
+      if (aiCall.keyPoints && aiCall.keyPoints.length > 0) {
+        result += `Key Points:\n${aiCall.keyPoints.map(p => `• ${p}`).join("\n")}\n\n`;
+      }
+      
+      if (aiCall.actionItems && aiCall.actionItems.length > 0) {
+        result += `Action Items:\n${aiCall.actionItems.map(a => `• ${a}`).join("\n")}\n\n`;
+      }
+      
+      if (aiCall.transcript && aiCall.transcript.length > 0) {
+        result += `Transcript:\n`;
+        result += aiCall.transcript.map(t => 
+          `${t.speaker === "ai" ? "AI" : aiCall.contactName || "Them"}: ${t.text}`
+        ).join("\n");
+      }
+      
+      return result;
+    } catch (error) {
+      return `Error getting AI call result: ${error.message}`;
+    }
+  },
+  {
+    name: "get_ai_call_result",
+    description: "Get the summary and details of a completed AI call. Use when user asks: 'what did they say', 'how did the call go', 'what was the result of the call'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name to get result for"),
+      contactPhone: z.string().optional().describe("Phone number to get result for"),
+    }),
+  }
+);
+
+// ==================== TRANSLATION & FILTERING TOOLS ====================
+
+// Tool: Translate text
+const translateTextTool = tool(
+  async ({ text, targetLang, sourceLang }) => {
+    try {
+      const sl = sourceLang || 'auto';
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Translation request failed');
+      
+      const data = await response.json();
+      if (data && data[0] && Array.isArray(data[0])) {
+        const translated = data[0].map(item => item?.[0]).filter(Boolean).join('');
+        if (translated) {
+          const detectedLang = data[2] || sl;
+          return `Translation (${detectedLang} → ${targetLang}):\n"${translated}"`;
+        }
+      }
+      return `Could not translate the text. Please try again.`;
+    } catch (error) {
+      return `Translation error: ${error.message}`;
+    }
+  },
+  {
+    name: "translate_text",
+    description: "Translate text to another language. Use when user says: 'translate X to Spanish', 'what does X mean in English', 'say X in Italian'. Supported languages: en, es, fr, de, it, pt, zh, ja, ko, ar, ru, etc.",
+    schema: z.object({
+      text: z.string().describe("Text to translate"),
+      targetLang: z.string().describe("Target language code (en, es, fr, de, it, pt, zh, ja, ko, ar, ru, etc.)"),
+      sourceLang: z.string().optional().describe("Source language code (default: auto-detect)"),
+    }),
+  }
+);
+
+// Tool: Classify message (spam/priority/normal)
+const classifyMessageTool = tool(
+  async ({ userId, messageText, senderInfo }) => {
+    try {
+      // Use AI to classify the message
+      const classificationPrompt = `Classify this message into one of these categories:
+- SPAM: Unsolicited marketing, scams, car warranty offers, prize winnings, phishing attempts
+- PRIORITY: Urgent/time-sensitive, from family/friends asking for help, important appointments, emergencies
+- DELIVERY: Package/shipping notifications from FedEx, UPS, Amazon, etc.
+- FINANCIAL: Bank alerts, payment confirmations, fraud alerts
+- NORMAL: Regular conversation, neither spam nor urgent
+
+Message from ${senderInfo || 'unknown'}: "${messageText}"
+
+Respond with JSON: {"category": "SPAM|PRIORITY|DELIVERY|FINANCIAL|NORMAL", "confidence": 0-100, "reason": "brief explanation", "suggestedAction": "block|notify|allow|forward"}`;
+
+      const response = await llm.invoke([
+        new SystemMessage("You are a message classifier. Analyze messages for spam, priority, and category. Respond only with valid JSON."),
+        new HumanMessage(classificationPrompt)
+      ]);
+      
+      // Parse the response
+      const content = response.content.trim();
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        let actionSuggestion = '';
+        
+        switch(result.category) {
+          case 'SPAM':
+            actionSuggestion = `\n\n💡 Suggested: "Block messages like this" or "Create a spam filter rule"`;
+            break;
+          case 'PRIORITY':
+            actionSuggestion = `\n\n💡 Suggested: Mark sender as priority with "Mark ${senderInfo || 'them'} as priority"`;
+            break;
+          case 'DELIVERY':
+            actionSuggestion = `\n\n💡 Suggested: "Allow delivery notifications" or "Forward delivery updates to my email"`;
+            break;
+          case 'FINANCIAL':
+            actionSuggestion = `\n\n💡 Suggested: "Forward bank alerts to my accountant" or "Mark as priority"`;
+            break;
+        }
+        
+        return `Message Classification:
+• Category: ${result.category}
+• Confidence: ${result.confidence}%
+• Reason: ${result.reason}
+• Suggested Action: ${result.suggestedAction}${actionSuggestion}`;
+      }
+      
+      return "Could not classify the message. The format appears to be standard text.";
+    } catch (error) {
+      return `Classification error: ${error.message}`;
+    }
+  },
+  {
+    name: "classify_message",
+    description: "Classify a message as spam, priority, delivery notification, financial alert, or normal. Use when user asks: 'is this spam?', 'should I respond to this?', 'what kind of message is this?', 'filter this message'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      messageText: z.string().describe("The message text to classify"),
+      senderInfo: z.string().optional().describe("Info about the sender (name, number, or 'unknown')"),
+    }),
+  }
+);
+
+// Tool: Create spam filter rule
+const createSpamFilterTool = tool(
+  async ({ userId, filterType, keywords }) => {
+    try {
+      let ruleDescription = "";
+      let ruleConditions = {};
+      
+      switch(filterType) {
+        case "car_warranty":
+          ruleDescription = "Block car warranty spam messages";
+          ruleConditions = { keyword: "car warranty,vehicle warranty,auto warranty,extended warranty" };
+          break;
+        case "prize_scam":
+          ruleDescription = "Block prize/lottery scam messages";
+          ruleConditions = { keyword: "you've won,winner,lottery,prize,congratulations winner,claim your" };
+          break;
+        case "unknown_numbers":
+          ruleDescription = "Block messages from unknown numbers";
+          ruleConditions = { fromUnknown: true };
+          break;
+        case "custom":
+          if (!keywords || keywords.length === 0) {
+            return "Please specify keywords to filter. Example: 'block messages containing warranty, prize, winner'";
+          }
+          ruleDescription = `Block messages containing: ${keywords.join(', ')}`;
+          ruleConditions = { keyword: keywords.join(',') };
+          break;
+        default:
+          return "Unknown filter type. Try: 'block car warranty spam', 'block prize scams', or 'block unknown numbers'";
+      }
+      
+      await Rule.create({
+        userId,
+        rule: ruleDescription,
+        type: "block",
+        active: true,
+        conditions: {
+          ...ruleConditions,
+          priority: "all"
+        }
+      });
+      
+      return `✅ Spam filter created: "${ruleDescription}"\n\nMessages matching this rule will be automatically blocked.`;
+    } catch (error) {
+      return `Error creating spam filter: ${error.message}`;
+    }
+  },
+  {
+    name: "create_spam_filter",
+    description: "Create a rule to automatically block spam messages. Use when user says: 'block spam', 'filter out car warranty messages', 'stop prize scam texts', 'block unknown numbers'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      filterType: z.enum(["car_warranty", "prize_scam", "unknown_numbers", "custom"]).describe("Type of spam to filter"),
+      keywords: z.array(z.string()).optional().describe("Custom keywords to block (for custom filter type)"),
+    }),
+  }
+);
+
+// Tool: Get message triage/overview
+const getMessageTriageTool = tool(
+  async ({ userId }) => {
+    try {
+      // Get recent messages
+      const messages = await Message.find({ 
+        userId, 
+        direction: 'incoming',
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
+      }).sort({ createdAt: -1 }).limit(20);
+      
+      if (messages.length === 0) {
+        return "No incoming messages in the last 24 hours. You're all clear! 📭";
+      }
+      
+      // Classify each message using AI
+      const triagePrompt = `Triage these messages into categories. For each, determine:
+1. Category: SPAM, PRIORITY, DELIVERY, FINANCIAL, or NORMAL
+2. Should block: yes/no
+
+Messages:
+${messages.map((m, i) => `${i+1}. From ${m.contactName || m.contactPhone}: "${m.body.substring(0, 100)}"`).join('\n')}
+
+Respond with JSON array: [{"index": 1, "category": "...", "shouldBlock": true/false}, ...]`;
+
+      const response = await llm.invoke([
+        new SystemMessage("You are a message triage assistant. Classify messages for priority and spam detection. Return only valid JSON array."),
+        new HumanMessage(triagePrompt)
+      ]);
+      
+      const content = response.content.trim();
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      
+      let spam = [], priority = [], delivery = [], financial = [], normal = [];
+      
+      if (jsonMatch) {
+        const results = JSON.parse(jsonMatch[0]);
+        results.forEach((r, i) => {
+          const msg = messages[i];
+          if (!msg) return;
+          const item = `• ${msg.contactName || msg.contactPhone}: "${msg.body.substring(0, 50)}${msg.body.length > 50 ? '...' : ''}"`;
+          switch(r.category) {
+            case 'SPAM': spam.push(item); break;
+            case 'PRIORITY': priority.push(item); break;
+            case 'DELIVERY': delivery.push(item); break;
+            case 'FINANCIAL': financial.push(item); break;
+            default: normal.push(item);
+          }
+        });
+      }
+      
+      let result = `📬 Message Triage (last 24 hours):\n`;
+      
+      if (priority.length > 0) {
+        result += `\n🔴 PRIORITY (${priority.length}):\n${priority.join('\n')}\n`;
+      }
+      if (delivery.length > 0) {
+        result += `\n📦 DELIVERY (${delivery.length}):\n${delivery.join('\n')}\n`;
+      }
+      if (financial.length > 0) {
+        result += `\n💰 FINANCIAL (${financial.length}):\n${financial.join('\n')}\n`;
+      }
+      if (spam.length > 0) {
+        result += `\n🚫 SPAM (${spam.length}):\n${spam.join('\n')}\n`;
+        result += `\n💡 Say "block spam" to auto-filter these\n`;
+      }
+      if (normal.length > 0) {
+        result += `\n💬 NORMAL (${normal.length}):\n${normal.join('\n')}\n`;
+      }
+      
+      const totalBlocked = spam.length;
+      const totalPriority = priority.length;
+      result += `\n📊 Summary: ${totalPriority} priority, ${totalBlocked} potential spam, ${messages.length - totalBlocked - totalPriority} normal`;
+      
+      return result;
+    } catch (error) {
+      return `Error triaging messages: ${error.message}`;
+    }
+  },
+  {
+    name: "get_message_triage",
+    description: "Get an intelligent triage/overview of recent messages, categorized by priority, spam, deliveries, and financial alerts. Use when user says: 'triage my messages', 'what's important', 'filter my inbox', 'show me what I should read', 'any spam?'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+    }),
+  }
+);
+
 // Tool: Confirm action
 const confirmActionTool = tool(
   async ({ userId, action, confirmed, actionData }) => {
@@ -2850,6 +3348,16 @@ const fullAgentTools = [
   listSupportTicketsTool,
   // DND
   setDNDTool,
+  // AI Calls
+  makeAICallTool,
+  listAICallsTool,
+  cancelAICallTool,
+  getAICallResultTool,
+  // Translation & Filtering
+  translateTextTool,
+  classifyMessageTool,
+  createSpamFilterTool,
+  getMessageTriageTool,
 ];
 
 const fullAgentToolMap = {
@@ -2890,6 +3398,14 @@ const fullAgentToolMap = {
   create_support_ticket: createSupportTicketTool,
   list_support_tickets: listSupportTicketsTool,
   set_dnd: setDNDTool,
+  make_ai_call: makeAICallTool,
+  list_ai_calls: listAICallsTool,
+  cancel_ai_call: cancelAICallTool,
+  get_ai_call_result: getAICallResultTool,
+  translate_text: translateTextTool,
+  classify_message: classifyMessageTool,
+  create_spam_filter: createSpamFilterTool,
+  get_message_triage: getMessageTriageTool,
 };
 
 // Full Agent LLM
@@ -3254,6 +3770,18 @@ SUPPORT:
 DND (DO NOT DISTURB):
 - set_dnd: Turn on/off Comsierge Do Not Disturb (auto-reply to all contacts). Use when user says "do not disturb", "DND", "turn on dnd"
 
+AI CALLS (AUTONOMOUS VOICE AGENT):
+- make_ai_call: Have AI make a call on user's behalf with an objective. Use when: "AI call John and ask about meeting", "have AI check on mom"
+- list_ai_calls: View AI calls and their status/summaries
+- cancel_ai_call: Cancel a pending scheduled AI call
+- get_ai_call_result: Get the summary/transcript of a completed AI call
+
+TRANSLATION & FILTERING:
+- translate_text: Translate text to another language. Use when: "translate X to Spanish", "what does X mean in French"
+- classify_message: Classify a message as spam, priority, delivery, financial, or normal. Use when: "is this spam?", "what kind of message is this?"
+- create_spam_filter: Create automated spam blocking rules. Use when: "block spam", "filter car warranty messages", "block unknown numbers"
+- get_message_triage: Get intelligent overview of messages by category (priority, spam, delivery, etc.). Use when: "triage my messages", "what's important?", "filter my inbox"
+
 ACTIONS:
 - make_call: Call someone
 - send_message: Prepare to send SMS (shows confirmation first) - CAN send to ANY number including the user's own forwarding number
@@ -3310,6 +3838,18 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "send me a test message" -> get_phone_info then send_message to forwarding number
 - "show my scheduled messages" -> list_scheduled_messages
 - "cancel the message to john" -> cancel_scheduled_message
+- "AI call George and ask about his day" -> make_ai_call
+- "have AI check on mom tomorrow at 3pm" -> make_ai_call with scheduledAt
+- "what did the AI call find out" -> get_ai_call_result
+- "translate hello to Spanish" -> translate_text
+- "is this spam: you've won $5000" -> classify_message
+- "block car warranty messages" -> create_spam_filter with filterType="car_warranty"
+- "block unknown numbers" -> create_spam_filter with filterType="unknown_numbers"
+- "triage my messages" -> get_message_triage
+- "what's important in my inbox" -> get_message_triage
+- "filter my messages" -> get_message_triage
+- "forward bank alerts to my accountant" -> create_smart_rule
+- "route delivery messages to my email" -> create_smart_rule
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
 
