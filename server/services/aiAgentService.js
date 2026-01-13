@@ -1634,10 +1634,27 @@ const updateForwardingNumberTool = tool(
     try {
       console.log("Updating forwarding number:", { userId, newForwardingNumber });
       
-      // Normalize the phone number
-      let normalized = newForwardingNumber.replace(/\D/g, '');
-      if (normalized.length === 10) normalized = '1' + normalized;
-      if (!normalized.startsWith('+')) normalized = '+' + normalized;
+      // Strip all non-digits
+      let digits = newForwardingNumber.replace(/\D/g, '');
+      console.log("Raw digits:", digits, "length:", digits.length);
+      
+      // If 11 digits starting with 1, strip the country code to get base 10 digits
+      if (digits.length === 11 && digits.startsWith('1')) {
+        digits = digits.slice(1);
+      }
+      // If 10 digits but starts with 1, it's actually a 9-digit number (invalid)
+      else if (digits.length === 10 && digits.startsWith('1')) {
+        return `Invalid phone number. "${newForwardingNumber}" appears to be only 9 digits. US phone numbers must be exactly 10 digits (e.g., 437-239-2448).`;
+      }
+      
+      // Must be exactly 10 digits
+      if (digits.length !== 10) {
+        return `Invalid phone number. US phone numbers must be exactly 10 digits. You provided ${digits.length} digits.`;
+      }
+      
+      // Normalize to +1XXXXXXXXXX format
+      const normalized = '+1' + digits;
+      console.log("Normalized phone:", normalized);
       
       // Update user's forwarding number
       const user = await User.findByIdAndUpdate(
