@@ -649,10 +649,41 @@ const deleteContactTool = tool(
       
       const deletedName = contact.name;
       const deletedPhone = contact.phone;
+      const phoneDigits = deletedPhone.replace(/\D/g, '').slice(-10);
       
+      // Delete the contact
       await Contact.deleteOne({ _id: contact._id });
       
-      return `Contact deleted: "${deletedName}" (${deletedPhone}).`;
+      // Update conversations to show phone number instead of name
+      const allConvos = await Conversation.find({ userId });
+      let updatedConvos = 0;
+      for (const convo of allConvos) {
+        const convoDigits = (convo.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (convoDigits === phoneDigits) {
+          convo.contactName = convo.contactPhone; // Revert to phone number
+          await convo.save();
+          updatedConvos++;
+        }
+      }
+      
+      // Update messages to show phone number instead of name
+      const allMessages = await Message.find({ userId });
+      let updatedMessages = 0;
+      for (const msg of allMessages) {
+        const msgDigits = (msg.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (msgDigits === phoneDigits) {
+          msg.contactName = msg.contactPhone; // Revert to phone number
+          await msg.save();
+          updatedMessages++;
+        }
+      }
+      
+      let response = `Contact deleted: "${deletedName}" (${deletedPhone}).`;
+      if (updatedConvos > 0) {
+        response += ` Updated ${updatedConvos} conversation(s) in your inbox.`;
+      }
+      
+      return response;
     } catch (error) {
       console.error("Delete contact error:", error);
       return `Error deleting contact: ${error.message}`;
