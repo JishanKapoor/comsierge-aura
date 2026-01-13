@@ -67,7 +67,18 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const [isLoading, setIsLoading] = useState(true);
   const [aiDraft, setAiDraft] = useState("");
   const [aiProcessing, setAiProcessing] = useState(false);
-  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [chat, setChat] = useState<ChatMessage[]>(() => {
+    // Load chat from localStorage on init
+    try {
+      const saved = localStorage.getItem("aura_chat_history");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Failed to load chat history:", e);
+    }
+    return [];
+  });
   const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(null);
   const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"chat" | "rules">("chat");
@@ -76,6 +87,15 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   // Call mode dialog state
   const [showCallModeDialog, setShowCallModeDialog] = useState(false);
   const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
+
+  // Save chat to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem("aura_chat_history", JSON.stringify(chat));
+    } catch (e) {
+      console.error("Failed to save chat history:", e);
+    }
+  }, [chat]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
