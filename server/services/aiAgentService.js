@@ -17,12 +17,36 @@ import { initiateAICall as startAICall } from "./aiCallService.js";
 
 // Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
-  modelName: "gpt-5.2-pro",
+  modelName: "gpt-5.2",
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
 // ==================== HELPER FUNCTIONS ====================
+
+// Sanitize AI response - fix common AI mistakes
+function sanitizeAIResponse(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Fix "Concierge" -> "Comsierge" (case-insensitive variations)
+  let result = text
+    .replace(/\bConcierge\b/gi, 'Comsierge')
+    .replace(/\bConceirge\b/gi, 'Comsierge')
+    .replace(/\bConciege\b/gi, 'Comsierge');
+  
+  // Remove any mention of "bank routing number" - replace with forwarding context
+  result = result
+    .replace(/\bbank routing number\b/gi, 'forwarding number')
+    .replace(/\bbank routing\b/gi, 'call forwarding')
+    .replace(/\brouting number at your bank\b/gi, 'forwarding number')
+    .replace(/\bI don't have your bank routing number\b/gi, "I can show you your Comsierge forwarding number")
+    .replace(/\bdon't have access to.{0,20}bank\b/gi, "can help with your Comsierge phone settings")
+    .replace(/\bbanking information\b/gi, 'phone settings')
+    .replace(/\bbank account\b/gi, 'phone account')
+    .replace(/\bfinancial institution\b/gi, 'phone service');
+  
+  return result;
+}
 
 // Normalize phone number to E.164 format
 function normalizePhoneForSms(phone) {
@@ -1197,7 +1221,7 @@ const summarizeConversationTool = tool(
         new HumanMessage(msgText)
       ]);
       
-      return `Summary with ${resolvedName || resolvedPhone}:\n${summaryResponse.content}`;
+      return `Summary with ${resolvedName || resolvedPhone}:\n${sanitizeAIResponse(summaryResponse.content)}`;
     } catch (error) {
       console.error("Summarize conversation error:", error);
       return `Error summarizing: ${error.message}`;
@@ -1393,11 +1417,11 @@ ${toolResultsText}`),
         new HumanMessage("Please provide a natural response based on these results."),
       ]);
       
-      return finalResponse.content || toolResultsText;
+      return sanitizeAIResponse(finalResponse.content) || toolResultsText;
     }
     
     // No tool calls - return text response
-    return response.content || "I understood your request but couldn't determine the appropriate action.";
+    return sanitizeAIResponse(response.content) || "I understood your request but couldn't determine the appropriate action.";
     
   } catch (error) {
     console.error("ConversationChat Error:", error);
@@ -2943,7 +2967,7 @@ Do NOT use emojis. Do NOT use markdown. Plain text only.`),
         new HumanMessage(msgText)
       ]);
       
-      return response.content;
+      return sanitizeAIResponse(response.content);
     } catch (error) {
       console.error("Extract events error:", error);
       return `Error: ${error.message}`;
@@ -3358,7 +3382,7 @@ Be concise. Use plain text only, no markdown or emojis.`),
         new HumanMessage(msgText)
       ]);
       
-      return `Analysis of conversation with ${name || phone}:\n${response.content}`;
+      return `Analysis of conversation with ${name || phone}:\n${sanitizeAIResponse(response.content)}`;
     } catch (error) {
       return `Error: ${error.message}`;
     }
@@ -3422,7 +3446,7 @@ Keep replies natural and conversational. No markdown or emojis.`),
         new HumanMessage(msgText)
       ]);
       
-      return `Reply suggestions for ${name || phone}:\n${response.content}`;
+      return `Reply suggestions for ${name || phone}:\n${sanitizeAIResponse(response.content)}`;
     } catch (error) {
       return `Error: ${error.message}`;
     }
@@ -4070,14 +4094,14 @@ If the output already contains good info, rephrase it naturally. Example:
 
       try {
         const humanized = await llm.invoke([new HumanMessage(humanizePrompt)]);
-        return humanized.content || toolOutput;
+        return sanitizeAIResponse(humanized.content || toolOutput);
       } catch (humanizeError) {
         console.error("Humanize error:", humanizeError);
-        return toolOutput;
+        return sanitizeAIResponse(toolOutput);
       }
     }
     
-    return response.content || "I'm ready to help! You can ask me to call someone, send a message, create rules, search your messages, and more.";
+    return sanitizeAIResponse(response.content) || "I'm ready to help! You can ask me to call someone, send a message, create rules, search your messages, and more.";
     
   } catch (error) {
     console.error("Rules Agent Error:", error);
