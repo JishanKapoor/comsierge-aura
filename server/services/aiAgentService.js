@@ -3950,9 +3950,21 @@ REMINDERS (notify THE USER):
 - complete_reminder: Mark done or delete reminder
 
 SCHEDULED MESSAGES (send TO CONTACTS):
-- schedule_message: Schedule a message to be sent TO A CONTACT at a future time. Use for "send hi to John in 30 seconds", "text mom tomorrow at 8am"
-- list_scheduled_messages: View pending/sent scheduled messages
-- cancel_scheduled_message: Cancel a pending scheduled message
+- schedule_message: Schedule a message to be sent TO A CONTACT at a future time. REQUIRED when time delay is mentioned.
+  - Usage: "reply to him in 30 seconds" -> schedule_message(contactPhone="[phone from history]", messageText="[text]", when="in 30 seconds")
+  - Usage: "text him in 5 min" -> schedule_message(contactPhone="[phone from history]", messageText="[text]", when="in 5 min")
+
+CONTEXT & PRONOUNS:
+- "him", "her", "them", "last person" -> You MUST resolve this to the contact from the most recent message in chat history.
+- Look at the "Yes, you have 1 unread message from X" or "Last message from X" entries in history.
+- If user says "reply to him", grab the Phone Number of that contact and use it for the tool call.
+
+TIMING & SCHEDULING - CRITICAL:
+- If user mentions ANY time delay ("in 30 seconds", "in 5 mins", "tomorrow"), you MUST use:
+  - `schedule_message` (if sending to a contact)
+  - `create_reminder` (if notifying the user)
+- DO NOT just say "Okay I'll do that" - you MUST call the tool.
+- DO NOT just reply with the text - you must SCHEDULE it.
 
 PROACTIVE:
 - get_unread_summary: Get briefing on unread messages + upcoming reminders
