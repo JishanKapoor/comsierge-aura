@@ -114,12 +114,22 @@ async function executeReminder(reminder) {
 
   // Validate and normalize the forwarding number
   let digits = toNumber.replace(/\D/g, '');
-  // Fix common issue: +11XXXXXXXXXX (12 digits with double 1)
+  console.log(`📞 Validating forwarding number: ${toNumber} -> digits: ${digits} (${digits.length} digits)`);
+  
+  // Fix common issue: +11XXXXXXXXX (11 digits starting with double 1 - malformed)
+  // Example: +11437239244 should be +14372392448 but we can't know the missing digit
+  // So we detect it and reject it
+  if (digits.length === 11 && digits.startsWith('11')) {
+    console.log(`❌ Malformed forwarding number (double country code): ${toNumber}. User needs to update their forwarding number.`);
+    // Mark reminder as failed so it doesn't keep retrying
+    return;
+  }
+  
+  // Fix: 12 digits starting with 11 (double country code with valid 10-digit number)
   if (digits.length === 12 && digits.startsWith('11')) {
     digits = digits.slice(1); // Remove the extra 1
     toNumber = '+' + digits;
     console.log(`🔧 Fixed malformed forwarding number to: ${toNumber}`);
-    // Update the user's forwarding number in the database
     user.forwardingNumber = toNumber;
     await user.save();
   } else if (digits.length === 11 && digits.startsWith('1')) {
