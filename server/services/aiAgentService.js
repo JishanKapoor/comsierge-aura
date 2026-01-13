@@ -512,6 +512,193 @@ const updateContactTool = tool(
   }
 );
 
+// Tool: Manage Contact Details (tags, notes, email, company, favorite)
+const manageContactDetailsTool = tool(
+  async ({ userId, contactName, contactPhone, action, field, value }) => {
+    try {
+      console.log("Managing contact details:", { userId, contactName, contactPhone, action, field, value });
+      
+      // Find contact using AI matching
+      let contact = null;
+      
+      if (contactName) {
+        contact = await resolveContactWithAI(userId, contactName);
+      }
+      
+      if (!contact && contactPhone) {
+        contact = await resolveContactWithAI(userId, contactPhone);
+      }
+
+      if (!contact) {
+        return `Could not find contact "${contactName || contactPhone}". Check the name and try again.`;
+      }
+
+      const contactDisplayName = contact.name;
+
+      // Handle different fields and actions
+      if (field === "tags" || field === "label" || field === "labels") {
+        // Tags/labels are stored in the 'tags' array
+        if (action === "add") {
+          const tagsToAdd = value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+          const existingTags = contact.tags || [];
+          const newTags = [...new Set([...existingTags, ...tagsToAdd])];
+          contact.tags = newTags;
+          await contact.save();
+          return `Added label(s) "${tagsToAdd.join(', ')}" to ${contactDisplayName}. Current labels: ${newTags.join(', ') || 'none'}.`;
+        } else if (action === "remove") {
+          const tagsToRemove = value.split(',').map(t => t.trim().toLowerCase());
+          contact.tags = (contact.tags || []).filter(t => !tagsToRemove.includes(t.toLowerCase()));
+          await contact.save();
+          return `Removed label(s) "${tagsToRemove.join(', ')}" from ${contactDisplayName}. Current labels: ${contact.tags.join(', ') || 'none'}.`;
+        } else if (action === "set") {
+          const newTags = value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+          contact.tags = newTags;
+          await contact.save();
+          return `Set labels for ${contactDisplayName} to: ${newTags.join(', ') || 'none'}.`;
+        } else if (action === "clear") {
+          contact.tags = [];
+          await contact.save();
+          return `Cleared all labels from ${contactDisplayName}.`;
+        } else if (action === "get" || action === "list") {
+          const tags = contact.tags || [];
+          return tags.length > 0 
+            ? `${contactDisplayName}'s labels: ${tags.join(', ')}.`
+            : `${contactDisplayName} has no labels.`;
+        }
+      } else if (field === "notes" || field === "note") {
+        if (action === "add" || action === "set") {
+          const existingNotes = contact.notes || "";
+          if (action === "add" && existingNotes) {
+            contact.notes = existingNotes + "\n" + value;
+          } else {
+            contact.notes = value;
+          }
+          await contact.save();
+          return `${action === "add" ? "Added to" : "Set"} notes for ${contactDisplayName}: "${value}".`;
+        } else if (action === "clear" || action === "remove") {
+          contact.notes = null;
+          await contact.save();
+          return `Cleared notes for ${contactDisplayName}.`;
+        } else if (action === "get" || action === "list") {
+          return contact.notes 
+            ? `${contactDisplayName}'s notes: "${contact.notes}".`
+            : `${contactDisplayName} has no notes.`;
+        }
+      } else if (field === "email") {
+        if (action === "set" || action === "add") {
+          contact.email = value;
+          await contact.save();
+          return `Set email for ${contactDisplayName}: ${value}.`;
+        } else if (action === "clear" || action === "remove") {
+          contact.email = null;
+          await contact.save();
+          return `Cleared email for ${contactDisplayName}.`;
+        } else if (action === "get") {
+          return contact.email 
+            ? `${contactDisplayName}'s email: ${contact.email}.`
+            : `${contactDisplayName} has no email.`;
+        }
+      } else if (field === "company" || field === "work") {
+        if (action === "set" || action === "add") {
+          contact.company = value;
+          await contact.save();
+          return `Set company for ${contactDisplayName}: ${value}.`;
+        } else if (action === "clear" || action === "remove") {
+          contact.company = null;
+          await contact.save();
+          return `Cleared company for ${contactDisplayName}.`;
+        } else if (action === "get") {
+          return contact.company 
+            ? `${contactDisplayName}'s company: ${contact.company}.`
+            : `${contactDisplayName} has no company.`;
+        }
+      } else if (field === "favorite" || field === "starred") {
+        if (action === "set" || action === "add") {
+          contact.isFavorite = true;
+          await contact.save();
+          return `Marked ${contactDisplayName} as favorite.`;
+        } else if (action === "remove" || action === "clear") {
+          contact.isFavorite = false;
+          await contact.save();
+          return `Removed ${contactDisplayName} from favorites.`;
+        } else if (action === "get") {
+          return contact.isFavorite 
+            ? `${contactDisplayName} is a favorite.`
+            : `${contactDisplayName} is not a favorite.`;
+        }
+      }
+
+      return `Unknown field "${field}" or action "${action}". Supported fields: tags/labels, notes, email, company, favorite. Supported actions: add, remove, set, clear, get.`;
+    } catch (error) {
+      console.error("Manage contact details error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "manage_contact_details",
+    description: `Manage contact details like labels/tags, notes, email, company, and favorite status. Use for:
+- "add label family to Dad" -> action=add, field=tags, value=family
+- "remove work label from John" -> action=remove, field=tags, value=work
+- "add note 'birthday Jan 15' to Mom" -> action=add, field=notes, value=birthday Jan 15
+- "set email john@email.com for John" -> action=set, field=email, value=john@email.com
+- "mark Dad as favorite" -> action=set, field=favorite
+- "what labels does Dad have" -> action=get, field=tags
+- "show Dad's notes" -> action=get, field=notes`,
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Name of contact"),
+      contactPhone: z.string().optional().describe("Phone number of contact"),
+      action: z.enum(["add", "remove", "set", "clear", "get", "list"]).describe("Action to perform"),
+      field: z.enum(["tags", "labels", "label", "notes", "note", "email", "company", "work", "favorite", "starred"]).describe("Field to manage"),
+      value: z.string().optional().describe("Value for the action (not needed for get/clear/remove-favorite)"),
+    }),
+  }
+);
+
+// Tool: Get Contact Details (full info)
+const getContactDetailsTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      // Find contact using AI matching
+      let contact = null;
+      
+      if (contactName) {
+        contact = await resolveContactWithAI(userId, contactName);
+      }
+      
+      if (!contact && contactPhone) {
+        contact = await resolveContactWithAI(userId, contactPhone);
+      }
+
+      if (!contact) {
+        return `Could not find contact "${contactName || contactPhone}".`;
+      }
+
+      let info = `Contact: ${contact.name}\nPhone: ${contact.phone}`;
+      if (contact.email) info += `\nEmail: ${contact.email}`;
+      if (contact.company) info += `\nCompany: ${contact.company}`;
+      if (contact.tags && contact.tags.length > 0) info += `\nLabels: ${contact.tags.join(', ')}`;
+      if (contact.notes) info += `\nNotes: ${contact.notes}`;
+      if (contact.isFavorite) info += `\nFavorite: Yes`;
+      if (contact.isBlocked) info += `\nBlocked: Yes`;
+      
+      return info;
+    } catch (error) {
+      console.error("Get contact details error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "get_contact_details",
+    description: "Get full details of a contact including phone, email, company, labels, notes, favorite status. Use when user says: 'show contact info', 'what's Dad's info', 'contact details for X'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Name of contact"),
+      contactPhone: z.string().optional().describe("Phone number of contact"),
+    }),
+  }
+);
+
 // Tool: Add Contact
 const addContactTool = tool(
   async ({ userId, name, phone, label }) => {
@@ -3505,6 +3692,8 @@ const fullAgentTools = [
   searchContactsTool,
   addContactTool,
   updateContactTool,
+  manageContactDetailsTool,
+  getContactDetailsTool,
   deleteContactTool,
   deleteAllContactsTool,
   blockContactTool,
@@ -3560,6 +3749,8 @@ const fullAgentToolMap = {
   search_contacts: searchContactsTool,
   add_contact: addContactTool,
   update_contact: updateContactTool,
+  manage_contact_details: manageContactDetailsTool,
+  get_contact_details: getContactDetailsTool,
   delete_contact: deleteContactTool,
   delete_all_contacts: deleteAllContactsTool,
   block_contact: blockContactTool,
@@ -3919,9 +4110,22 @@ CONTACTS:
 - list_contacts: Show all contacts
 - search_contacts: Find contact by name
 - add_contact: Add a new contact (name + phone number required)
-- update_contact: Rename contact (currentName + newName) - can change name/label but NEVER the phone number
+- update_contact: Rename contact (currentName + newName) - can change name but NEVER the phone number
+- manage_contact_details: Add/remove labels, notes, email, company, favorite status. Use for:
+  * "add label family to Dad" -> action=add, field=tags, value=family
+  * "remove work label from John" -> action=remove, field=tags, value=work  
+  * "add note 'birthday Jan 15' to Mom" -> action=add, field=notes, value=birthday Jan 15
+  * "set Dad's email to dad@email.com" -> action=set, field=email, value=dad@email.com
+  * "mark Dad as favorite" -> action=set, field=favorite
+  * "what labels does Dad have" -> action=get, field=tags
+- get_contact_details: Get full info (phone, email, company, labels, notes, favorite)
 - delete_contact: Delete a contact by name
 - block_contact / unblock_contact: Block/unblock
+
+IMPORTANT - LABELS vs NAMES:
+- "add label family" -> use manage_contact_details with action=add, field=tags
+- "rename to Dad" -> use update_contact with newName
+- Labels/tags are SEPARATE from the name. Do NOT put labels in the name field!
 
 RULES & AUTOMATION:
 - create_transfer_rule: Forward calls/messages from a specific contact to another
