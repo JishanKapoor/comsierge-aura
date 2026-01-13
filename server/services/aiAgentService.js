@@ -736,8 +736,38 @@ const deleteAllContactsTool = tool(
         return `Are you sure you want to delete all ${count} contact(s)? Say "yes delete all contacts" to confirm.`;
       }
       
+      // Get all contacts before deleting (need phone numbers to update inbox)
+      const allContacts = await Contact.find({ userId });
+      
+      // Delete all contacts
       const result = await Contact.deleteMany({ userId });
-      return `Deleted all ${result.deletedCount} contact(s).`;
+      
+      // Update ALL conversations and messages to revert names to phone numbers
+      for (const contact of allContacts) {
+        const phoneDigits = contact.phone.replace(/\D/g, '').slice(-10);
+        
+        // Find and update matching conversations
+        const allConvos = await Conversation.find({ userId });
+        for (const convo of allConvos) {
+          const convoDigits = (convo.contactPhone || '').replace(/\D/g, '').slice(-10);
+          if (convoDigits === phoneDigits) {
+            convo.contactName = convo.contactPhone; // Revert to phone number
+            await convo.save();
+          }
+        }
+        
+        // Update all messages from this contact
+        const allMessages = await Message.find({ userId });
+        for (const msg of allMessages) {
+          const msgDigits = (msg.contactPhone || '').replace(/\D/g, '').slice(-10);
+          if (msgDigits === phoneDigits) {
+            msg.contactName = msg.contactPhone; // Revert to phone number
+            await msg.save();
+          }
+        }
+      }
+      
+      return `Deleted all ${result.deletedCount} contact(s). Inbox updated.`;
     } catch (error) {
       console.error("Delete all contacts error:", error);
       return `Error deleting contacts: ${error.message}`;
