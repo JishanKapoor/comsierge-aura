@@ -106,9 +106,28 @@ async function executeReminder(reminder) {
   }
 
   // Get user's forwarding number (their personal phone)
-  const toNumber = user.forwardingNumber;
+  let toNumber = user.forwardingNumber;
   if (!toNumber) {
     console.log(`❌ User ${user._id} has no forwarding number set - cannot send reminder`);
+    return;
+  }
+
+  // Validate and normalize the forwarding number
+  let digits = toNumber.replace(/\D/g, '');
+  // Fix common issue: +11XXXXXXXXXX (12 digits with double 1)
+  if (digits.length === 12 && digits.startsWith('11')) {
+    digits = digits.slice(1); // Remove the extra 1
+    toNumber = '+' + digits;
+    console.log(`🔧 Fixed malformed forwarding number to: ${toNumber}`);
+    // Update the user's forwarding number in the database
+    user.forwardingNumber = toNumber;
+    await user.save();
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    toNumber = '+' + digits;
+  } else if (digits.length === 10) {
+    toNumber = '+1' + digits;
+  } else {
+    console.log(`❌ Invalid forwarding number format: ${user.forwardingNumber} (${digits.length} digits)`);
     return;
   }
 
