@@ -44,29 +44,22 @@ router.get("/", async (req, res) => {
     const query = { userId: req.user._id };
     
     // Filter by type if specified
-    // "incoming" shows all incoming calls (answered, forwarded, blocked)
+    // "incoming" shows all incoming calls including missed, answered, forwarded, blocked
     // "outgoing" shows outgoing calls
-    // "missed" shows missed calls
     if (type && type !== "all") {
       if (type === "incoming") {
-        // For incoming filter, match type=incoming OR direction=incoming (for backwards compat)
-        // Exclude missed calls
-        query.$and = [
-          { $or: [{ type: "incoming" }, { direction: "incoming" }] },
-          { type: { $ne: "missed" } },
-          { status: { $ne: "missed" } }
+        // For incoming filter, match type=incoming OR type=missed OR direction=incoming
+        // Missed calls are incoming calls that weren't answered
+        query.$or = [
+          { type: "incoming" },
+          { type: "missed" },
+          { direction: "incoming" }
         ];
       } else if (type === "outgoing") {
         // Match type=outgoing OR direction=outgoing (for backwards compat)
         query.$or = [
           { type: "outgoing" },
           { direction: "outgoing" }
-        ];
-      } else if (type === "missed") {
-        // Match type=missed OR status=missed
-        query.$or = [
-          { type: "missed" },
-          { status: "missed" }
         ];
       } else {
         query.type = type;

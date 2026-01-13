@@ -47,7 +47,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Device } from "@twilio/voice-sdk";
 import { CallSkeleton } from "./LoadingSkeletons";
 
-type Filter = "all" | "missed" | "incoming" | "outgoing" | "voicemail" | "routed" | "blocked";
+type Filter = "all" | "incoming" | "outgoing" | "voicemail" | "routed" | "blocked";
 
 interface CallsTabProps {
   selectedContactPhone?: string | null;
@@ -1445,7 +1445,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
 
       {/* Filters */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        {(["all", "missed", "incoming", "outgoing"] as Filter[]).map((f) => (
+        {(["all", "incoming", "outgoing"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
