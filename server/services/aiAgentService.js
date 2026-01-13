@@ -1589,6 +1589,45 @@ const createSupportTicketTool = tool(
   }
 );
 
+// Tool: List Support Tickets
+const listSupportTicketsTool = tool(
+  async ({ userId, status }) => {
+    try {
+      console.log("Listing support tickets:", { userId, status });
+      
+      let query = { userId };
+      if (status && status !== "all") {
+        query.status = status;
+      }
+      
+      const tickets = await SupportTicket.find(query).sort({ createdAt: -1 }).limit(10);
+      
+      if (tickets.length === 0) {
+        return "You don't have any support tickets yet.";
+      }
+      
+      const ticketList = tickets.map((t, i) => {
+        const date = new Date(t.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const statusIcon = t.status === "resolved" ? "[RESOLVED]" : t.status === "in-progress" ? "[IN PROGRESS]" : "[OPEN]";
+        return `${i + 1}. ${statusIcon} ${t.subject} (${date}) - ${t.message.substring(0, 50)}${t.message.length > 50 ? '...' : ''}`;
+      });
+      
+      return `Your support tickets:\n${ticketList.join("\n")}`;
+    } catch (error) {
+      console.error("List support tickets error:", error);
+      return `Error listing tickets: ${error.message}`;
+    }
+  },
+  {
+    name: "list_support_tickets",
+    description: "List user's support tickets. Use when user says: 'show my tickets', 'my support tickets', 'ticket status', 'check my tickets'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      status: z.string().optional().describe("Filter by status: open, in-progress, resolved, or all"),
+    }),
+  }
+);
+
 // Tool: Confirm action
 const confirmActionTool = tool(
   async ({ userId, action, confirmed, actionData }) => {
@@ -2394,6 +2433,7 @@ const fullAgentTools = [
   updateForwardingNumberTool,
   // Support
   createSupportTicketTool,
+  listSupportTicketsTool,
 ];
 
 const fullAgentToolMap = {
@@ -2427,6 +2467,7 @@ const fullAgentToolMap = {
   get_phone_info: getPhoneInfoTool,
   update_forwarding_number: updateForwardingNumberTool,
   create_support_ticket: createSupportTicketTool,
+  list_support_tickets: listSupportTicketsTool,
 };
 
 // Full Agent LLM
@@ -2767,6 +2808,7 @@ PHONE SETTINGS:
 
 SUPPORT:
 - create_support_ticket: Create a support ticket (use when user says "raise a ticket", "support ticket", "report an issue", "file a complaint")
+- list_support_tickets: Show user's support tickets (use when user says "show my tickets", "my support tickets", "ticket status")
 
 ACTIONS:
 - make_call: Call someone (if user says "call me", first get_phone_info to get their forwarding number, then call that)
