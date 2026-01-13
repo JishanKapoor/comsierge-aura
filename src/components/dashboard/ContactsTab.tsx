@@ -102,8 +102,9 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   const [newFilterTag, setNewFilterTag] = useState("");
   const filterTagInputRef = useRef<HTMLInputElement>(null);
 
-  const allAvailableTags = [...new Set([...availableTags, ...customTags])];
+  // Include existing tags from all contacts + selected contact's tags in the edit form
   const allTags = [...new Set(contacts.flatMap(c => c.tags))];
+  const allAvailableTags = [...new Set([...availableTags, ...customTags, ...allTags, ...editForm.tags])];
   const filterTags = [...new Set([...availableTags, ...customTags, ...allTags])];
 
   const customTagsStorageKey = `comsierge.contacts.customTags.${user?.id || user?.email || "anon"}`;
