@@ -467,23 +467,26 @@ const addContactTool = tool(
       console.log("Adding contact:", { userId, name, phone, label });
       
       // Validate phone number - must be at least 10 digits
-      const cleanPhone = phone.replace(/\D/g, '');
-      if (cleanPhone.length < 10) {
-        return `Invalid phone number "${phone}". Please provide a valid phone number with at least 10 digits.`;
+      // Clean and validate phone number
+      let cleanPhone = phone.replace(/\D/g, '');
+      
+      // If starts with 1 and is 11 digits, it already has country code
+      if (cleanPhone.length === 11 && cleanPhone.startsWith('1')) {
+        // Already has +1 country code, just need the last 10 digits for validation
+        cleanPhone = cleanPhone.slice(1);
       }
       
-      // Normalize phone number
-      let normalized = cleanPhone;
-      if (normalized.length === 10) {
-        normalized = '1' + normalized;
+      // Must be exactly 10 digits (US/Canada format)
+      if (cleanPhone.length !== 10) {
+        return `Invalid phone number "${phone}". Must be exactly 10 digits (e.g., 4372392448 or +14372392448).`;
       }
-      if (!normalized.startsWith('+')) {
-        normalized = '+' + normalized;
-      }
+      
+      // Normalize to +1XXXXXXXXXX format
+      const normalized = '+1' + cleanPhone;
       
       // Check if contact with same phone already exists
       const existingContacts = await Contact.find({ userId });
-      const phoneDigits = normalized.replace(/\D/g, '').slice(-10);
+      const phoneDigits = cleanPhone;
       const duplicate = existingContacts.find(c => {
         const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
         return cDigits === phoneDigits;
