@@ -466,30 +466,39 @@ const addContactTool = tool(
     try {
       console.log("Adding contact:", { userId, name, phone, label });
       
-      // Validate phone number - must be at least 10 digits
-      // Clean and validate phone number
-      let cleanPhone = phone.replace(/\D/g, '');
+      // Strip all non-digits
+      let digits = phone.replace(/\D/g, '');
+      console.log("Raw digits:", digits, "length:", digits.length);
       
-      // If starts with 1 and is 11 digits, it already has country code
-      if (cleanPhone.length === 11 && cleanPhone.startsWith('1')) {
-        // Already has +1 country code, just need the last 10 digits for validation
-        cleanPhone = cleanPhone.slice(1);
+      // Handle various formats:
+      // +14372392448 -> 14372392448 (11 digits) -> 4372392448 (10 digits)
+      // 14372392448 -> 4372392448 (10 digits) 
+      // 4372392448 -> 4372392448 (10 digits)
+      // +1437239244 -> 1437239244 (10 digits) -> INVALID (starts with 1 but only 10 total)
+      
+      // If 11 digits starting with 1, strip the country code
+      if (digits.length === 11 && digits.startsWith('1')) {
+        digits = digits.slice(1);
+      }
+      // If 10 digits starting with 1, this is actually a 9-digit number with country code - INVALID
+      else if (digits.length === 10 && digits.startsWith('1')) {
+        return `Invalid phone number "${phone}". The number after +1 must be exactly 10 digits. You provided 9 digits (${digits.slice(1)}).`;
       }
       
-      // Must be exactly 10 digits (US/Canada format)
-      if (cleanPhone.length !== 10) {
-        return `Invalid phone number "${phone}". Must be exactly 10 digits (e.g., 4372392448 or +14372392448).`;
+      // Final check: must be exactly 10 digits
+      if (digits.length !== 10) {
+        return `Invalid phone number "${phone}". Must be exactly 10 digits (e.g., 4372392448 or +14372392448). You provided ${digits.length} digits.`;
       }
       
       // Normalize to +1XXXXXXXXXX format
-      const normalized = '+1' + cleanPhone;
+      const normalized = '+1' + digits;
+      console.log("Normalized phone:", normalized);
       
       // Check if contact with same phone already exists
       const existingContacts = await Contact.find({ userId });
-      const phoneDigits = cleanPhone;
       const duplicate = existingContacts.find(c => {
         const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
-        return cDigits === phoneDigits;
+        return cDigits === digits;
       });
       
       if (duplicate) {
@@ -516,7 +525,7 @@ const addContactTool = tool(
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
       name: z.string().describe("Name for the contact"),
-      phone: z.string().describe("Phone number (must be at least 10 digits)"),
+      phone: z.string().describe("Phone number (must be exactly 10 digits, with or without +1 country code)"),
       label: z.string().optional().describe("Optional label like 'work', 'family', 'friend', etc."),
     }),
   }
