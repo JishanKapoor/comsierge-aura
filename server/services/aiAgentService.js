@@ -1531,6 +1531,64 @@ const updateForwardingNumberTool = tool(
   }
 );
 
+// Tool: Create Support Ticket
+import SupportTicket from "../models/SupportTicket.js";
+
+const createSupportTicketTool = tool(
+  async ({ userId, subject, category, message }) => {
+    try {
+      console.log("Creating support ticket:", { userId, subject, category, message });
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        return "User not found.";
+      }
+      
+      const now = new Date();
+      const timestamp = now.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      
+      const ticket = await SupportTicket.create({
+        userId: user._id,
+        userName: user.name,
+        userEmail: user.email,
+        subject: subject || category,
+        category: category || "general",
+        message,
+        status: "open",
+        priority: "medium",
+        replies: [
+          {
+            message,
+            isSupport: false,
+            timestamp,
+            authorName: user.name,
+          },
+        ],
+      });
+      
+      return `Support ticket created! Ticket ID: ${ticket._id}. Our team will review it shortly. You can check the status in the Support section.`;
+    } catch (error) {
+      console.error("Create support ticket error:", error);
+      return `Error creating ticket: ${error.message}`;
+    }
+  },
+  {
+    name: "create_support_ticket",
+    description: "Create a support ticket for the user. Use when user says: 'raise a ticket', 'support ticket', 'report an issue', 'need help', 'file a complaint', 'contact support'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      subject: z.string().describe("Brief subject/title for the ticket"),
+      category: z.string().optional().describe("Category: billing, technical, feature-request, bug, general"),
+      message: z.string().describe("Detailed description of the issue or request"),
+    }),
+  }
+);
+
 // Tool: Confirm action
 const confirmActionTool = tool(
   async ({ userId, action, confirmed, actionData }) => {
@@ -2334,6 +2392,8 @@ const fullAgentTools = [
   // Info
   getPhoneInfoTool,
   updateForwardingNumberTool,
+  // Support
+  createSupportTicketTool,
 ];
 
 const fullAgentToolMap = {
@@ -2366,6 +2426,7 @@ const fullAgentToolMap = {
   get_unread_summary: getUnreadSummaryTool,
   get_phone_info: getPhoneInfoTool,
   update_forwarding_number: updateForwardingNumberTool,
+  create_support_ticket: createSupportTicketTool,
 };
 
 // Full Agent LLM
@@ -2703,6 +2764,9 @@ PROACTIVE:
 PHONE SETTINGS:
 - get_phone_info: Get user's Comsierge number and current forwarding number
 - update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
+
+SUPPORT:
+- create_support_ticket: Create a support ticket (use when user says "raise a ticket", "support ticket", "report an issue", "file a complaint")
 
 ACTIONS:
 - make_call: Call someone (if user says "call me", first get_phone_info to get their forwarding number, then call that)
