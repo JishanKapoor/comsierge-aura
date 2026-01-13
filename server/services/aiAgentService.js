@@ -3961,8 +3961,8 @@ CONTEXT & PRONOUNS:
 
 TIMING & SCHEDULING - CRITICAL:
 - If user mentions ANY time delay ("in 30 seconds", "in 5 mins", "tomorrow"), you MUST use:
-  - `schedule_message` (if sending to a contact)
-  - `create_reminder` (if notifying the user)
+  - \`schedule_message\` (if sending to a contact)
+  - \`create_reminder\` (if notifying the user)
 - DO NOT just say "Okay I'll do that" - you MUST call the tool.
 - DO NOT just reply with the text - you must SCHEDULE it.
 
