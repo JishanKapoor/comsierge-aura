@@ -1170,7 +1170,7 @@ const makeCallTool = tool(
       // Get user to find their assigned phone number
       const user = await User.findById(userId);
       if (!user?.phoneNumber) {
-        return "You don't have a phone number set up yet. Go to Settings to configure your Twilio number.";
+        return "You don't have a phone number set up yet. Go to Settings to configure your Comsierge number.";
       }
       
       // Return confirmation with call details - frontend will handle the actual call
@@ -2679,7 +2679,7 @@ PROACTIVE:
 - get_unread_summary: Get briefing on unread messages + upcoming reminders
 
 PHONE SETTINGS:
-- get_phone_info: Get user's Twilio number and current forwarding number
+- get_phone_info: Get user's Comsierge number and current forwarding number
 - update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
 
 ACTIONS:
@@ -2713,7 +2713,7 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "yes" after "Ready to send..." -> execute_send_message
 - "change my forwarding number to 555-1234" -> update_forwarding_number
 - "what number are calls forwarded to" -> get_phone_info
-- "what is my twilio number" -> get_phone_info
+- "what is my comsierge number" -> get_phone_info
 - "show me my routing number" -> get_phone_info (routing = forwarding in this phone context)
 - "where do my calls go" -> get_phone_info
 
