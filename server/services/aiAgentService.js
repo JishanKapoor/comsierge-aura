@@ -2285,6 +2285,179 @@ const listSupportTicketsTool = tool(
   }
 );
 
+// Tool: Set Call Filter (which calls ring user's phone)
+const setCallFilterTool = tool(
+  async ({ userId, mode, tags }) => {
+    try {
+      console.log("Setting call filter:", { userId, mode, tags });
+      
+      const user = await User.findById(userId);
+      if (!user) return "User not found.";
+      
+      // Delete any existing forward rules for calls
+      await Rule.deleteMany({ 
+        userId, 
+        type: "forward",
+        active: true
+      });
+      
+      if (mode === "none") {
+        // No forwarding - all calls go to AI
+        return "Call forwarding disabled. All incoming calls will be handled by AI.";
+      }
+      
+      // Get forwarding number
+      const forwardingNumber = user.forwardingNumber;
+      if (!forwardingNumber) {
+        return "You need to set a forwarding number first in Settings. Currently all calls will be handled by AI.";
+      }
+      
+      // Create forward rule with the appropriate mode
+      let ruleDescription;
+      let conditions = { mode };
+      
+      switch (mode) {
+        case "all":
+          ruleDescription = "Forward all calls to my phone";
+          break;
+        case "favorites":
+          ruleDescription = "Forward calls from favorites only";
+          break;
+        case "saved":
+        case "contacts":
+          conditions.mode = "saved";
+          ruleDescription = "Forward calls from saved contacts only";
+          break;
+        case "tags":
+          if (!tags || tags.length === 0) {
+            return "Please specify which tags. Example: 'only ring for family and work tags'";
+          }
+          conditions.tags = tags;
+          ruleDescription = `Forward calls from contacts tagged: ${tags.join(", ")}`;
+          break;
+        default:
+          return "Unknown mode. Use: all, favorites, contacts, or tags";
+      }
+      
+      await Rule.create({
+        userId,
+        type: "forward",
+        rule: ruleDescription,
+        active: true,
+        conditions,
+        transferDetails: {
+          mode: "calls",
+          contactPhone: forwardingNumber
+        }
+      });
+      
+      let response = `✅ ${ruleDescription}\n`;
+      if (mode === "saved" || mode === "contacts") {
+        response += "\nUnknown numbers will NOT ring your phone - AI will handle them.";
+      } else if (mode === "favorites") {
+        response += "\nOnly favorites will ring your phone. Others go to AI.";
+      } else if (mode === "tags") {
+        response += `\nOnly contacts with tags [${tags.join(", ")}] will ring. Others go to AI.`;
+      }
+      
+      return response;
+    } catch (error) {
+      console.error("Set call filter error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "set_call_filter",
+    description: "Set which incoming calls should ring user's phone vs be handled by AI. Use when user says: 'only saved contacts can call', 'block unknown callers', 'only favorites can ring', 'let everyone call', 'only family tag can call'. Mode: all=all calls ring, favorites=only favorites, saved/contacts=only saved contacts, tags=specific tags, none=all go to AI",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      mode: z.enum(["all", "favorites", "saved", "contacts", "tags", "none"]).describe("Who can ring: all, favorites, saved/contacts, tags, or none"),
+      tags: z.array(z.string()).optional().describe("If mode=tags, which tags (e.g. ['family', 'work'])"),
+    }),
+  }
+);
+
+// Tool: Cleanup duplicate/old rules
+const cleanupRulesTool = tool(
+  async ({ userId, ruleType }) => {
+    try {
+      console.log("Cleaning up rules:", { userId, ruleType });
+      
+      const query = { userId };
+      if (ruleType && ruleType !== "all") {
+        query.type = ruleType;
+      }
+      
+      const allRules = await Rule.find(query).sort({ createdAt: -1 });
+      
+      if (allRules.length === 0) {
+        return "No rules found to cleanup.";
+      }
+      
+      // Group by type and find duplicates
+      const rulesByType = {};
+      const duplicates = [];
+      const oldInactive = [];
+      
+      for (const rule of allRules) {
+        const type = rule.type;
+        if (!rulesByType[type]) {
+          rulesByType[type] = [];
+        }
+        rulesByType[type].push(rule);
+        
+        // Mark as duplicate if same type and very similar rule text
+        if (rulesByType[type].length > 1) {
+          const existing = rulesByType[type][0]; // Keep the newest
+          duplicates.push(rule._id);
+        }
+        
+        // Mark old inactive rules for deletion
+        if (!rule.active) {
+          oldInactive.push(rule._id);
+        }
+      }
+      
+      // Delete duplicates and old inactive rules
+      const toDelete = [...new Set([...duplicates, ...oldInactive])];
+      
+      if (toDelete.length === 0) {
+        // List current rules
+        let result = "No duplicates found. Your current rules:\n";
+        for (const rule of allRules) {
+          result += `- [${rule.type}] ${rule.rule} (${rule.active ? 'active' : 'inactive'})\n`;
+        }
+        return result;
+      }
+      
+      await Rule.deleteMany({ _id: { $in: toDelete } });
+      
+      const remaining = await Rule.find({ userId, active: true });
+      let result = `Cleaned up ${toDelete.length} duplicate/inactive rules.\n\nYour current active rules:\n`;
+      for (const rule of remaining) {
+        result += `- [${rule.type}] ${rule.rule}\n`;
+      }
+      
+      if (remaining.length === 0) {
+        result += "(No active rules)";
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("Cleanup rules error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "cleanup_rules",
+    description: "Remove duplicate and inactive rules. Use when: 'clean up my rules', 'remove old rules', 'why do I have duplicate rules', 'clear old rules'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      ruleType: z.enum(["all", "block", "forward", "transfer", "auto-reply", "priority", "custom"]).optional().describe("Type of rules to cleanup, or 'all'"),
+    }),
+  }
+);
+
 // Tool: Set Do Not Disturb (Comsierge DND)
 const setDNDTool = tool(
   async ({ userId, enabled, autoReplyMessage, startTime, endTime }) => {
@@ -3853,8 +4026,10 @@ const fullAgentTools = [
   // Support
   createSupportTicketTool,
   listSupportTicketsTool,
-  // DND
+  // DND & Call Filtering
   setDNDTool,
+  setCallFilterTool,
+  cleanupRulesTool,
   // AI Calls
   makeAICallTool,
   listAICallsTool,
@@ -3909,6 +4084,8 @@ const fullAgentToolMap = {
   create_support_ticket: createSupportTicketTool,
   list_support_tickets: listSupportTicketsTool,
   set_dnd: setDNDTool,
+  set_call_filter: setCallFilterTool,
+  cleanup_rules: cleanupRulesTool,
   make_ai_call: makeAICallTool,
   list_ai_calls: listAICallsTool,
   cancel_ai_call: cancelAICallTool,
@@ -4260,12 +4437,23 @@ IMPORTANT - LABELS vs NAMES:
 - Labels/tags are SEPARATE from the name. Do NOT put labels in the name field!
 - "family friend" as a label means a tag with value "family friend", NOT a contact named that
 
+CALL FILTERING (which calls ring user's phone):
+- set_call_filter: Control which INCOMING CALLS ring the user's phone vs go to AI
+  * "block unknown callers" -> set_call_filter(mode="saved") - only saved contacts ring
+  * "only let favorites call me" -> set_call_filter(mode="favorites")
+  * "let everyone call" -> set_call_filter(mode="all")
+  * "only family tag can call" -> set_call_filter(mode="tags", tags=["family"])
+  * "send all calls to AI" -> set_call_filter(mode="none")
+- This is DIFFERENT from DND - call filter controls which calls ring, DND is auto-reply for messages
+- This is DIFFERENT from block_contact - that blocks a SPECIFIC contact entirely
+
 RULES & AUTOMATION:
-- create_transfer_rule: Forward calls/messages from a specific contact to another
+- create_transfer_rule: Forward calls/messages from a specific contact to another number
 - create_auto_reply: Set auto-reply for a contact. Use when: "if X replies say Y", "auto reply to X", "when X texts respond with Y", "if X messages say Y"
 - mark_priority: Mark as high priority
 - get_rules: List rules (use includeInactive=true for inactive/disabled rules)
 - delete_rule: Remove/disable/turn off a rule (supports matching by description, type, or contact)
+- cleanup_rules: Remove duplicate and inactive rules. Use when user asks "why do I have old rules", "clean up rules", "remove duplicates"
 - create_smart_rule: Natural language rule creation for complex rules like:
   * "if I receive a message about X, forward to Y"
   * "forward messages containing 'urgent' to my assistant"
