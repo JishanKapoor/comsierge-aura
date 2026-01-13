@@ -216,6 +216,9 @@ router.get("/conversations", async (req, res) => {
       const toClearIds = [];
       const toSetContext = [];
 
+      // Resolution phrases should clear auto-priority retroactively.
+      const RESOLVED_RE = /(\bnever\s*mind\b|\bnvm\b|\bits\s+over\b|\bit'?s\s+over\b|\bdon'?t\s+worry\b|\bno\s+worries\b|\bfalse\s+alarm\b|\bignore\s+that\b|\ball\s+good\b|\bresolved\b|\bproblem\s+solved\b|\bwe'?re\s+good\b)/i;
+
       // For emergency handling, we need to check if user has replied in each conversation.
       // Fetch the IDs of conversations where user has sent at least one outgoing message.
       const convIds = conversations.map((c) => c._id);
@@ -230,6 +233,13 @@ router.get("/conversations", async (req, res) => {
         const unreadCount = conv.unreadCount || 0;
         const ctx = conv.priorityContext || null;
         const userHasReplied = userRepliedPhones.has(conv.contactPhone);
+
+        // Check if last message contains resolution language → auto-clear priority.
+        const lastMsg = conv.lastMessage || "";
+        if (RESOLVED_RE.test(lastMsg)) {
+          toClearIds.push(conv._id);
+          continue; // Skip this conversation from Priority list
+        }
 
         let keepInPriority = false;
         if (ctx?.kind) {
