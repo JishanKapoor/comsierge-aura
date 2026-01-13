@@ -2018,6 +2018,50 @@ const executeSendMessageTool = tool(
   }
 );
 
+// Tool: List all labels/tags
+const listLabelsTool = tool(
+  async ({ userId }) => {
+    try {
+      const contacts = await Contact.find({ userId });
+      
+      // Collect all unique tags from all contacts
+      const tagMap = new Map(); // tag -> list of contacts with that tag
+      
+      for (const contact of contacts) {
+        if (contact.tags && contact.tags.length > 0) {
+          for (const tag of contact.tags) {
+            if (!tagMap.has(tag)) {
+              tagMap.set(tag, []);
+            }
+            tagMap.get(tag).push(contact.name);
+          }
+        }
+      }
+      
+      if (tagMap.size === 0) {
+        return "No labels/tags found on any contacts. You can add labels like 'family', 'work', 'friend' to your contacts using: add label [labelname] to [contactname]";
+      }
+      
+      let result = `Labels in your contacts (${tagMap.size}):\n`;
+      for (const [tag, contactNames] of tagMap) {
+        result += `- "${tag}": ${contactNames.join(', ')}\n`;
+      }
+      
+      return result;
+    } catch (error) {
+      console.error("List labels error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "list_labels",
+    description: "List all labels/tags used across contacts. Use when user says: 'show all labels', 'list my labels', 'what labels do I have', 'show me all my tags'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+    }),
+  }
+);
+
 // Tool: List all contacts
 const listContactsTool = tool(
   async ({ userId, filter }) => {
@@ -3771,6 +3815,7 @@ const fullAgentTools = [
   confirmActionTool,
   // Contacts
   listContactsTool,
+  listLabelsTool,
   searchContactsTool,
   addContactTool,
   updateContactTool,
@@ -3828,6 +3873,7 @@ const fullAgentToolMap = {
   execute_send_message: executeSendMessageTool,
   confirm_action: confirmActionTool,
   list_contacts: listContactsTool,
+  list_labels: listLabelsTool,
   search_contacts: searchContactsTool,
   add_contact: addContactTool,
   update_contact: updateContactTool,
@@ -4190,6 +4236,7 @@ TOOLS BY CATEGORY:
 
 CONTACTS:
 - list_contacts: Show all contacts
+- list_labels: Show all labels/tags across all contacts. Use when: "show all labels", "what labels do I have", "show me my labels", "list my tags"
 - search_contacts: Find contact by name
 - add_contact: Add a new contact (name + phone number required)
 - update_contact: Rename contact (currentName + newName) - can change name but NEVER the phone number
@@ -4205,9 +4252,13 @@ CONTACTS:
 - block_contact / unblock_contact: Block/unblock
 
 IMPORTANT - LABELS vs NAMES:
+- Labels (tags) are category keywords like "family", "work", "friend" that you ADD to contacts
+- A contact NAME is different from labels. "DAD" is a name, "family" could be a label ON that contact.
+- "show all labels" -> use list_labels tool
 - "add label family" -> use manage_contact_details with action=add, field=tags
 - "rename to Dad" -> use update_contact with newName
 - Labels/tags are SEPARATE from the name. Do NOT put labels in the name field!
+- "family friend" as a label means a tag with value "family friend", NOT a contact named that
 
 RULES & AUTOMATION:
 - create_transfer_rule: Forward calls/messages from a specific contact to another
