@@ -2860,7 +2860,7 @@ async function transcribeRecording(callSid, recordingUrl, recordingSid, accountS
 router.post("/webhook/voicemail", async (req, res) => {
   try {
     const { CallSid, RecordingUrl, RecordingDuration, TranscriptionText, From, To, AccountSid } = req.body;
-    console.log("📞 Voicemail received:", { 
+    console.log("📞 Voicemail webhook received:", { 
       CallSid, 
       RecordingUrl, 
       RecordingDuration,
@@ -2870,6 +2870,18 @@ router.post("/webhook/voicemail", async (req, res) => {
     });
     console.log("📞 Full voicemail body:", req.body);
     
+    // Only process if there's an actual recording (duration > 0 and URL exists)
+    const duration = parseInt(RecordingDuration) || 0;
+    const hasActualRecording = RecordingUrl && duration > 0;
+    
+    if (!hasActualRecording) {
+      console.log(`   ⏭️ No actual voicemail recorded (duration: ${duration}s, URL: ${RecordingUrl || 'none'}). Skipping.`);
+      const response = new twilio.twiml.VoiceResponse();
+      response.hangup();
+      res.type("text/xml");
+      return res.send(response.toString());
+    }
+    
     // Update call record with voicemail info
     const updatedRecord = await CallRecord.findOneAndUpdate(
       { twilioCallSid: CallSid },
@@ -2877,7 +2889,7 @@ router.post("/webhook/voicemail", async (req, res) => {
         $set: {
           hasVoicemail: true,
           voicemailUrl: RecordingUrl,
-          voicemailDuration: parseInt(RecordingDuration) || 0,
+          voicemailDuration: duration,
           voicemailTranscript: TranscriptionText || null,
           ...(From ? { fromNumber: From } : {}),
           ...(To ? { toNumber: To } : {}),
@@ -2888,7 +2900,7 @@ router.post("/webhook/voicemail", async (req, res) => {
     );
     
     if (updatedRecord) {
-      console.log(`   ✅ Updated CallRecord ${CallSid} with voicemail. URL: ${RecordingUrl}`);
+      console.log(`   ✅ Updated CallRecord ${CallSid} with voicemail. URL: ${RecordingUrl}, Duration: ${duration}s`);
     } else {
       console.log(`   ⚠️ No CallRecord found for CallSid: ${CallSid}. Creating new record if possible.`);
       // Try to create a new record if we have enough info
@@ -2909,7 +2921,7 @@ router.post("/webhook/voicemail", async (req, res) => {
             toNumber: To,
             hasVoicemail: true,
             voicemailUrl: RecordingUrl,
-            voicemailDuration: parseInt(RecordingDuration) || 0,
+            voicemailDuration: duration,
             voicemailTranscript: TranscriptionText || null,
             reason: "voicemail_only",
             metadata: {
