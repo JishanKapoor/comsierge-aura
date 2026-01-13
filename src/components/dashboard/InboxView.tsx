@@ -1417,7 +1417,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if ((messageToSend || imageToSend) && recipientPhone) {
       // Must have an assigned phone number to send
       if (!userPhone) {
-        toast.error("No phone number assigned to your account. Contact admin to assign a Twilio number.");
+        toast.error("No phone number assigned to your account. Contact admin to assign a Comsierge number.");
         // Remove optimistic bubbles if we can't send
         setThreadsByContactId((prev) => {
           const current = prev[selectedMessage.contactId] ?? [];
@@ -2027,7 +2027,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const fromNumber = twilioNumber;
       console.log("🔵 Browser call - twilioNumber:", twilioNumber, "fromNumber:", fromNumber);
       if (!fromNumber) {
-        toast.error("No Twilio number found. Contact admin to assign a number.");
+        toast.error("No Comsierge number found. Contact admin to assign a number.");
         setIsCallingLoading(false);
         return;
       }
@@ -2197,7 +2197,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const fromNum = twilioNumber;
     
     if (!fromNum) {
-      toast.error("No Twilio number found. Please contact admin to assign a number.");
+      toast.error("No Comsierge number found. Please contact admin to assign a number.");
       setIsCallingLoading(false);
       return;
     }

@@ -798,7 +798,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
       // Use the API-fetched Twilio number for caller ID
       const fromNumber = twilioNumber;
       if (!fromNumber) {
-        toast.error("No Twilio number found. Contact admin to assign a number.");
+        toast.error("No Comsierge number found. Contact admin to assign a number.");
         setIsCallingLoading(false);
         return;
       }
@@ -887,7 +887,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
     const fromNum = twilioNumber;
     
     if (!fromNum) {
-      toast.error("No Twilio number found. Please contact admin to assign a number.");
+      toast.error("No Comsierge number found. Please contact admin to assign a number.");
       setIsCallingLoading(false);
       return;
     }

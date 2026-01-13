@@ -518,7 +518,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
     if (!fromNumber) {
       return res.status(400).json({
         success: false,
-        message: "No phone number assigned to user. Admin must assign a Twilio number first.",
+        message: "No phone number assigned to user. Admin must assign a Comsierge number first.",
       });
     }
     
@@ -3489,7 +3489,7 @@ router.post("/make-call", authMiddleware, async (req, res) => {
     if (!fromNumber) {
       return res.status(400).json({
         success: false,
-        message: "No phone number assigned to user. Admin must assign a Twilio number first.",
+        message: "No phone number assigned to user. Admin must assign a Comsierge number first.",
       });
     }
     
