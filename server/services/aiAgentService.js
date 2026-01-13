@@ -552,7 +552,36 @@ const addContactTool = tool(
         label: label || null,
       });
       
-      return `Contact added: "${contact.name}" (${contact.phone})${label ? ` with label "${label}"` : ''}.`;
+      // Update existing conversations to use the new contact name
+      const allConvos = await Conversation.find({ userId });
+      let updatedConvos = 0;
+      for (const convo of allConvos) {
+        const convoDigits = (convo.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (convoDigits === digits) {
+          convo.contactName = name.trim();
+          await convo.save();
+          updatedConvos++;
+        }
+      }
+      
+      // Update existing messages to use the new contact name
+      const allMessages = await Message.find({ userId });
+      let updatedMessages = 0;
+      for (const msg of allMessages) {
+        const msgDigits = (msg.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (msgDigits === digits) {
+          msg.contactName = name.trim();
+          await msg.save();
+          updatedMessages++;
+        }
+      }
+      
+      let response = `Contact added: "${contact.name}" (${contact.phone})${label ? ` with label "${label}"` : ''}.`;
+      if (updatedConvos > 0) {
+        response += ` Updated ${updatedConvos} conversation(s) in your inbox.`;
+      }
+      
+      return response;
     } catch (error) {
       console.error("Add contact error:", error);
       return `Error adding contact: ${error.message}`;
