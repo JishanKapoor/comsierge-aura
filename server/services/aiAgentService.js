@@ -337,32 +337,73 @@ const blockContactTool = tool(
     try {
       console.log("Blocking contact:", { userId, sourceContact, sourcePhone });
       
+      // Resolve contact to get phone number if not provided
+      let phone = sourcePhone;
+      let contactName = sourceContact;
+      
+      if (!phone && sourceContact) {
+        const resolved = await resolveContactWithAI(userId, sourceContact);
+        if (resolved) {
+          phone = resolved.phone;
+          contactName = resolved.name;
+          console.log("Resolved contact:", contactName, phone);
+        }
+      }
+      
+      // Also try to find in conversations if still no phone
+      if (!phone && sourceContact) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${sourceContact}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) contactName = convo.contactName || sourceContact;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${sourceContact}". Please specify the phone number.`;
+      }
+      
       // Create a block rule
       await Rule.create({
         userId,
-        rule: `Block ${sourceContact}${reason ? `: ${reason}` : ""}`,
+        rule: `Block ${contactName}${reason ? `: ${reason}` : ""}`,
         type: "block",
         active: true,
-        transferDetails: { sourceContact, sourcePhone }
+        transferDetails: { sourceContact: contactName, sourcePhone: phone }
       });
 
-      // Also set isBlocked on the conversation so it takes effect immediately
-      if (sourcePhone) {
-        const normalizedPhone = sourcePhone.replace(/\D/g, '').slice(-10);
-        // Find all conversations and use AI to match phone numbers
-        const allConvos = await Conversation.find({ userId });
-        const matchingConvos = allConvos.filter(c => {
-          const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
-          return convoDigits === normalizedPhone;
-        });
-        for (const convo of matchingConvos) {
-          convo.isBlocked = true;
-          await convo.save();
+      // Set isBlocked on the Contact
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allContacts = await Contact.find({ userId });
+      for (const c of allContacts) {
+        const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+        if (cDigits === normalizedPhone) {
+          c.isBlocked = true;
+          await c.save();
+          console.log("Set isBlocked=true on contact:", c.name);
         }
-        console.log("Updated conversation isBlocked for phone:", normalizedPhone, "count:", matchingConvos.length);
       }
 
-      return `Done. Blocked ${sourceContact}. They won't be able to reach you.`;
+      // Set isBlocked on the conversation so it takes effect immediately
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      for (const convo of matchingConvos) {
+        convo.isBlocked = true;
+        await convo.save();
+      }
+      console.log("Updated conversation isBlocked for phone:", normalizedPhone, "count:", matchingConvos.length);
+
+      return `Done. Blocked ${contactName}. They won't be able to reach you.`;
     } catch (error) {
       console.error("Block error:", error);
       return `Error: ${error.message}`;
@@ -370,11 +411,11 @@ const blockContactTool = tool(
   },
   {
     name: "block_contact",
-    description: "Block current contact from messaging/calling. Use when user says: block, mute, ignore, stop messages.",
+    description: "Block a contact from messaging/calling. Use when user says: block, mute, ignore, stop messages from X.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      sourceContact: z.string().describe("Contact to block"),
-      sourcePhone: z.string().optional().describe("Contact phone"),
+      sourceContact: z.string().describe("Contact name to block"),
+      sourcePhone: z.string().optional().describe("Contact phone (optional - will be looked up from name)"),
       reason: z.string().optional().describe("Reason for blocking"),
     }),
   }
@@ -386,33 +427,74 @@ const unblockContactTool = tool(
     try {
       console.log("Unblocking contact:", { userId, sourceContact, sourcePhone });
       
+      // Resolve contact to get phone number if not provided
+      let phone = sourcePhone;
+      let contactName = sourceContact;
+      
+      if (!phone && sourceContact) {
+        const resolved = await resolveContactWithAI(userId, sourceContact);
+        if (resolved) {
+          phone = resolved.phone;
+          contactName = resolved.name;
+          console.log("Resolved contact:", contactName, phone);
+        }
+      }
+      
+      // Also try to find in conversations if still no phone
+      if (!phone && sourceContact) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${sourceContact}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) contactName = convo.contactName || sourceContact;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${sourceContact}". Please specify the phone number.`;
+      }
+      
       // Delete block rules for this contact
       await Rule.deleteMany({
         userId,
         type: "block",
         $or: [
-          { "transferDetails.sourceContact": sourceContact },
-          { "transferDetails.sourcePhone": sourcePhone }
+          { "transferDetails.sourceContact": contactName },
+          { "transferDetails.sourcePhone": phone }
         ]
       });
 
-      // Set isBlocked to false on the conversation
-      if (sourcePhone) {
-        const normalizedPhone = sourcePhone.replace(/\D/g, '').slice(-10);
-        // Find all conversations and match phone numbers directly
-        const allConvos = await Conversation.find({ userId });
-        const matchingConvos = allConvos.filter(c => {
-          const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
-          return convoDigits === normalizedPhone;
-        });
-        for (const convo of matchingConvos) {
-          convo.isBlocked = false;
-          await convo.save();
+      // Set isBlocked to false on the Contact
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allContacts = await Contact.find({ userId });
+      for (const c of allContacts) {
+        const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+        if (cDigits === normalizedPhone) {
+          c.isBlocked = false;
+          await c.save();
+          console.log("Set isBlocked=false on contact:", c.name);
         }
-        console.log("Updated conversation isBlocked=false for phone:", normalizedPhone, "count:", matchingConvos.length);
       }
 
-      return `Done. Unblocked ${sourceContact}. They can now message you again.`;
+      // Set isBlocked to false on the conversation
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      for (const convo of matchingConvos) {
+        convo.isBlocked = false;
+        await convo.save();
+      }
+      console.log("Updated conversation isBlocked=false for phone:", normalizedPhone, "count:", matchingConvos.length);
+
+      return `Done. Unblocked ${contactName}. They can now message you again.`;
     } catch (error) {
       console.error("Unblock error:", error);
       return `Error: ${error.message}`;
@@ -423,8 +505,8 @@ const unblockContactTool = tool(
     description: "Unblock a blocked contact. Use when user says: unblock, allow again, remove block, let them message.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      sourceContact: z.string().describe("Contact to unblock"),
-      sourcePhone: z.string().optional().describe("Contact phone"),
+      sourceContact: z.string().describe("Contact name to unblock"),
+      sourcePhone: z.string().optional().describe("Contact phone (optional - will be looked up from name)"),
     }),
   }
 );
