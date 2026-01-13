@@ -2705,9 +2705,13 @@ PHONE SETTINGS:
 - update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
 
 ACTIONS:
-- make_call: Call someone
+- make_call: Call someone (if user says "call me", first get_phone_info to get their forwarding number, then call that)
 - send_message: Prepare to send SMS (shows confirmation first)
 - execute_send_message: Actually send the SMS after user confirms with "yes"
+
+SPECIAL CASES:
+- "call me" = call the user's forwarding number (use get_phone_info first to find it)
+- "text me" = send SMS to the user's forwarding number
 
 CONFIRMATION FLOW FOR SENDING MESSAGES:
 1. User says "send hey to John" -> use send_message tool -> shows "Ready to send... Reply yes to send"
@@ -2802,7 +2806,25 @@ User ID: ${userId}`;
         }
       }
       
-      return results.join("\n\n");
+      // Humanize the response - make it conversational
+      const toolOutput = results.join("\n\n");
+      const humanizePrompt = `You are Aura, a friendly AI assistant. The user asked: "${message}"
+
+Tool output:
+${toolOutput}
+
+Respond conversationally in 1-2 sentences. Be direct and natural. NO emojis. NO markdown. Just plain friendly text.
+If the output already contains good info, rephrase it naturally. Example:
+- Instead of "Your Comsierge Number: +123" say "Your Comsierge number is +123"
+- Instead of "Forwarding to: +456" say "and calls forward to +456"`;
+
+      try {
+        const humanized = await llm.invoke([new HumanMessage(humanizePrompt)]);
+        return humanized.content || toolOutput;
+      } catch (humanizeError) {
+        console.error("Humanize error:", humanizeError);
+        return toolOutput;
+      }
     }
     
     return response.content || "I'm ready to help! You can ask me to call someone, send a message, create rules, search your messages, and more.";
