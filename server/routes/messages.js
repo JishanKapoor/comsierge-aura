@@ -233,7 +233,15 @@ router.get("/conversations", async (req, res) => {
 
         let keepInPriority = false;
         if (ctx?.kind) {
-          keepInPriority = isPriorityActiveForList(ctx, { unreadCount, userHasReplied, now });
+          // Meetings/deadlines should fall out of priority after their expiry time,
+          // even if the thread still has unread messages.
+          const expiresAt = ctx.expiresAt ? new Date(ctx.expiresAt) : null;
+          const isExpired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime();
+          if (isExpired && (ctx.kind === "meeting" || ctx.kind === "deadline")) {
+            keepInPriority = false;
+          } else {
+            keepInPriority = isPriorityActiveForList(ctx, { unreadCount, userHasReplied, now });
+          }
         } else {
           // No priorityContext means either:
           // - manual priority (user-set) → should never auto-expire
@@ -251,7 +259,13 @@ router.get("/conversations", async (req, res) => {
             });
             if (inferred?.kind) {
               toSetContext.push({ id: conv._id, ctx: inferred });
-              keepInPriority = isPriorityActiveForList(inferred, { unreadCount, userHasReplied, now });
+              const expiresAt = inferred.expiresAt ? new Date(inferred.expiresAt) : null;
+              const isExpired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime();
+              if (isExpired && (inferred.kind === "meeting" || inferred.kind === "deadline")) {
+                keepInPriority = false;
+              } else {
+                keepInPriority = isPriorityActiveForList(inferred, { unreadCount, userHasReplied, now });
+              }
             } else {
               // AI marked high but we can't infer a context from preview text → treat as "important".
               keepInPriority = unreadCount > 0;
@@ -265,10 +279,9 @@ router.get("/conversations", async (req, res) => {
         if (keepInPriority) {
           keep.push(conv);
         } else {
-          // Only auto-clear when there are no unread messages (avoid losing visibility for new items).
-          if (unreadCount === 0) {
-            toClearIds.push(conv._id);
-          }
+          // Auto-clear (including for expired meeting/deadline even if unread).
+          // The thread will still show up in Unread/All tabs.
+          toClearIds.push(conv._id);
         }
       }
 

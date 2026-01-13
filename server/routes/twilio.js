@@ -82,8 +82,16 @@ async function saveMessageToDB(msgData) {
     if (msgData?.userId && msgData?.twilioSid) {
       const existing = await Message.findOne({ userId: msgData.userId, twilioSid: msgData.twilioSid });
       if (existing) {
-        console.log("ℹ️ Duplicate twilioSid detected; returning existing message:", msgData.twilioSid);
-        return existing;
+        console.log("ℹ️ Duplicate twilioSid detected; updating existing message:", msgData.twilioSid);
+        const setData = Object.fromEntries(
+          Object.entries(msgData).filter(([, v]) => v !== undefined)
+        );
+        const updated = await Message.findByIdAndUpdate(
+          existing._id,
+          { $set: setData },
+          { new: true }
+        );
+        return updated || existing;
       }
     }
 
@@ -1187,6 +1195,27 @@ router.post("/webhook/sms", async (req, res) => {
           res.type("text/xml");
           return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
         }
+
+        // Save to DB immediately so the dashboard inbox updates fast.
+        // AI analysis/routing can run afterward without delaying the UI.
+        await saveMessageToDB({
+          userId: user._id,
+          contactPhone: normalizeToE164ish(From),
+          contactName: contact?.name || normalizeToE164ish(From),
+          direction: "incoming",
+          body: Body,
+          status: "received",
+          twilioSid: MessageSid,
+          fromNumber: normalizeToE164ish(From),
+          toNumber: normalizeToE164ish(To),
+          isRead: false,
+          // MMS attachments
+          attachments: attachments.length > 0 ? attachments : undefined,
+          // Default flags; may be updated after analysis
+          isHeld: false,
+          isPriority: false,
+          isBlocked: false,
+        });
         
         // Run AI analysis
         let aiAnalysis = null;
@@ -1198,15 +1227,31 @@ router.post("/webhook/sms", async (req, res) => {
         
         try {
           console.log(`   Running AI analysis...`);
-          
-          // Run fast classification for ALL messages (uses your exact logic)
-          spamAnalysis = await classifyMessageAsSpam(
-            Body,
-            From,
-            contact?.name || From,
-            senderContext,
-            conversationHistory
-          );
+
+          // Only do spam classification for first-time unknown senders.
+          // For known senders, we don't block/hold based on spam classification.
+          const isFirstTimeUnknown = !senderContext.isSavedContact && !senderContext.hasConversationHistory;
+          if (isFirstTimeUnknown) {
+            spamAnalysis = await classifyMessageAsSpam(
+              Body,
+              From,
+              contact?.name || From,
+              senderContext,
+              conversationHistory
+            );
+          } else {
+            spamAnalysis = {
+              category: "INBOX",
+              senderTrust: senderContext.isSavedContact ? "high" : "medium",
+              intent: "conversational",
+              behaviorPattern: "normal",
+              contentRiskLevel: "none",
+              spamProbability: 0,
+              isSpam: false,
+              isHeld: false,
+              reasoning: "Known sender - skipping spam classification",
+            };
+          }
           
           console.log(`   Classification result:`, JSON.stringify(spamAnalysis, null, 2));
           
