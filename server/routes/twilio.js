@@ -1224,6 +1224,14 @@ router.post("/webhook/sms", async (req, res) => {
         let isHeld = false;
         let isPriority = false;
         let shouldNotify = true;
+        const now = new Date();
+
+        // Fetch existing conversation so we can CLEAR auto-priority when appropriate.
+        // (Previously we only ever set isPriority=true and never unset it.)
+        const existingConversation = await Conversation.findOne({
+          userId: user._id,
+          contactPhone: normalizeToE164ish(From),
+        }).select("isPriority priorityContext lastAiAnalysis priority");
         
         try {
           console.log(`   Running AI analysis...`);
@@ -1529,8 +1537,41 @@ router.post("/webhook/sms", async (req, res) => {
           isPriority = true;
         }
 
+        // Resolution phrases should clear prior emergency/auto-priority.
+        // This keeps Priority from getting stuck when the contact says it's resolved.
+        const RESOLVED_RE = /(\bnever\s*mind\b|\bnvm\b|\bits\s+over\b|\bit'?s\s+over\b|\bdon'?t\s+worry\b|\bno\s+worries\b|\bfalse\s+alarm\b|\bignore\s+that\b|\ball\s+good\b|\bresolved\b|\bproblem\s+solved\b|\bwe'?re\s+good\b)/i;
+        const hasResolvedSignal = RESOLVED_RE.test(String(cleanBody || ""));
+
+        const existingIsPriority = !!existingConversation?.isPriority;
+        const existingCtxKind = existingConversation?.priorityContext?.kind || null;
+        const existingExpiresAt = existingConversation?.priorityContext?.expiresAt
+          ? new Date(existingConversation.priorityContext.expiresAt)
+          : null;
+        const existingIsExpired =
+          existingExpiresAt && !Number.isNaN(existingExpiresAt.getTime())
+            ? existingExpiresAt.getTime() <= now.getTime()
+            : false;
+
+        // Heuristic: treat as auto-priority if it has an auto context or AI priority history.
+        const existingLooksAuto = !!(existingConversation?.priorityContext?.kind || existingConversation?.lastAiAnalysis?.priority);
+
+        let shouldClearAutoPriority = false;
+        if (existingIsPriority && existingLooksAuto) {
+          if (hasResolvedSignal) {
+            shouldClearAutoPriority = true;
+          } else if ((existingCtxKind === "meeting" || existingCtxKind === "deadline") && existingIsExpired) {
+            // Meetings/deadlines should clear after expiry.
+            shouldClearAutoPriority = true;
+          } else if (!isPriority && !priorityContext?.kind && String(aiAnalysis?.priority || "").toLowerCase() !== "high") {
+            // New message does not look priority at all → clear auto-priority.
+            // (Manual priority is preserved because existingLooksAuto must be true.)
+            shouldClearAutoPriority = true;
+          }
+        }
+
         const conversationUpdate = {
-          isPriority: isPriority || undefined,
+          // IMPORTANT: allow clearing auto-priority when the situation is resolved.
+          isPriority: shouldClearAutoPriority ? false : (isPriority || undefined),
           lastAiAnalysis: aiAnalysis ? {
             priority: aiAnalysis.priority,
             category: aiAnalysis.category,
@@ -1538,7 +1579,7 @@ router.post("/webhook/sms", async (req, res) => {
           } : undefined,
           // Set/update priorityContext when a message is treated as priority.
           // This keeps emergencies sticky and meetings/deadlines time-aware.
-          priorityContext: priorityContext || undefined,
+          priorityContext: shouldClearAutoPriority ? null : (priorityContext || undefined),
         };
         
         // Only update isHeld if it's spam (true) - never clear it here as user may have manually held it
