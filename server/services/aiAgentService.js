@@ -1471,6 +1471,44 @@ const getPhoneInfoTool = tool(
   }
 );
 
+// Tool: Update Forwarding Number
+const updateForwardingNumberTool = tool(
+  async ({ userId, newForwardingNumber }) => {
+    try {
+      console.log("Updating forwarding number:", { userId, newForwardingNumber });
+      
+      // Normalize the phone number
+      let normalized = newForwardingNumber.replace(/\D/g, '');
+      if (normalized.length === 10) normalized = '1' + normalized;
+      if (!normalized.startsWith('+')) normalized = '+' + normalized;
+      
+      // Update user's forwarding number
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { forwardingNumber: normalized },
+        { new: true }
+      );
+      
+      if (!user) {
+        return "User not found.";
+      }
+      
+      return `Done! Your forwarding number has been updated to ${normalized}. All incoming calls and messages to your Comsierge number will now forward there.`;
+    } catch (error) {
+      console.error("Update forwarding number error:", error);
+      return `Error updating forwarding number: ${error.message}`;
+    }
+  },
+  {
+    name: "update_forwarding_number",
+    description: "Update the user's forwarding number where calls/messages are forwarded to. Use when user says: 'change my forwarding number', 'forward to this number', 'set forwarding to', 'change where my calls go'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      newForwardingNumber: z.string().describe("The new phone number to forward calls/messages to"),
+    }),
+  }
+);
+
 // Tool: Confirm action
 const confirmActionTool = tool(
   async ({ userId, action, confirmed, actionData }) => {
@@ -2273,6 +2311,7 @@ const fullAgentTools = [
   getUnreadSummaryTool,
   // Info
   getPhoneInfoTool,
+  updateForwardingNumberTool,
 ];
 
 const fullAgentToolMap = {
@@ -2304,6 +2343,7 @@ const fullAgentToolMap = {
   complete_reminder: completeReminderTool,
   get_unread_summary: getUnreadSummaryTool,
   get_phone_info: getPhoneInfoTool,
+  update_forwarding_number: updateForwardingNumberTool,
 };
 
 // Full Agent LLM
@@ -2638,6 +2678,10 @@ REMINDERS:
 PROACTIVE:
 - get_unread_summary: Get briefing on unread messages + upcoming reminders
 
+PHONE SETTINGS:
+- get_phone_info: Get user's Twilio number and current forwarding number
+- update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
+
 ACTIONS:
 - make_call: Call someone
 - send_message: Prepare to send SMS (shows confirmation first)
@@ -2667,6 +2711,9 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "what should I say to sarah" -> suggest_reply
 - "turn that off" or "disable the transfer rule" -> delete_rule
 - "yes" after "Ready to send..." -> execute_send_message
+- "change my forwarding number to 555-1234" -> update_forwarding_number
+- "what number are calls forwarded to" -> get_phone_info
+- "what is my twilio number" -> get_phone_info
 
 Be direct. Execute tools immediately. No confirmation needed for read operations.
 For complex rules described in natural language, use create_smart_rule.
