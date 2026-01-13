@@ -9,6 +9,7 @@ import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Reminder from "../models/Reminder.js";
+import ScheduledMessage from "../models/ScheduledMessage.js";
 import User from "../models/User.js";
 import TwilioAccount from "../models/TwilioAccount.js";
 
@@ -1924,6 +1925,179 @@ const createReminderTool = tool(
   }
 );
 
+// Tool: Schedule Message to Contact
+const scheduleMessageTool = tool(
+  async ({ userId, contactName, contactPhone, messageText, when }) => {
+    try {
+      console.log("Scheduling message:", { userId, contactName, contactPhone, messageText, when });
+      
+      // Parse the time
+      const scheduledAt = parseNaturalTime(when);
+      if (!scheduledAt) {
+        return `Could not understand the time "${when}". Try "in 30 seconds", "in 5 minutes", "tomorrow at 3pm".`;
+      }
+      
+      // Resolve contact if only name provided
+      let resolvedPhone = contactPhone;
+      let resolvedName = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolvedContact = await resolveContactWithAI(userId, contactName);
+        if (resolvedContact) {
+          resolvedPhone = resolvedContact.phone;
+          resolvedName = resolvedContact.name;
+        } else {
+          return `Could not find contact "${contactName}". Please add them first or provide their phone number.`;
+        }
+      }
+      
+      if (!resolvedPhone) {
+        return "Please specify a contact name or phone number to send the message to.";
+      }
+      
+      // Normalize phone number
+      const normalizedPhone = normalizePhoneForSms(resolvedPhone);
+      
+      // Create the scheduled message
+      const scheduled = await ScheduledMessage.create({
+        userId,
+        contactPhone: normalizedPhone,
+        contactName: resolvedName || normalizedPhone,
+        messageBody: messageText,
+        scheduledAt,
+        status: 'pending'
+      });
+      
+      // Calculate relative time for display
+      const now = new Date();
+      const diffMs = scheduledAt.getTime() - now.getTime();
+      const diffSec = Math.round(diffMs / 1000);
+      const diffMin = Math.round(diffMs / 60000);
+      
+      let timeStr;
+      if (diffSec < 60) {
+        timeStr = `in ${diffSec} seconds`;
+      } else if (diffMin < 60) {
+        timeStr = `in ${diffMin} minute${diffMin > 1 ? 's' : ''}`;
+      } else if (diffMin < 1440) {
+        const hours = Math.floor(diffMin / 60);
+        const mins = diffMin % 60;
+        timeStr = `in ${hours} hour${hours > 1 ? 's' : ''}${mins > 0 ? ` ${mins} min` : ''}`;
+      } else {
+        timeStr = scheduledAt.toLocaleString("en-US", { 
+          weekday: "short", month: "short", day: "numeric", 
+          hour: "numeric", minute: "2-digit"
+        });
+      }
+      
+      return `Scheduled! I'll send "${messageText}" to ${resolvedName || normalizedPhone} ${timeStr}.`;
+    } catch (error) {
+      console.error("Schedule message error:", error);
+      return `Error scheduling message: ${error.message}`;
+    }
+  },
+  {
+    name: "schedule_message",
+    description: "Schedule a message to be sent to a contact at a future time. Use for: 'send hi to John in 30 seconds', 'text mom happy birthday tomorrow at 8am', 'message Sarah in 5 minutes saying I'm on my way'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Name of contact to message"),
+      contactPhone: z.string().optional().describe("Phone number to message (if no contact name)"),
+      messageText: z.string().describe("The message content to send"),
+      when: z.string().describe("When to send - e.g. 'in 30 seconds', 'in 5 minutes', 'tomorrow 3pm'"),
+    }),
+  }
+);
+
+// Tool: List Scheduled Messages
+const listScheduledMessagesTool = tool(
+  async ({ userId, filter }) => {
+    try {
+      let query = { userId };
+      
+      if (filter === "pending") {
+        query.status = 'pending';
+        query.scheduledAt = { $gte: new Date() };
+      } else if (filter === "sent") {
+        query.status = 'sent';
+      } else if (filter === "failed") {
+        query.status = 'failed';
+      }
+      
+      const messages = await ScheduledMessage.find(query)
+        .sort({ scheduledAt: 1 })
+        .limit(20);
+      
+      if (messages.length === 0) {
+        return filter === "pending" ? "No scheduled messages pending." : "No scheduled messages found.";
+      }
+      
+      const list = messages.map(m => {
+        const time = new Date(m.scheduledAt).toLocaleString("en-US", {
+          weekday: "short", month: "short", day: "numeric",
+          hour: "numeric", minute: "2-digit"
+        });
+        const status = m.status === 'sent' ? '[sent]' : m.status === 'failed' ? '[failed]' : '';
+        return `- ${time} to ${m.contactName}: "${m.messageBody}" ${status}`;
+      }).join("\n");
+      
+      return `Scheduled messages (${messages.length}):\n${list}`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "list_scheduled_messages",
+    description: "List scheduled messages. Use for: 'show my scheduled messages', 'what messages are queued'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      filter: z.enum(["all", "pending", "sent", "failed"]).optional().describe("Filter messages"),
+    }),
+  }
+);
+
+// Tool: Cancel Scheduled Message
+const cancelScheduledMessageTool = tool(
+  async ({ userId, contactName }) => {
+    try {
+      // Find pending scheduled messages to this contact
+      const query = { 
+        userId, 
+        status: 'pending',
+        scheduledAt: { $gte: new Date() }
+      };
+      
+      if (contactName) {
+        query.contactName = { $regex: new RegExp(contactName, 'i') };
+      }
+      
+      const pending = await ScheduledMessage.find(query).sort({ scheduledAt: 1 });
+      
+      if (pending.length === 0) {
+        return contactName 
+          ? `No pending scheduled messages to "${contactName}" found.`
+          : "No pending scheduled messages found.";
+      }
+      
+      // Cancel the first matching message (most recent)
+      const toCancel = pending[0];
+      await ScheduledMessage.findByIdAndUpdate(toCancel._id, { status: 'cancelled' });
+      
+      return `Cancelled scheduled message to ${toCancel.contactName}: "${toCancel.messageBody}"`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "cancel_scheduled_message",
+    description: "Cancel a pending scheduled message. Use for: 'cancel the message to John', 'don't send that message', 'cancel scheduled messages'",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      contactName: z.string().optional().describe("Contact name to filter by"),
+    }),
+  }
+);
+
 // Tool: List Reminders
 const listRemindersTool = tool(
   async ({ userId, filter }) => {
@@ -2060,15 +2234,31 @@ const extractEventsTool = tool(
         return "No messages found to analyze.";
       }
       
-      // Build message text for analysis
-      const msgText = messages.map(m => m.body).join("\n---\n");
+      // Build message text for analysis WITH timestamps
+      const now = new Date();
+      const msgText = messages.map(m => {
+        const msgTime = new Date(m.createdAt);
+        const minutesAgo = Math.round((now - msgTime) / 60000);
+        const timeLabel = minutesAgo < 1 ? "just now" : 
+                         minutesAgo < 60 ? `${minutesAgo} min ago` :
+                         minutesAgo < 1440 ? `${Math.round(minutesAgo/60)} hours ago` :
+                         `${Math.round(minutesAgo/1440)} days ago`;
+        return `[Sent ${timeLabel}] ${m.body}`;
+      }).join("\n---\n");
       
       // Use LLM to extract events
       const response = await llm.invoke([
-        new SystemMessage(`Extract any dates, meetings, appointments, deadlines, or commitments from these messages. Format each as:
-- [DATE/TIME] Event description (from: sender)
+        new SystemMessage(`Extract any dates, meetings, appointments, deadlines, or commitments from these messages.
+CRITICAL: Consider WHEN each message was sent (shown in brackets). 
+- If a message says "meeting in 30 seconds" but was sent 2 hours ago, that meeting has ALREADY HAPPENED - mark it as PAST.
+- Only show UPCOMING events that haven't happened yet.
+- Current time is: ${now.toLocaleString()}
 
-If no events found, say "No events or appointments found."
+Format each as:
+- [STATUS] Event description (from message sent X ago)
+  STATUS = UPCOMING if it hasn't happened yet, PAST if it already happened
+
+If no UPCOMING events found, say "No upcoming events - all mentioned events have already passed or none were found."
 Do NOT use emojis. Do NOT use markdown. Plain text only.`),
         new HumanMessage(msgText)
       ]);
@@ -2312,16 +2502,27 @@ const createSmartRuleTool = tool(
         transferDetails.mode = ruleDescription.toLowerCase().includes('message') ? 'both' : 'calls';
       }
       
+      // Map parsed type to valid database enum values
+      // Database accepts: "transfer", "auto-reply", "block", "forward", "priority", "custom", "message-notify"
+      let ruleType = parsed.type;
+      if (ruleType === "forward") ruleType = "transfer";
+      if (ruleType === "auto_reply") ruleType = "auto-reply";
+      if (ruleType === "mute" || ruleType === "hold" || ruleType === "pause") ruleType = "block";
+      if (ruleType === "prioritize") ruleType = "priority";
+      // Validate against allowed types
+      const validTypes = ["transfer", "auto-reply", "block", "forward", "priority", "custom", "message-notify"];
+      if (!validTypes.includes(ruleType)) ruleType = "custom";
+      
       // Create the rule
       const rule = await Rule.create({
         userId,
         rule: parsed.summary || ruleDescription,
-        type: parsed.type === "forward" ? "transfer" : parsed.type,
+        type: ruleType,
         active: true,
         conditions,
         actions: { exclusions },
-        transferDetails: parsed.type === "forward" || parsed.type === "transfer" ? transferDetails : 
-                        parsed.type === "auto_reply" ? { autoReplyMessage: parsed.action?.auto_reply_message } : null,
+        transferDetails: ruleType === "transfer" || ruleType === "forward" ? transferDetails : 
+                        ruleType === "auto-reply" ? { autoReplyMessage: parsed.action?.auto_reply_message } : null,
         schedule: {
           mode: parsed.duration?.type === "temporary" ? "duration" : "always",
           durationHours: parsed.duration?.hours || null,
@@ -2634,6 +2835,9 @@ const fullAgentToolMap = {
   create_reminder: createReminderTool,
   list_reminders: listRemindersTool,
   complete_reminder: completeReminderTool,
+  schedule_message: scheduleMessageTool,
+  list_scheduled_messages: listScheduledMessagesTool,
+  cancel_scheduled_message: cancelScheduledMessageTool,
   get_unread_summary: getUnreadSummaryTool,
   get_phone_info: getPhoneInfoTool,
   update_forwarding_number: updateForwardingNumberTool,
@@ -2961,7 +3165,7 @@ CONTACTS:
 
 RULES & AUTOMATION:
 - create_transfer_rule: Forward calls/messages from a specific contact to another
-- create_auto_reply: Set auto-reply message
+- create_auto_reply: Set auto-reply for a contact. Use when: "if X replies say Y", "auto reply to X", "when X texts respond with Y", "if X messages say Y"
 - mark_priority: Mark as high priority
 - get_rules: List rules (use includeInactive=true for inactive/disabled rules)
 - delete_rule: Remove/disable/turn off a rule (supports matching by description, type, or contact)
@@ -2980,10 +3184,15 @@ MESSAGES & ANALYSIS:
 - suggest_reply: Get reply suggestions for a conversation
 - extract_events: Find events, dates, appointments from messages
 
-REMINDERS:
-- create_reminder: Set reminder (supports "in 30 min", "tomorrow 3pm", "monday 9am")
+REMINDERS (notify THE USER):
+- create_reminder: Set reminder that calls/texts THE USER (supports "in 30 min", "tomorrow 3pm", "monday 9am")
 - list_reminders: View upcoming reminders
 - complete_reminder: Mark done or delete reminder
+
+SCHEDULED MESSAGES (send TO CONTACTS):
+- schedule_message: Schedule a message to be sent TO A CONTACT at a future time. Use for "send hi to John in 30 seconds", "text mom tomorrow at 8am"
+- list_scheduled_messages: View pending/sent scheduled messages
+- cancel_scheduled_message: Cancel a pending scheduled message
 
 PROACTIVE:
 - get_unread_summary: Get briefing on unread messages + upcoming reminders
@@ -3010,8 +3219,9 @@ When user says "text me" or "send me a message" or "call me":
 2. Then use send_message (for text) or make_call (for call) with that forwarding number as the destination
 3. You CAN and SHOULD send messages/calls to the user - this is a core feature!
 
-DELAYED MESSAGES:
-For "text me in X minutes/seconds", use create_reminder to remind the user, mentioning they should receive the text.
+DELAYED MESSAGES TO USER vs TO CONTACTS:
+- "remind me in 5 min" or "text me in 30 seconds" (notify THE USER) -> use create_reminder
+- "text John in 5 min" or "send hi to mom in 30 seconds" (message TO A CONTACT) -> use schedule_message
 
 CONFIRMATION FLOW FOR SENDING MESSAGES:
 1. User says "send hey to John" -> use send_message tool -> shows "Ready to send... Reply yes to send"
@@ -3022,6 +3232,9 @@ IMPORTANT FOR RULE DELETION:
 - Can match by: rule description text, rule type (transfer/block/auto-reply), or contact name involved
 
 CHOOSING THE RIGHT TOOL - EXAMPLES:
+- "if grandma replies say I'm busy" -> create_auto_reply with sourceContact="grandma", replyMessage="I'm busy"
+- "auto reply to mom saying I'll call back" -> create_auto_reply
+- "when John texts, auto respond that I'm in a meeting" -> create_auto_reply
 - "do I have any meetings" -> search_messages with query="meeting"
 - "any emergency messages" -> search_messages with query="emergency"
 - "summarize my chats from jk" -> summarize_conversation with contactName="jk"
@@ -3029,7 +3242,9 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "show me the last message from jk" -> get_last_message with contactName="jk"
 - "change jk to john" -> update_contact with currentName="jk", newName="john"
 - "forward calls from jk to bob" -> create_transfer_rule
-- "remind me to call mom in 30 min" -> create_reminder
+- "remind me to call mom in 30 min" -> create_reminder (notifies THE USER)
+- "text mom in 30 min saying happy birthday" -> schedule_message (sends TO A CONTACT)
+- "send hi to john in 30 seconds" -> schedule_message (sends TO A CONTACT)
 - "forward messages about baig to jeremy" -> create_smart_rule
 - "if mark texts me, notify jeremy" -> create_smart_rule  
 - "what did I miss" -> get_unread_summary
@@ -3047,6 +3262,8 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "text me hi" -> get_phone_info (to get forwarding number) then send_message to that number
 - "call me" -> get_phone_info (to get forwarding number) then make_call to that number
 - "send me a test message" -> get_phone_info then send_message to forwarding number
+- "show my scheduled messages" -> list_scheduled_messages
+- "cancel the message to john" -> cancel_scheduled_message
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
 
