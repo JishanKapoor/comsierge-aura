@@ -524,13 +524,24 @@ const addContactTool = tool(
       
       // Check if contact with same phone already exists
       const existingContacts = await Contact.find({ userId });
-      const duplicate = existingContacts.find(c => {
+      const duplicatePhone = existingContacts.find(c => {
         const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
         return cDigits === digits;
       });
       
-      if (duplicate) {
-        return `A contact with this number already exists: "${duplicate.name}" (${duplicate.phone}). Use update_contact to rename them.`;
+      if (duplicatePhone) {
+        return `A contact with this number already exists: "${duplicatePhone.name}" (${duplicatePhone.phone}). Use update_contact to rename them.`;
+      }
+      
+      // Check if contact with same name already exists (case-insensitive)
+      const trimmedName = name.trim().toLowerCase();
+      const duplicateName = existingContacts.find(c => 
+        (c.name || '').toLowerCase() === trimmedName || 
+        (c.customName || '').toLowerCase() === trimmedName
+      );
+      
+      if (duplicateName) {
+        return `A contact named "${duplicateName.name}" already exists with number ${duplicateName.phone}. Did you mean to update their number? If so, say "update ${duplicateName.name}'s number to ${phone}" or use a different name.`;
       }
       
       // Create the contact
