@@ -450,12 +450,105 @@ const updateContactTool = tool(
   },
   {
     name: "update_contact",
-    description: "Rename a contact. Use when user says: change name, rename, update contact, set name as, call them X. Example: 'change jk f to jk k' or 'rename John to Johnny'.",
+    description: "Rename a contact. Use when user says: change name, rename, update contact, set name as, call them X. Example: 'change jk f to jk k' or 'rename John to Johnny'. Can only change the name/label, NEVER the phone number.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
       currentName: z.string().optional().describe("Current name of contact to rename"),
       currentPhone: z.string().optional().describe("Phone number of contact to update (if name not provided)"),
       newName: z.string().describe("New name for the contact"),
+    }),
+  }
+);
+
+// Tool: Add Contact
+const addContactTool = tool(
+  async ({ userId, name, phone, label }) => {
+    try {
+      console.log("Adding contact:", { userId, name, phone, label });
+      
+      // Validate phone number - must be at least 10 digits
+      const cleanPhone = phone.replace(/\D/g, '');
+      if (cleanPhone.length < 10) {
+        return `Invalid phone number "${phone}". Please provide a valid phone number with at least 10 digits.`;
+      }
+      
+      // Normalize phone number
+      let normalized = cleanPhone;
+      if (normalized.length === 10) {
+        normalized = '1' + normalized;
+      }
+      if (!normalized.startsWith('+')) {
+        normalized = '+' + normalized;
+      }
+      
+      // Check if contact with same phone already exists
+      const existingContacts = await Contact.find({ userId });
+      const phoneDigits = normalized.replace(/\D/g, '').slice(-10);
+      const duplicate = existingContacts.find(c => {
+        const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+        return cDigits === phoneDigits;
+      });
+      
+      if (duplicate) {
+        return `A contact with this number already exists: "${duplicate.name}" (${duplicate.phone}). Use update_contact to rename them.`;
+      }
+      
+      // Create the contact
+      const contact = await Contact.create({
+        userId,
+        name: name.trim(),
+        phone: normalized,
+        label: label || null,
+      });
+      
+      return `Contact added: "${contact.name}" (${contact.phone})${label ? ` with label "${label}"` : ''}.`;
+    } catch (error) {
+      console.error("Add contact error:", error);
+      return `Error adding contact: ${error.message}`;
+    }
+  },
+  {
+    name: "add_contact",
+    description: "Add a new contact. Use when user says: add contact, new contact, save contact, create contact. Requires name and phone number.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      name: z.string().describe("Name for the contact"),
+      phone: z.string().describe("Phone number (must be at least 10 digits)"),
+      label: z.string().optional().describe("Optional label like 'work', 'family', 'friend', etc."),
+    }),
+  }
+);
+
+// Tool: Delete Contact
+const deleteContactTool = tool(
+  async ({ userId, contactName }) => {
+    try {
+      console.log("Deleting contact:", { userId, contactName });
+      
+      // Find contact using AI matching
+      const contact = await resolveContactWithAI(userId, contactName);
+      
+      if (!contact) {
+        return `Could not find contact "${contactName}". Check the name and try again.`;
+      }
+      
+      const deletedName = contact.name;
+      const deletedPhone = contact.phone;
+      
+      await Contact.deleteOne({ _id: contact._id });
+      
+      return `Contact deleted: "${deletedName}" (${deletedPhone}).`;
+    } catch (error) {
+      console.error("Delete contact error:", error);
+      return `Error deleting contact: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_contact",
+    description: "Delete a contact by name. Use when user says: delete contact, remove contact, get rid of contact.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().describe("Name of the contact to delete"),
     }),
   }
 );
@@ -2459,7 +2552,9 @@ const fullAgentTools = [
   // Contacts
   listContactsTool,
   searchContactsTool,
+  addContactTool,
   updateContactTool,
+  deleteContactTool,
   blockContactTool,
   unblockContactTool,
   // Rules
@@ -2501,7 +2596,9 @@ const fullAgentToolMap = {
   confirm_action: confirmActionTool,
   list_contacts: listContactsTool,
   search_contacts: searchContactsTool,
+  add_contact: addContactTool,
   update_contact: updateContactTool,
+  delete_contact: deleteContactTool,
   block_contact: blockContactTool,
   unblock_contact: unblockContactTool,
   create_transfer_rule: createTransferRuleTool,
@@ -2829,13 +2926,17 @@ CRITICAL RULES - FOLLOW STRICTLY:
 - When user says "do not disturb" or "DND", use set_dnd tool - do NOT tell them about phone settings
 - For support tickets: ALWAYS ask clarifying questions first before creating the ticket
 - If a feature isn't available, say "That's not available in Comsierge yet" - never suggest external solutions
+- "routing number" ALWAYS means phone forwarding number (where calls/SMS route to), NEVER bank routing number
+- EVERYTHING is in context of Comsierge phone service - never interpret anything as banking, external apps, or other services
 
 TOOLS BY CATEGORY:
 
 CONTACTS:
 - list_contacts: Show all contacts
 - search_contacts: Find contact by name
-- update_contact: Rename contact (currentName + newName)
+- add_contact: Add a new contact (name + phone number required)
+- update_contact: Rename contact (currentName + newName) - can change name/label but NEVER the phone number
+- delete_contact: Delete a contact by name
 - block_contact / unblock_contact: Block/unblock
 
 RULES & AUTOMATION:
