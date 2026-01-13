@@ -35,6 +35,7 @@ import {
   MessageSquare,
   Copy,
   ChevronRight,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -1638,10 +1639,20 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
                         <Ban className="w-3 h-3 text-red-500" />
                         Blocked
                       </>
+                    ) : call.status === "missed" || call.type === "missed" ? (
+                      <>
+                        <PhoneMissed className="w-3 h-3 text-red-400" />
+                        Missed
+                      </>
                     ) : call.hasVoicemail ? (
                       <>
                         <Voicemail className="w-3 h-3 text-amber-500" />
                         {call.voicemailDuration ? `${call.voicemailDuration}s` : "Voicemail"}
+                      </>
+                    ) : call.transcription && !call.forwardedTo ? (
+                      <>
+                        <Bot className="w-3 h-3 text-indigo-500" />
+                        AI Handled
                       </>
                     ) : call.status === "completed" ? (
                       <>
@@ -1657,10 +1668,10 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
                           </>
                         )}
                       </>
-                    ) : call.status === "missed" || call.type === "missed" ? (
+                    ) : call.status === "forwarded" || call.status === "transferred" ? (
                       <>
-                        <PhoneMissed className="w-3 h-3 text-red-400" />
-                        Missed
+                        <ArrowRightLeft className="w-3 h-3 text-green-500" />
+                        Routed
                       </>
                     ) : (
                       <>
