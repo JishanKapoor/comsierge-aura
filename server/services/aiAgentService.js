@@ -601,15 +601,50 @@ const addContactTool = tool(
 
 // Tool: Delete Contact
 const deleteContactTool = tool(
-  async ({ userId, contactName }) => {
+  async ({ userId, contactName, contactPhone }) => {
     try {
-      console.log("Deleting contact:", { userId, contactName });
+      console.log("Deleting contact:", { userId, contactName, contactPhone });
       
-      // Find contact using AI matching
-      const contact = await resolveContactWithAI(userId, contactName);
+      // Get all contacts for this user
+      const allContacts = await Contact.find({ userId });
+      
+      if (allContacts.length === 0) {
+        return "You don't have any contacts to delete.";
+      }
+      
+      let contact = null;
+      
+      // If phone number provided, use it for precise matching
+      if (contactPhone) {
+        const digits = contactPhone.replace(/\D/g, '').slice(-10);
+        contact = allContacts.find(c => {
+          const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+          return cDigits === digits;
+        });
+        if (!contact) {
+          return `Could not find contact with number "${contactPhone}".`;
+        }
+      } else if (contactName) {
+        // Check for duplicates with same name
+        const nameMatches = allContacts.filter(c => 
+          (c.name || '').toLowerCase() === contactName.toLowerCase() ||
+          (c.customName || '').toLowerCase() === contactName.toLowerCase()
+        );
+        
+        if (nameMatches.length > 1) {
+          // Multiple contacts with same name - ask user to specify by phone
+          const list = nameMatches.map(c => `• ${c.name} (${c.phone})`).join('\n');
+          return `Found ${nameMatches.length} contacts named "${contactName}":\n${list}\n\nPlease specify which one by saying "delete contact at [phone number]".`;
+        } else if (nameMatches.length === 1) {
+          contact = nameMatches[0];
+        } else {
+          // Try AI matching for partial/fuzzy names
+          contact = await resolveContactWithAI(userId, contactName);
+        }
+      }
       
       if (!contact) {
-        return `Could not find contact "${contactName}". Check the name and try again.`;
+        return `Could not find contact "${contactName || contactPhone}". Check the name and try again.`;
       }
       
       const deletedName = contact.name;
@@ -625,10 +660,40 @@ const deleteContactTool = tool(
   },
   {
     name: "delete_contact",
-    description: "Delete a contact by name. Use when user says: delete contact, remove contact, get rid of contact.",
+    description: "Delete a contact by name or phone number. Use when user says: delete contact, remove contact, get rid of contact. If multiple contacts have same name, use phone to specify which one.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      contactName: z.string().describe("Name of the contact to delete"),
+      contactName: z.string().optional().describe("Name of the contact to delete"),
+      contactPhone: z.string().optional().describe("Phone number to identify contact (use when multiple have same name)"),
+    }),
+  }
+);
+
+// Tool: Delete All Contacts
+const deleteAllContactsTool = tool(
+  async ({ userId, confirmed }) => {
+    try {
+      if (!confirmed) {
+        const count = await Contact.countDocuments({ userId });
+        if (count === 0) {
+          return "You don't have any contacts to delete.";
+        }
+        return `Are you sure you want to delete all ${count} contact(s)? Say "yes delete all contacts" to confirm.`;
+      }
+      
+      const result = await Contact.deleteMany({ userId });
+      return `Deleted all ${result.deletedCount} contact(s).`;
+    } catch (error) {
+      console.error("Delete all contacts error:", error);
+      return `Error deleting contacts: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_all_contacts",
+    description: "Delete ALL contacts. Use when user says: delete all contacts, remove all contacts, clear contacts. Always ask for confirmation first unless user already said 'yes'.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      confirmed: z.boolean().describe("Whether user confirmed. Set to true if user explicitly said 'yes' or 'delete all'"),
     }),
   }
 );
@@ -3356,6 +3421,7 @@ const fullAgentTools = [
   addContactTool,
   updateContactTool,
   deleteContactTool,
+  deleteAllContactsTool,
   blockContactTool,
   unblockContactTool,
   // Rules
@@ -3410,6 +3476,7 @@ const fullAgentToolMap = {
   add_contact: addContactTool,
   update_contact: updateContactTool,
   delete_contact: deleteContactTool,
+  delete_all_contacts: deleteAllContactsTool,
   block_contact: blockContactTool,
   unblock_contact: unblockContactTool,
   create_transfer_rule: createTransferRuleTool,
