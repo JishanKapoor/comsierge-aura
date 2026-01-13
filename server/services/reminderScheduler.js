@@ -10,6 +10,7 @@ import TwilioAccount from '../models/TwilioAccount.js';
 export async function processReminders() {
   try {
     const now = new Date();
+    console.log(`⏰ Scheduler tick at ${now.toISOString()}`);
     
     // Process scheduled messages first
     await processScheduledMessages(now);
@@ -21,7 +22,17 @@ export async function processReminders() {
       scheduledAt: { $lte: now }
     }).populate('userId');
 
-    if (dueReminders.length === 0) return;
+    if (dueReminders.length === 0) {
+      // Also log pending reminders for debugging
+      const pendingReminders = await Reminder.find({
+        isCompleted: false,
+        notificationSent: false
+      }).limit(5);
+      if (pendingReminders.length > 0) {
+        console.log(`📋 ${pendingReminders.length} reminders pending, next at: ${pendingReminders[0].scheduledAt}`);
+      }
+      return;
+    }
 
     console.log(`🔔 Processing ${dueReminders.length} due reminder(s)...`);
 
@@ -80,17 +91,19 @@ async function executeReminder(reminder) {
   }
 
   if (!fromNumber) {
-    console.log('No phone number available for sending');
+    console.log('❌ No phone number available for sending reminder');
     return;
   }
 
   // Get user's forwarding number (their personal phone)
   const toNumber = user.forwardingNumber;
   if (!toNumber) {
-    console.log('User has no forwarding number set');
+    console.log(`❌ User ${user._id} has no forwarding number set - cannot send reminder`);
     return;
   }
 
+  console.log(`📤 Sending reminder to ${toNumber} from ${fromNumber}`);
+  
   // Initialize Twilio client
   const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
 
