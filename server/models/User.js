@@ -96,6 +96,11 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // User's timezone (IANA format like 'America/New_York')
+    timezone: {
+      type: String,
+      default: "America/New_York", // Default to EDT
+    },
     // Translation preferences (synced across devices)
     translationSettings: {
       receiveLanguage: { type: String, default: "en" },

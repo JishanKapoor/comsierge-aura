@@ -16,7 +16,7 @@ import TwilioAccount from "../models/TwilioAccount.js";
 // Initialize OpenAI with GPT-5.2 for complex analysis
 const llm = new ChatOpenAI({
   modelName: "gpt-5.2",
-  temperature: 0.2,
+  temperature: 0.3,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -30,6 +30,31 @@ function normalizePhoneForSms(phone) {
   if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
   if (digits.length > 10) return '+' + digits;
   return phone;
+}
+
+// Format date in user's timezone
+function formatInTimezone(date, timezone = "America/New_York") {
+  try {
+    return new Date(date).toLocaleString("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+      month: "short", 
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+  } catch (e) {
+    // Fallback if timezone is invalid
+    return new Date(date).toLocaleString("en-US", {
+      weekday: "short",
+      month: "short", 
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+  }
 }
 
 // Parse natural language time to Date
@@ -1871,6 +1896,10 @@ const createReminderTool = tool(
       // Determine notification method based on type
       const reminderType = type || "message"; // Default to SMS
       
+      // Get user's timezone for display
+      const user = await User.findById(userId);
+      const timezone = user?.timezone || "America/New_York";
+      
       const reminder = await Reminder.create({
         userId,
         title,
@@ -1880,6 +1909,8 @@ const createReminderTool = tool(
         contactPhone: resolvedPhone || null,
         contactName: resolvedName || null,
       });
+      
+      console.log("Created reminder:", reminder._id, "scheduledAt:", scheduledAt.toISOString());
       
       // Calculate relative time for display
       const now = new Date();
@@ -1897,10 +1928,7 @@ const createReminderTool = tool(
         const mins = diffMin % 60;
         timeStr = `in ${hours} hour${hours > 1 ? 's' : ''}${mins > 0 ? ` ${mins} min` : ''}`;
       } else {
-        timeStr = scheduledAt.toLocaleString("en-US", { 
-          weekday: "short", month: "short", day: "numeric", 
-          hour: "numeric", minute: "2-digit"
-        });
+        timeStr = formatInTimezone(scheduledAt, timezone);
       }
       
       const notifyMethod = reminderType === "call" ? "I'll call you" : "I'll text you";
@@ -2102,6 +2130,10 @@ const cancelScheduledMessageTool = tool(
 const listRemindersTool = tool(
   async ({ userId, filter }) => {
     try {
+      // Get user's timezone
+      const user = await User.findById(userId);
+      const timezone = user?.timezone || "America/New_York";
+      
       let query = { userId };
       
       if (filter === "upcoming") {
@@ -2124,11 +2156,8 @@ const listRemindersTool = tool(
       }
       
       const list = reminders.map(r => {
-        const time = new Date(r.scheduledAt).toLocaleString("en-US", {
-          weekday: "short", month: "short", day: "numeric",
-          hour: "numeric", minute: "2-digit"
-        });
-        const status = r.isCompleted ? "[done]" : "";
+        const time = formatInTimezone(r.scheduledAt, timezone);
+        const status = r.isCompleted ? "[done]" : r.notificationSent ? "[sent]" : "";
         return `- ${time}: ${r.title} ${status}`;
       }).join("\n");
       
