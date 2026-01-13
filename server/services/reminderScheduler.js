@@ -10,10 +10,23 @@ import TwilioAccount from '../models/TwilioAccount.js';
 export async function processReminders() {
   try {
     const now = new Date();
-    console.log(`⏰ Scheduler tick at ${now.toISOString()}`);
     
     // Process scheduled messages first
     await processScheduledMessages(now);
+    
+    // Find ALL reminders for debugging
+    const allReminders = await Reminder.find({
+      isCompleted: false
+    }).populate('userId').limit(10);
+    
+    if (allReminders.length > 0) {
+      console.log(`📋 Found ${allReminders.length} incomplete reminders:`);
+      for (const r of allReminders) {
+        const scheduled = new Date(r.scheduledAt);
+        const isDue = scheduled <= now;
+        console.log(`  - "${r.title}" scheduled: ${scheduled.toISOString()}, notificationSent: ${r.notificationSent}, isDue: ${isDue}, userId: ${r.userId?._id || r.userId}`);
+      }
+    }
     
     // Find reminders that are due and haven't been notified
     const dueReminders = await Reminder.find({
@@ -23,14 +36,6 @@ export async function processReminders() {
     }).populate('userId');
 
     if (dueReminders.length === 0) {
-      // Also log pending reminders for debugging
-      const pendingReminders = await Reminder.find({
-        isCompleted: false,
-        notificationSent: false
-      }).limit(5);
-      if (pendingReminders.length > 0) {
-        console.log(`📋 ${pendingReminders.length} reminders pending, next at: ${pendingReminders[0].scheduledAt}`);
-      }
       return;
     }
 
