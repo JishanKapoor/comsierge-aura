@@ -402,22 +402,6 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
             {/* Input Area - Fixed at bottom */}
             <div className="shrink-0 p-4 bg-white border-t border-gray-200">
-              {/* Quick action buttons when chat has messages */}
-              {chat.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {["Show my rules", "Create a new rule", "Delete last rule"].map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      onClick={() => setAiDraft(action)}
-                      className="px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200 text-xs text-gray-600 hover:bg-gray-200 transition-colors"
-                    >
-                      {action}
-                    </button>
-                  ))}
-                </div>
-              )}
-              
               {/* Message input */}
               <div className="flex items-center gap-2">
                 <input

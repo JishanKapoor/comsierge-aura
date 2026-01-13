@@ -753,9 +753,30 @@ const searchMessagesByDateTool = tool(
 
 // Tool: Get All Rules
 const getRulesTool = tool(
-  async ({ userId }) => {
+  async ({ userId, includeInactive }) => {
     try {
-      console.log("Getting rules for user:", userId);
+      console.log("Getting rules for user:", userId, "includeInactive:", includeInactive);
+      
+      if (includeInactive) {
+        // Get inactive rules only
+        const inactiveRules = await Rule.find({ userId, active: false });
+        
+        if (inactiveRules.length === 0) {
+          return "You have no inactive (disabled) rules.";
+        }
+        
+        const ruleList = inactiveRules.map((r, i) => {
+          let details = `${i + 1}. [${r.type.toUpperCase()}] ${r.rule}`;
+          if (r.transferDetails?.contactName) {
+            details += ` (to: ${r.transferDetails.contactName})`;
+          }
+          return details;
+        });
+        
+        return `Your inactive (disabled) rules:\n${ruleList.join("\n")}`;
+      }
+      
+      // Default: active rules
       const rules = await Rule.find({ userId, active: true });
       
       if (rules.length === 0) {
@@ -778,9 +799,10 @@ const getRulesTool = tool(
   },
   {
     name: "get_rules",
-    description: "List all active rules for the user. Use when user asks 'what rules do I have', 'show my rules', 'list transfers'.",
+    description: "List rules for the user. Set includeInactive=true for inactive/disabled rules. Use when user asks 'what rules do I have', 'show my rules', 'inactive rules', 'disabled rules'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
+      includeInactive: z.boolean().optional().describe("Set to true to show inactive/disabled rules instead of active ones"),
     }),
   }
 );
@@ -2653,7 +2675,7 @@ RULES & AUTOMATION:
 - create_transfer_rule: Forward calls/messages from a specific contact to another
 - create_auto_reply: Set auto-reply message
 - mark_priority: Mark as high priority
-- get_rules: List active rules  
+- get_rules: List rules (use includeInactive=true for inactive/disabled rules)
 - delete_rule: Remove/disable/turn off a rule (supports matching by description, type, or contact)
 - create_smart_rule: Natural language rule creation for complex rules like:
   * "if I receive a message about X, forward to Y"
@@ -2716,6 +2738,8 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "what is my comsierge number" -> get_phone_info
 - "show me my routing number" -> get_phone_info (routing = forwarding in this phone context)
 - "where do my calls go" -> get_phone_info
+- "show my inactive rules" -> get_rules with includeInactive=true
+- "disabled rules" -> get_rules with includeInactive=true
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
 
