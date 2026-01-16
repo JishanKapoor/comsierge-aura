@@ -21,6 +21,12 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  broadcastClearAuraChats,
+  clearAuraRulesChatStorage,
+  isClearChatCommand,
+  onClearAuraChats,
+} from "@/lib/auraChat";
 import { 
   ActiveRule, 
   fetchRules, 
@@ -94,6 +100,22 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   // Call mode dialog state
   const [showCallModeDialog, setShowCallModeDialog] = useState(false);
   const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
+
+  const clearLocalAuraChat = useCallback(
+    (opts?: { silent?: boolean }) => {
+      setChat([]);
+      clearAuraRulesChatStorage();
+      if (!opts?.silent) toast.success("Cleared");
+    },
+    [setChat]
+  );
+
+  useEffect(() => {
+    return onClearAuraChats((detail) => {
+      // Always clear silently when hearing the global event.
+      clearLocalAuraChat({ silent: true });
+    });
+  }, [clearLocalAuraChat]);
 
   // Save chat to localStorage when it changes
   useEffect(() => {
@@ -261,6 +283,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const sendAiMessage = async () => {
     const text = aiDraft.trim();
     if (!text) return;
+
+    // Client-side command: clear Aura chats (including this tab's persisted history)
+    if (isClearChatCommand(text)) {
+      broadcastClearAuraChats("ActiveRulesTab");
+      clearLocalAuraChat({ silent: false });
+      return;
+    }
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),

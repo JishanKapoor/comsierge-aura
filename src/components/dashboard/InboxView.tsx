@@ -71,6 +71,12 @@ import {
 } from "./messagesApi";
 import { isValidUsPhoneNumber } from "@/lib/validations";
 import { toast } from "sonner";
+import {
+  broadcastClearAuraChats,
+  clearAuraRulesChatStorage,
+  isClearChatCommand,
+  onClearAuraChats,
+} from "@/lib/auraChat";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1743,10 +1749,28 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   const [aiLoading, setAiLoading] = useState(false);
 
+  useEffect(() => {
+    return onClearAuraChats((detail) => {
+      clearAuraRulesChatStorage();
+      // Clear all per-conversation AI chats for a clean slate.
+      setAiChatsByConversationId({});
+    });
+  }, []);
+
   const handleAiSend = async () => {
     if (!selectedMessage || aiLoading) return;
     const text = aiInput.trim();
     if (!text) return;
+
+    // Client-side command: clear Aura chats everywhere
+    if (isClearChatCommand(text)) {
+      setAiInput("");
+      setAiChatsByConversationId({});
+      clearAuraRulesChatStorage();
+      broadcastClearAuraChats("InboxView");
+      toast.success("Cleared");
+      return;
+    }
 
     const now = new Date();
     const timestamp = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();

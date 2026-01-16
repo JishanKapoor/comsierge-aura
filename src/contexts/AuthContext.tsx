@@ -560,6 +560,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem("comsierge.inbox.languages");
     localStorage.removeItem("comsierge.contacts");
     localStorage.removeItem("comsierge_rules");
+    localStorage.removeItem("aura_chat_history");
   };
 
   const requestPasswordReset = async (email: string): Promise<boolean> => {

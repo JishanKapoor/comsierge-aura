@@ -3065,7 +3065,7 @@ const setCallFilterTool = tool(
         }
       });
       
-      let response = `✅ ${ruleDescription}\n`;
+      let response = `${ruleDescription}\n`;
       if (mode === "saved" || mode === "contacts") {
         response += "\nUnknown numbers will NOT ring your phone - AI will handle them.";
       } else if (mode === "favorites") {
@@ -3265,8 +3265,8 @@ const setRoutingPreferencesTool = tool(
       }
       
       let response = scheduleObj 
-        ? `✅ Routing set${scheduleInfo}:\n\n`
-        : `✅ Default routing set:\n\n`;
+        ? `Routing set${scheduleInfo}:\n\n`
+        : `Default routing set:\n\n`;
       
       // === CALL ROUTING ===
       if (callsMode) {
@@ -3318,7 +3318,7 @@ const setRoutingPreferencesTool = tool(
           });
         }
         
-        response += `📞 Calls: ${callRuleDesc}\n`;
+        response += `Calls: ${callRuleDesc}\n`;
       }
       
       // === MESSAGE ROUTING ===
@@ -3351,11 +3351,11 @@ const setRoutingPreferencesTool = tool(
           transferDetails: { mode: "messages" }
         });
         
-        response += `💬 Messages: ${msgRuleDesc}\n`;
+        response += `Messages: ${msgRuleDesc}\n`;
       }
       
       if (scheduleObj) {
-        response += `\n⏰ This applies${scheduleInfo}. Outside this time, your default routing applies.`;
+        response += `\nThis applies${scheduleInfo}. Outside this time, your default routing applies.`;
       }
       
       return response;
@@ -3760,7 +3760,7 @@ const classifyMessageTool = tool(
 - SPAM: Unsolicited marketing, scams, car warranty offers, prize winnings, phishing attempts
 - PRIORITY: Urgent/time-sensitive, from family/friends asking for help, important appointments, emergencies
 - DELIVERY: Package/shipping notifications from FedEx, UPS, Amazon, etc.
-- FINANCIAL: Bank alerts, payment confirmations, fraud alerts
+- FINANCIAL: Account alerts, payment confirmations, fraud alerts
 - NORMAL: Regular conversation, neither spam nor urgent
 
 Message from ${senderInfo || 'unknown'}: "${messageText}"
@@ -3781,16 +3781,16 @@ Respond with JSON: {"category": "SPAM|PRIORITY|DELIVERY|FINANCIAL|NORMAL", "conf
         
         switch(result.category) {
           case 'SPAM':
-            actionSuggestion = `\n\n💡 Suggested: "Block messages like this" or "Create a spam filter rule"`;
+            actionSuggestion = `\n\nSuggested: "Block messages like this" or "Create a spam filter rule"`;
             break;
           case 'PRIORITY':
-            actionSuggestion = `\n\n💡 Suggested: Mark sender as priority with "Mark ${senderInfo || 'them'} as priority"`;
+            actionSuggestion = `\n\nSuggested: Mark sender as priority with "Mark ${senderInfo || 'them'} as priority"`;
             break;
           case 'DELIVERY':
-            actionSuggestion = `\n\n💡 Suggested: "Allow delivery notifications" or "Forward delivery updates to my email"`;
+            actionSuggestion = `\n\nSuggested: "Allow delivery notifications" or "Forward delivery updates to my email"`;
             break;
           case 'FINANCIAL':
-            actionSuggestion = `\n\n💡 Suggested: "Forward bank alerts to my accountant" or "Mark as priority"`;
+            actionSuggestion = `\n\nSuggested: "Forward account alerts to my accountant" or "Mark as priority"`;
             break;
         }
         
@@ -3859,7 +3859,7 @@ const createSpamFilterTool = tool(
         }
       });
       
-      return `✅ Spam filter created: "${ruleDescription}"\n\nMessages matching this rule will be automatically blocked.`;
+      return `Spam filter created: "${ruleDescription}"\n\nMessages matching this rule will be automatically blocked.`;
     } catch (error) {
       return `Error creating spam filter: ${error.message}`;
     }
@@ -3887,7 +3887,7 @@ const getMessageTriageTool = tool(
       }).sort({ createdAt: -1 }).limit(20);
       
       if (messages.length === 0) {
-        return "No incoming messages in the last 24 hours. You're all clear! 📭";
+        return "No incoming messages in the last 24 hours. You're all clear.";
       }
       
       // Classify each message using AI
@@ -3926,28 +3926,28 @@ Respond with JSON array: [{"index": 1, "category": "...", "shouldBlock": true/fa
         });
       }
       
-      let result = `📬 Message Triage (last 24 hours):\n`;
+      let result = `Message Triage (last 24 hours):\n`;
       
       if (priority.length > 0) {
-        result += `\n🔴 PRIORITY (${priority.length}):\n${priority.join('\n')}\n`;
+        result += `\nPRIORITY (${priority.length}):\n${priority.join('\n')}\n`;
       }
       if (delivery.length > 0) {
-        result += `\n📦 DELIVERY (${delivery.length}):\n${delivery.join('\n')}\n`;
+        result += `\nDELIVERY (${delivery.length}):\n${delivery.join('\n')}\n`;
       }
       if (financial.length > 0) {
-        result += `\n💰 FINANCIAL (${financial.length}):\n${financial.join('\n')}\n`;
+        result += `\nFINANCIAL (${financial.length}):\n${financial.join('\n')}\n`;
       }
       if (spam.length > 0) {
-        result += `\n🚫 SPAM (${spam.length}):\n${spam.join('\n')}\n`;
-        result += `\n💡 Say "block spam" to auto-filter these\n`;
+        result += `\nSPAM (${spam.length}):\n${spam.join('\n')}\n`;
+        result += `\nTip: Say "block spam" to auto-filter these\n`;
       }
       if (normal.length > 0) {
-        result += `\n💬 NORMAL (${normal.length}):\n${normal.join('\n')}\n`;
+        result += `\nNORMAL (${normal.length}):\n${normal.join('\n')}\n`;
       }
       
       const totalBlocked = spam.length;
       const totalPriority = priority.length;
-      result += `\n📊 Summary: ${totalPriority} priority, ${totalBlocked} potential spam, ${messages.length - totalBlocked - totalPriority} normal`;
+      result += `\nSummary: ${totalPriority} priority, ${totalBlocked} potential spam, ${messages.length - totalBlocked - totalPriority} normal`;
       
       return result;
     } catch (error) {
@@ -4376,9 +4376,9 @@ const completeReminderTool = tool(
 
 // Tool: Extract Events from Messages
 const extractEventsTool = tool(
-  async ({ userId, contactName, contactPhone }) => {
+  async ({ userId, contactName, contactPhone, timeframe }) => {
     try {
-      console.log("Extracting events from messages:", { userId, contactName });
+      console.log("Extracting events from messages:", { userId, contactName, timeframe });
       
       // Resolve contact using AI
       let phone = contactPhone;
@@ -4387,10 +4387,18 @@ const extractEventsTool = tool(
         if (contact) phone = contact.phone;
       }
       
-      // Get recent messages
-      let messages = await Message.find({ userId })
+      const now = new Date();
+
+      // Get messages (optionally time-filtered)
+      const query = { userId };
+      const range = parseNaturalDateRange(timeframe, now);
+      if (range?.start && range?.end) {
+        query.createdAt = { $gte: range.start, $lte: range.end };
+      }
+
+      let messages = await Message.find(query)
         .sort({ createdAt: -1 })
-        .limit(200);
+        .limit(500);
       
       // Filter by phone if provided
       if (phone && messages.length > 0) {
@@ -4401,14 +4409,13 @@ const extractEventsTool = tool(
         });
       }
       
-      messages = messages.slice(0, 50);
+      messages = messages.slice(0, 80);
       
       if (messages.length === 0) {
         return "No messages found to analyze.";
       }
       
       // Build message text for analysis WITH timestamps
-      const now = new Date();
       const msgText = messages.map(m => {
         const msgTime = new Date(m.createdAt);
         const minutesAgo = Math.round((now - msgTime) / 60000);
@@ -4425,7 +4432,7 @@ const extractEventsTool = tool(
 CRITICAL: Consider WHEN each message was sent (shown in brackets). 
 - If a message says "meeting in 30 seconds" but was sent 2 hours ago, that meeting has ALREADY HAPPENED - mark it as PAST.
 - Only show UPCOMING events that haven't happened yet.
-- Current time is: ${now.toLocaleString()}
+- Current time is: ${now.toLocaleString()}${range?.start && range?.end ? `\n- Only consider messages from: ${range.start.toLocaleString()} to ${range.end.toLocaleString()}` : ''}
 
 Format each as:
 - [STATUS] Event description (from message sent X ago)
@@ -4449,6 +4456,7 @@ Do NOT use emojis. Do NOT use markdown. Plain text only.`),
       userId: z.string().describe("User ID"),
       contactName: z.string().optional().describe("Limit to specific contact"),
       contactPhone: z.string().optional().describe("Contact phone"),
+      timeframe: z.string().optional().describe("Optional timeframe like 'today', 'yesterday', 'this week', 'last week', 'this month', 'last 7 days', or 'from Jan 1 to Jan 5'"),
     }),
   }
 );
@@ -4513,7 +4521,7 @@ ${RULE_PARSE_SCHEMA}
 PARSING GUIDELINES:
 1. If the user says "forward" or "send to" - type is "forward", extract recipient
 2. If they mention specific people (from Mom, from boss) - set from_contact
-3. If they mention keywords (about bank, mentions money) - add to keywords array
+3. If they mention keywords (about payments, account alerts, invoices) - add to keywords array
 4. If they say "except" or "but not" - add to exclusions
 5. If they mention times (after 6pm, during work hours) - set time_window
 6. If they say "urgent" or "important" - set priority filter
@@ -4727,9 +4735,9 @@ const createSmartRuleTool = tool(
   {
     name: "create_smart_rule",
     description: `Create sophisticated rules from natural language. Handles:
-- Basic: "Forward bank messages to my accountant", "Mute spam", "Block unknown numbers"
+- Basic: "Forward account alerts to my accountant", "Mute spam", "Block unknown numbers"
 - Time-based: "Forward to Alex during work hours", "Auto-reply after 6pm", "Mute after 9pm"  
-- Multi-condition: "Forward bank messages except from family", "Forward urgent client messages about payments"
+- Multi-condition: "Forward account alerts except from family", "Forward urgent client messages about payments"
 - Advanced: "Forward if I don't reply in 10 minutes", "Forward intelligently", "Forward messages that sound angry"
 - With exclusions: "Forward everything except from mom", "Mute spam but notify if urgent"
 
@@ -4770,25 +4778,8 @@ const getUnreadSummaryTool = tool(
           summaries.push(`- ${conv.contactName || conv.contactPhone} (${conv.unreadCount} unread): "${preview}${messages[0].body.length > 80 ? '...' : ''}"`);
         }
       }
-      
-      // Get upcoming reminders (next 24 hours)
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const upcomingReminders = await Reminder.find({
-        userId,
-        isCompleted: false,
-        scheduledAt: { $gte: new Date(), $lte: tomorrow }
-      }).sort({ scheduledAt: 1 }).limit(5);
-      
+
       let response = `You have ${unreadConvs.length} conversation(s) with unread messages:\n${summaries.join("\n")}`;
-      
-      if (upcomingReminders.length > 0) {
-        const reminderList = upcomingReminders.map(r => {
-          const time = new Date(r.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-          return `- ${time}: ${r.title}`;
-        }).join("\n");
-        response += `\n\nUpcoming reminders:\n${reminderList}`;
-      }
       
       return response;
     } catch (error) {
@@ -4797,7 +4788,7 @@ const getUnreadSummaryTool = tool(
   },
   {
     name: "get_unread_summary",
-    description: "Get summary of unread messages and upcoming reminders. Use for: 'what did I miss', 'any new messages', 'catch me up', 'updates'",
+    description: "Get summary of unread messages. Use for: 'what did I miss', 'any new messages', 'catch me up', 'updates'",
     schema: z.object({
       userId: z.string().describe("User ID"),
     }),
@@ -5097,6 +5088,15 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
         }
       }
     }
+
+    // Fast-path: meeting/appointment questions -> extract_events (with optional timeframe)
+    const looksLikeMeetingQuestion = /(do i have|any|what).{0,40}\b(meeting|meetings|appointment|appointments|interview|deadline|due)\b/i;
+    if (looksLikeMeetingQuestion.test(trimmedMessage)) {
+      const inferred = inferContactFromChatHistory(chatHistory) || {};
+      const timeframeMatch = trimmedMessage.match(/\b(today|yesterday|this week|last week|this month|last month|last\s+\d+\s+days|from\s+.+\s+to\s+.+|between\s+.+\s+and\s+.+)\b/i);
+      const timeframe = timeframeMatch?.[0] || "this week";
+      return await extractEventsTool.invoke({ userId, ...inferred, timeframe });
+    }
     
     // Check for pending clarification in chat history
     let pendingClarification = null;
@@ -5351,7 +5351,7 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
 
 CRITICAL RULES - FOLLOW STRICTLY:
 - The product name is "Comsierge" - NEVER write "Concierge", "concierge", "Conceirge", or any other spelling
-- NEVER mention "bank", "banking", or financial institutions in any response
+- NEVER mention financial institutions in any response
 - NEVER use emojis
 - NEVER use markdown (no **, no ##, no *)
 - Use plain text only
@@ -5367,7 +5367,7 @@ CRITICAL RULES - FOLLOW STRICTLY:
 ROUTING NUMBER = FORWARDING NUMBER:
 When user asks about "routing number", they mean their phone forwarding number. Use get_phone_info and respond with:
 "Your Comsierge number is [number] and calls/messages forward to [forwarding number]."
-Do NOT mention banks. Do NOT say "I don't have your bank routing number".
+Do NOT mention finances. Do NOT say "I don't have your routing number".
 
 SPECIAL REQUESTS - NOT PHONE RELATED:
 - For investor inquiries, pricing, business questions: Create a support ticket with category "investor" or "pricing" 
@@ -5470,7 +5470,7 @@ MESSAGES & ANALYSIS:
 - extract_events: Find events, dates, appointments from messages
 
 PROACTIVE:
-- get_unread_summary: Get briefing on unread messages + upcoming reminders
+- get_unread_summary: Get briefing on unread messages
 
 PHONE SETTINGS:
 - get_phone_info: Get user's Comsierge number and current forwarding number
@@ -5588,7 +5588,7 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "forward account alerts to my accountant" -> create_smart_rule
 - "route delivery messages to my email" -> create_smart_rule
 
-IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
+IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, not something finance-related. Use get_phone_info for any routing/forwarding questions.
 
 CLARIFICATION RULES:
 - For "dnd" or "do not disturb" ALONE: ASK "Do you want to block calls, messages, or both?"
