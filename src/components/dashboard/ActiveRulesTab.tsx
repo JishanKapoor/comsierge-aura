@@ -143,6 +143,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     onRulesChange?.(rules);
   }, [rules, onRulesChange]);
 
+  // Refresh rules when switching to rules view
+  useEffect(() => {
+    if (activeView === "rules") {
+      loadRules(false);
+    }
+  }, [activeView, loadRules]);
+
   const toggleRule = async (id: string) => {
     // Optimistic update
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r)));

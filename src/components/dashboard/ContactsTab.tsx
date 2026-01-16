@@ -670,7 +670,10 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                   <div className="flex items-center gap-1 mt-0.5">
                     <p className="text-xs text-gray-500 truncate">{contact.phone}</p>
                     {contact.tags.slice(0, 2).map((tag) => (
-                      <span key={tag} className="px-1.5 py-0.5 rounded text-[9px] bg-indigo-500 text-white">
+                      <span
+                        key={tag}
+                        className="px-1.5 py-0.5 rounded-full text-[9px] bg-gray-100 text-gray-600 border border-gray-200"
+                      >
                         {tag}
                       </span>
                     ))}
@@ -798,7 +801,10 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
                         <label className="text-xs text-gray-500 block mb-1">Tags</label>
                         <div className="flex flex-wrap gap-1">
                           {selectedContact.tags.map((tag) => (
-                            <span key={tag} className="px-2 py-0.5 bg-indigo-500 text-white rounded text-xs">
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 border border-gray-200"
+                            >
                               {tag}
                             </span>
                           ))}

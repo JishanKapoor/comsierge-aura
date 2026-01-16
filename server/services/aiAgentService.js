@@ -227,7 +227,7 @@ const resolveContact = resolveContactWithAI;
 const createTransferRuleTool = tool(
   async ({ userId, targetName, targetPhone, sourceContact, sourcePhone, mode }) => {
     try {
-      console.log("Creating transfer rule:", { userId, targetName, sourceContact, mode });
+      console.log("Creating/updating transfer rule:", { userId, targetName, sourceContact, mode });
       
       // Look up target contact in database to get their phone number
       let resolvedPhone = targetPhone;
@@ -240,16 +240,14 @@ const createTransferRuleTool = tool(
         if (targetContact) {
           resolvedPhone = targetContact.phone;
           resolvedName = targetContact.name; // Use exact name from DB
-          console.log(`Found contact: ${resolvedName} - ${resolvedPhone}`);
+          console.log(`Found target contact: ${resolvedName} - ${resolvedPhone}`);
         } else {
           console.log(`Contact "${targetName}" not found in database`);
-          // If we can't find the contact, we can't create a forwarding rule effectively without a number.
-          // But maybe the user meant to forward TO the current contact? No, "forward to jeremy".
           return `I couldn't find a contact named "${targetName}" in your contacts. Please provide their phone number or save them as a contact first.`;
         }
       }
       
-      // First, look up source contact's phone if not provided
+      // Look up source contact's phone if not provided
       let resolvedSourcePhone = sourcePhone;
       let resolvedSourceName = sourceContact;
       
@@ -258,26 +256,84 @@ const createTransferRuleTool = tool(
         if (srcContact) {
           resolvedSourcePhone = srcContact.phone;
           resolvedSourceName = srcContact.name;
+          console.log(`Found source contact: ${resolvedSourceName} - ${resolvedSourcePhone}`);
         }
       }
       
-      const newRule = await Rule.create({
+      // Normalize phone for comparison
+      const normalizePhone = (p) => {
+        if (!p) return null;
+        const digits = String(p).replace(/\D/g, "").slice(-10);
+        return digits.length === 10 ? digits : null;
+      };
+      
+      const sourceDigits = normalizePhone(resolvedSourcePhone);
+      
+      // Check for existing transfer rules from this source contact
+      const existingRules = await Rule.find({
         userId,
-        rule: `Forward ${mode || "both"} from ${resolvedSourceName} to ${resolvedName}`,
         type: "transfer",
-        active: true,
-        conditions: {
-          sourceContactPhone: resolvedSourcePhone || null,
-          sourceContactName: resolvedSourceName,
-        },
-        transferDetails: {
+        active: true
+      });
+      
+      let existingRule = null;
+      for (const rule of existingRules) {
+        const ruleSourcePhone = rule.conditions?.sourceContactPhone;
+        const ruleSourceName = rule.conditions?.sourceContactName?.toLowerCase();
+        const ruleSourceDigits = normalizePhone(ruleSourcePhone);
+        
+        // Match by phone number (most reliable) or by name if no phone
+        if (sourceDigits && ruleSourceDigits && sourceDigits === ruleSourceDigits) {
+          existingRule = rule;
+          console.log(`Found existing rule by phone match: ${rule.rule}`);
+          break;
+        } else if (!sourceDigits && ruleSourceName && resolvedSourceName?.toLowerCase() === ruleSourceName) {
+          existingRule = rule;
+          console.log(`Found existing rule by name match: ${rule.rule}`);
+          break;
+        }
+      }
+      
+      const ruleDescription = `Forward ${mode || "both"} from ${resolvedSourceName} to ${resolvedName}`;
+      
+      if (existingRule) {
+        // Update existing rule instead of creating duplicate
+        existingRule.rule = ruleDescription;
+        existingRule.transferDetails = {
           mode: mode || "both",
           priority: "all",
           contactName: resolvedName,
           contactPhone: resolvedPhone,
-        }
-      });
-      return `Done. Created rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}).`;
+        };
+        existingRule.conditions = {
+          ...existingRule.conditions,
+          sourceContactPhone: resolvedSourcePhone || null,
+          sourceContactName: resolvedSourceName,
+        };
+        await existingRule.save();
+        console.log(`Updated existing rule: ${existingRule._id}`);
+        return `Done. Updated existing rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}).`;
+      } else {
+        // Create new rule
+        const newRule = await Rule.create({
+          userId,
+          rule: ruleDescription,
+          type: "transfer",
+          active: true,
+          conditions: {
+            sourceContactPhone: resolvedSourcePhone || null,
+            sourceContactName: resolvedSourceName,
+          },
+          transferDetails: {
+            mode: mode || "both",
+            priority: "all",
+            contactName: resolvedName,
+            contactPhone: resolvedPhone,
+          }
+        });
+        console.log(`Created new rule: ${newRule._id}`);
+        return `Done. Created rule to forward ${mode || "all communications"} from ${resolvedSourceName} to ${resolvedName} (${resolvedPhone}).`;
+      }
     } catch (error) {
       console.error("Transfer rule error:", error);
       return `Error creating rule: ${error.message}`;
@@ -2394,22 +2450,43 @@ const cleanupRulesTool = tool(
         return "No rules found to cleanup.";
       }
       
-      // Group by type and find duplicates
-      const rulesByType = {};
+      // Group rules by unique identifier (type + source contact for transfer rules)
+      const seen = new Map();
       const duplicates = [];
       const oldInactive = [];
       
       for (const rule of allRules) {
-        const type = rule.type;
-        if (!rulesByType[type]) {
-          rulesByType[type] = [];
-        }
-        rulesByType[type].push(rule);
+        // Create a unique key for the rule
+        let key = rule.type;
         
-        // Mark as duplicate if same type and very similar rule text
-        if (rulesByType[type].length > 1) {
-          const existing = rulesByType[type][0]; // Keep the newest
+        // For transfer rules, include source contact in key to detect duplicates
+        if (rule.type === "transfer") {
+          const sourcePhone = rule.conditions?.sourceContactPhone;
+          const sourceName = rule.conditions?.sourceContactName?.toLowerCase();
+          if (sourcePhone) {
+            const digits = String(sourcePhone).replace(/\D/g, "").slice(-10);
+            key = `transfer:${digits}`;
+          } else if (sourceName) {
+            key = `transfer:${sourceName}`;
+          }
+        } else if (rule.type === "forward") {
+          // For forward rules, include mode in key
+          const mode = rule.conditions?.mode || "all";
+          key = `forward:${mode}`;
+        } else if (rule.type === "block") {
+          const sourcePhone = rule.transferDetails?.sourcePhone;
+          if (sourcePhone) {
+            const digits = String(sourcePhone).replace(/\D/g, "").slice(-10);
+            key = `block:${digits}`;
+          }
+        }
+        
+        // Mark as duplicate if we've seen this key before (keep newest = first in sorted list)
+        if (seen.has(key)) {
           duplicates.push(rule._id);
+          console.log(`Duplicate found: ${rule.rule} (key: ${key})`);
+        } else {
+          seen.set(key, rule);
         }
         
         // Mark old inactive rules for deletion
@@ -2458,58 +2535,276 @@ const cleanupRulesTool = tool(
   }
 );
 
-// Tool: Set Do Not Disturb (Comsierge DND)
-const setDNDTool = tool(
-  async ({ userId, enabled, autoReplyMessage, startTime, endTime }) => {
+// Tool: Set Routing Preferences (comprehensive call + message routing)
+// This handles complex requests like "no calls and messages from 6pm-8pm", "only important messages, contacts only for calls"
+// Tool: Set Routing Preferences (Personal Routing)
+// Matches UI: Calls (all/favorites/saved/tags), Messages (all/important/urgent/none)
+const setRoutingPreferencesTool = tool(
+  async ({ userId, callsMode, callTags, messagesMode, schedule, isDefault }) => {
     try {
-      console.log("Setting DND:", { userId, enabled, autoReplyMessage, startTime, endTime });
+      console.log("Setting routing preferences:", { userId, callsMode, messagesMode, schedule, isDefault });
       
-      if (!enabled) {
-        // Disable DND - delete any DND rules
-        await Rule.deleteMany({ 
-          userId, 
-          type: "auto-reply",
-          rule: { $regex: /do not disturb|dnd/i }
-        });
-        return "Do Not Disturb has been turned off. You'll receive all notifications normally.";
+      const user = await User.findById(userId);
+      if (!user) return "User not found.";
+      
+      const forwardingNumber = user.forwardingNumber;
+      
+      // Parse time if schedule provided
+      let scheduleObj = null;
+      let scheduleInfo = "";
+      
+      if (schedule && schedule.startTime && schedule.endTime) {
+        const parseTime = (timeStr) => {
+          if (!timeStr) return null;
+          const str = timeStr.toLowerCase().trim();
+          const pmMatch = str.match(/^(\d{1,2})(?::(\d{2}))?\s*(pm|am)?$/i);
+          if (pmMatch) {
+            let hours = parseInt(pmMatch[1]);
+            const mins = pmMatch[2] ? parseInt(pmMatch[2]) : 0;
+            const period = pmMatch[3]?.toLowerCase();
+            if (period === 'pm' && hours < 12) hours += 12;
+            if (period === 'am' && hours === 12) hours = 0;
+            return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+          }
+          const militaryMatch = str.match(/^(\d{1,2}):(\d{2})$/);
+          if (militaryMatch) {
+            return `${militaryMatch[1].padStart(2, '0')}:${militaryMatch[2]}`;
+          }
+          return null;
+        };
+        
+        const startParsed = parseTime(schedule.startTime);
+        const endParsed = parseTime(schedule.endTime);
+        
+        if (startParsed && endParsed) {
+          scheduleObj = {
+            start: startParsed,
+            end: endParsed,
+            days: schedule.days || ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+          };
+          scheduleInfo = ` from ${schedule.startTime} to ${schedule.endTime}`;
+        }
       }
       
-      // Create DND auto-reply rule
-      const dndMessage = autoReplyMessage || "I'm currently unavailable. I'll get back to you as soon as possible.";
+      // If this is a scheduled rule (not default), keep existing default rules
+      // If this is default, delete existing rules first
+      if (isDefault) {
+        await Rule.deleteMany({ 
+          userId, 
+          type: { $in: ["forward", "message-notify"] },
+          "conditions.schedule": { $exists: false }
+        });
+      }
       
-      const ruleDesc = startTime && endTime 
-        ? `Do Not Disturb auto-reply from ${startTime} to ${endTime}`
-        : "Do Not Disturb - auto-reply to all messages";
+      // If scheduled, only delete conflicting scheduled rules
+      if (scheduleObj) {
+        await Rule.deleteMany({
+          userId,
+          type: { $in: ["forward", "message-notify"] },
+          "conditions.schedule.start": scheduleObj.start,
+          "conditions.schedule.end": scheduleObj.end
+        });
+      }
       
-      await Rule.create({
-        userId,
-        type: "auto-reply",
-        rule: ruleDesc,
-        active: true,
-        autoReplyDetails: {
-          message: dndMessage,
-          startTime: startTime || null,
-          endTime: endTime || null,
-          allContacts: true
+      let response = scheduleObj 
+        ? `✅ Routing set${scheduleInfo}:\n\n`
+        : `✅ Default routing set:\n\n`;
+      
+      // === CALL ROUTING ===
+      if (callsMode) {
+        let callRuleDesc;
+        let callConditions = { mode: callsMode };
+        
+        switch (callsMode) {
+          case "all":
+            callRuleDesc = "All calls ring your phone";
+            break;
+          case "favorites":
+            callRuleDesc = "Favorites only ring your phone";
+            break;
+          case "saved":
+            callRuleDesc = "Saved contacts only ring your phone";
+            break;
+          case "tags":
+            if (callTags && callTags.length > 0) {
+              callConditions.tags = callTags;
+              callRuleDesc = `Only ${callTags.join(", ")} contacts ring your phone`;
+            } else {
+              callRuleDesc = "Saved contacts only ring your phone";
+              callConditions.mode = "saved";
+            }
+            break;
+          case "none":
+            callRuleDesc = "All calls go to AI (phone won't ring)";
+            break;
         }
-      });
+        
+        if (callsMode !== "none" && forwardingNumber) {
+          await Rule.create({
+            userId,
+            type: "forward",
+            rule: callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+            active: true,
+            conditions: scheduleObj ? { ...callConditions, schedule: scheduleObj } : callConditions,
+            transferDetails: { mode: "calls", contactPhone: forwardingNumber }
+          });
+        } else if (callsMode === "none") {
+          // Create a "block all calls" rule
+          await Rule.create({
+            userId,
+            type: "forward",
+            rule: callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+            active: true,
+            conditions: scheduleObj ? { mode: "none", schedule: scheduleObj } : { mode: "none" },
+            transferDetails: { mode: "calls" }
+          });
+        }
+        
+        response += `📞 Calls: ${callRuleDesc}\n`;
+      }
       
+      // === MESSAGE ROUTING ===
+      if (messagesMode) {
+        let msgRuleDesc;
+        
+        switch (messagesMode) {
+          case "all":
+            msgRuleDesc = "All messages notify you";
+            break;
+          case "important":
+            msgRuleDesc = "Important messages only (high + medium priority)";
+            break;
+          case "urgent":
+            msgRuleDesc = "Urgent messages only (critical priority)";
+            break;
+          case "none":
+            msgRuleDesc = "No message notifications";
+            break;
+        }
+        
+        await Rule.create({
+          userId,
+          type: "message-notify",
+          rule: msgRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+          active: true,
+          conditions: scheduleObj 
+            ? { priorityFilter: messagesMode, schedule: scheduleObj }
+            : { priorityFilter: messagesMode },
+          transferDetails: { mode: "messages" }
+        });
+        
+        response += `💬 Messages: ${msgRuleDesc}\n`;
+      }
+      
+      if (scheduleObj) {
+        response += `\n⏰ This applies${scheduleInfo}. Outside this time, your default routing applies.`;
+      }
+      
+      return response;
+    } catch (error) {
+      console.error("Set routing preferences error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "set_routing_preferences",
+    description: `Set personal routing preferences. MUST match UI options:
+
+CALLS (who rings your phone):
+- "all" = Every incoming call
+- "favorites" = Contacts marked as favorite only
+- "saved" = Anyone in your contacts
+- "tags" = Filter by contact tags (requires callTags array)
+- "none" = All calls go to AI, phone doesn't ring
+
+MESSAGES (what notifies you):
+- "all" = Every incoming message
+- "important" = High + medium priority only (no spam)
+- "urgent" = Critical messages only (no spam)
+- "none" = No notifications
+
+SCHEDULE (optional time window):
+- For time-based rules like "from 8pm to 9pm"
+- Set schedule.startTime and schedule.endTime
+
+EXAMPLES:
+- "all calls, important messages only" -> callsMode="all", messagesMode="important"
+- "favorites for calls, urgent only for messages" -> callsMode="favorites", messagesMode="urgent"
+- "from 8pm-9pm block calls, no message notifications" -> callsMode="none", messagesMode="none", schedule={startTime:"8pm", endTime:"9pm"}
+
+IMPORTANT: If user says DND or routing request WITHOUT specifying calls/messages, ASK:
+"Do you want this for calls, messages, or both? And what settings for each?"`,
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      callsMode: z.enum(["all", "favorites", "saved", "tags", "none"]).optional()
+        .describe("Who can ring phone: all, favorites, saved, tags, none"),
+      callTags: z.array(z.string()).optional()
+        .describe("If callsMode=tags, which tags (e.g. ['family', 'work'])"),
+      messagesMode: z.enum(["all", "important", "urgent", "none"]).optional()
+        .describe("Which messages notify: all, important, urgent, none"),
+      schedule: z.object({
+        startTime: z.string().describe("Start time like '8pm', '20:00'"),
+        endTime: z.string().describe("End time like '9pm', '21:00'"),
+        days: z.array(z.string()).optional().describe("Days of week")
+      }).optional().describe("Time window for this rule"),
+      isDefault: z.boolean().optional().describe("True if setting default routing (no schedule)")
+    }),
+  }
+);
+
+// Tool: Set Do Not Disturb - ASK for clarification
+const setDNDTool = tool(
+  async ({ userId, enabled, startTime, endTime }) => {
+    try {
+      console.log("DND request:", { userId, enabled, startTime, endTime });
+      
+      if (!enabled) {
+        // Turn off DND - delete DND-related rules
+        await Rule.deleteMany({ 
+          userId, 
+          rule: { $regex: /dnd|do not disturb/i }
+        });
+        return "✅ Do Not Disturb is OFF. Your default routing is now active.";
+      }
+      
+      // DND requested - we need to ask what they want
       const timeInfo = startTime && endTime ? ` from ${startTime} to ${endTime}` : "";
-      return `Do Not Disturb is now ON${timeInfo}. Auto-reply message: "${dndMessage}"`;
+      
+      return `CLARIFICATION_NEEDED: Setting up Do Not Disturb${timeInfo}. Please tell me:
+
+📞 **Calls**: What should happen to calls?
+   - All calls ring your phone
+   - Only favorites
+   - Only saved contacts  
+   - All calls go to AI (no ringing)
+
+💬 **Messages**: What should notify you?
+   - All messages
+   - Important only (no spam)
+   - Urgent only (critical)
+   - No notifications
+
+For example: "no calls, urgent messages only" or "favorites can call, no message notifications"`;
     } catch (error) {
       console.error("Set DND error:", error);
-      return `Error setting DND: ${error.message}`;
+      return `Error: ${error.message}`;
     }
   },
   {
     name: "set_dnd",
-    description: "Set Comsierge Do Not Disturb mode. Creates auto-reply for all contacts. Use when user says: 'do not disturb', 'DND', 'turn on dnd', 'mute notifications'",
+    description: `Handle Do Not Disturb requests. ALWAYS asks for clarification about what user wants.
+
+When user says "dnd" or "do not disturb":
+1. If they specify a time (e.g., "dnd from 8pm to 9pm"), capture it
+2. ALWAYS ask what they want for calls AND messages
+3. After they clarify, use set_routing_preferences to create the actual rules
+
+This tool ONLY asks the clarifying question. The actual rule creation happens via set_routing_preferences.`,
     schema: z.object({
       userId: z.string().describe("User ID"),
       enabled: z.boolean().describe("true to enable DND, false to disable"),
-      autoReplyMessage: z.string().optional().describe("Custom auto-reply message during DND"),
-      startTime: z.string().optional().describe("Start time for scheduled DND (e.g. '10pm', '22:00')"),
-      endTime: z.string().optional().describe("End time for scheduled DND (e.g. '7am', '07:00')"),
+      startTime: z.string().optional().describe("Start time if specified (e.g. '8pm')"),
+      endTime: z.string().optional().describe("End time if specified (e.g. '9pm')"),
     }),
   }
 );
@@ -4026,9 +4321,10 @@ const fullAgentTools = [
   // Support
   createSupportTicketTool,
   listSupportTicketsTool,
-  // DND & Call Filtering
+  // DND & Call Filtering & Routing
   setDNDTool,
   setCallFilterTool,
+  setRoutingPreferencesTool,
   cleanupRulesTool,
   // AI Calls
   makeAICallTool,
@@ -4085,6 +4381,7 @@ const fullAgentToolMap = {
   list_support_tickets: listSupportTicketsTool,
   set_dnd: setDNDTool,
   set_call_filter: setCallFilterTool,
+  set_routing_preferences: setRoutingPreferencesTool,
   cleanup_rules: cleanupRulesTool,
   make_ai_call: makeAICallTool,
   list_ai_calls: listAICallsTool,
@@ -4437,15 +4734,42 @@ IMPORTANT - LABELS vs NAMES:
 - Labels/tags are SEPARATE from the name. Do NOT put labels in the name field!
 - "family friend" as a label means a tag with value "family friend", NOT a contact named that
 
-CALL FILTERING (which calls ring user's phone):
-- set_call_filter: Control which INCOMING CALLS ring the user's phone vs go to AI
-  * "block unknown callers" -> set_call_filter(mode="saved") - only saved contacts ring
-  * "only let favorites call me" -> set_call_filter(mode="favorites")
-  * "let everyone call" -> set_call_filter(mode="all")
-  * "only family tag can call" -> set_call_filter(mode="tags", tags=["family"])
-  * "send all calls to AI" -> set_call_filter(mode="none")
-- This is DIFFERENT from DND - call filter controls which calls ring, DND is auto-reply for messages
-- This is DIFFERENT from block_contact - that blocks a SPECIFIC contact entirely
+ROUTING PREFERENCES (calls + messages combined) - MATCHES ROUTING PAGE UI:
+- set_routing_preferences: THE MAIN TOOL for configuring call AND message routing
+  
+  CALLS options (who rings your phone):
+  * "all" = Every incoming call rings
+  * "favorites" = Only contacts marked as favorite
+  * "saved" = Anyone in your contacts
+  * "tags" = Filter by contact tags (needs callTags array)
+  * "none" = All calls go to AI, phone doesn't ring
+  
+  MESSAGES options (what notifies you):
+  * "all" = Every incoming message
+  * "important" = High + medium priority only (no spam)
+  * "urgent" = Critical messages only (no spam)
+  * "none" = No notifications
+  
+  TIME-BASED: Add schedule={startTime:"8pm", endTime:"9pm"} for time windows
+  
+  Examples:
+  * "all calls, important messages" -> set_routing_preferences(callsMode="all", messagesMode="important")
+  * "no calls from 8pm-9pm" -> set_routing_preferences(callsMode="none", schedule={startTime:"8pm", endTime:"9pm"})
+  * "favorites only, urgent messages" -> set_routing_preferences(callsMode="favorites", messagesMode="urgent")
+
+DND (DO NOT DISTURB) - ALWAYS ASK CLARIFYING QUESTIONS:
+- set_dnd: When user says "dnd" or "do not disturb", ALWAYS ask what they want
+  * "dnd" -> use set_dnd → it will ask for calls/messages preferences
+  * "dnd from 8pm to 9pm" -> use set_dnd with times → it will ask for calls/messages preferences
+  * After user clarifies (e.g., "no calls, urgent messages") -> use set_routing_preferences with their choices
+
+ROUTING FLOW EXAMPLE:
+1. User: "dnd from 8pm to 9pm"
+2. AI: calls set_dnd(enabled=true, startTime="8pm", endTime="9pm") → asks clarifying question
+3. User: "no calls, but I want urgent messages"
+4. AI: calls set_routing_preferences(callsMode="none", messagesMode="urgent", schedule={startTime:"8pm", endTime:"9pm"})
+5. User: "for other times, just normal - all calls, important messages"
+6. AI: calls set_routing_preferences(callsMode="all", messagesMode="important", isDefault=true)
 
 RULES & AUTOMATION:
 - create_transfer_rule: Forward calls/messages from a specific contact to another number
@@ -4498,12 +4822,31 @@ PHONE SETTINGS:
 - get_phone_info: Get user's Comsierge number and current forwarding number
 - update_forwarding_number: Change where calls/messages forward to (use this when user says "change my forwarding number to X" or "forward to X number")
 
+PERSONAL ROUTING (IMPORTANT - matches the Routing page UI):
+- set_routing_preferences: THE main tool for routing. Creates rules that appear in Routing page.
+  CALLS options: all, favorites, saved, tags, none
+  MESSAGES options: all, important, urgent, none
+  Can include schedule for time-based rules
+  
+- set_dnd: For "dnd" or "do not disturb" requests - ALWAYS asks clarifying questions first
+  
+ROUTING FLOW:
+1. User says "dnd" or "do not disturb" → use set_dnd → it asks "calls, messages, or both?"
+2. User says "dnd from 8pm to 9pm" → use set_dnd with times → it asks what for calls/messages
+3. User clarifies "no calls, urgent messages only" → use set_routing_preferences with schedule
+4. User says "for other times keep it normal - all calls, important messages" → use set_routing_preferences with isDefault=true
+
+EXAMPLES:
+- "dnd" → set_dnd(enabled=true) → asks clarifying question
+- "dnd from 8pm to 9pm" → set_dnd(enabled=true, startTime="8pm", endTime="9pm") → asks what for calls/messages  
+- "no calls, only urgent messages" (after dnd question) → set_routing_preferences(callsMode="none", messagesMode="urgent", schedule=...)
+- "normal routing - all calls, important messages" → set_routing_preferences(callsMode="all", messagesMode="important", isDefault=true)
+- "only favorites can call me" → set_routing_preferences(callsMode="favorites")
+- "mute all notifications" → set_routing_preferences(callsMode="none", messagesMode="none")
+
 SUPPORT:
 - create_support_ticket: Create a support ticket - BUT FIRST ask: 1) What exactly is happening? 2) When did it start? 3) Any error messages? Only create after getting details.
 - list_support_tickets: Show user's support tickets (use when user says "show my tickets", "my support tickets", "ticket status")
-
-DND (DO NOT DISTURB):
-- set_dnd: Turn on/off Comsierge Do Not Disturb (auto-reply to all contacts). Use when user says "do not disturb", "DND", "turn on dnd"
 
 AI CALLS (AUTONOMOUS VOICE AGENT):
 - make_ai_call: Have AI make a call on user's behalf with an objective. Use when: "AI call John and ask about meeting", "have AI check on mom"
@@ -4555,7 +4898,9 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "text mom in 30 min saying happy birthday" -> schedule_message (sends TO A CONTACT)
 - "send hi to john in 30 seconds" -> schedule_message (sends TO A CONTACT)
 - "forward messages about baig to jeremy" -> create_smart_rule
-- "if mark texts me, notify jeremy" -> create_smart_rule  
+- "if mark texts me, notify jeremy" -> create_smart_rule
+- "if i get a message from mark about a meeting, send it to jake" -> create_smart_rule (source + keyword + target)
+- "forward urgent messages from boss to my wife" -> create_smart_rule (priority + source + target)
 - "what did I miss" -> get_unread_summary
 - "analyze my chat with john" -> analyze_conversation
 - "what should I say to sarah" -> suggest_reply
@@ -4587,6 +4932,11 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "route delivery messages to my email" -> create_smart_rule
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
+
+CLARIFICATION RULES:
+- For "dnd" or "do not disturb" ALONE: ASK "Do you want to block calls, messages, or both?"
+- For routing changes: ASK if user wants time-based schedule if not specified
+- Don't assume - ask when the request is ambiguous
 
 Be direct. Execute tools immediately. No confirmation needed for read operations.
 For complex rules described in natural language, use create_smart_rule.

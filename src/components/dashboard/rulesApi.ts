@@ -49,8 +49,9 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
+    console.log("Fetched rules:", data.count, "rules");
     if (data.success) {
-      return data.data.map((r: any) => ({
+      const rules = data.data.map((r: any) => ({
         id: r._id,
         rule: r.rule,
         active: r.active,
@@ -61,7 +62,13 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
         schedule: r.schedule,
         transferDetails: r.transferDetails,
       }));
+      console.log("Rules by type:", rules.reduce((acc: Record<string, number>, r: ActiveRule) => {
+        acc[r.type || 'custom'] = (acc[r.type || 'custom'] || 0) + 1;
+        return acc;
+      }, {}));
+      return rules;
     }
+    console.error("Fetch rules failed:", data.message || "Unknown error");
     return [];
   } catch (error) {
     console.error("Fetch rules error:", error);
@@ -72,12 +79,14 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
 // Create a new rule
 export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Promise<ActiveRule | null> => {
   try {
+    console.log("Creating rule:", JSON.stringify(rule, null, 2));
     const response = await fetch(`${API_BASE_URL}/api/rules`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify(rule),
     });
     const data = await response.json();
+    console.log("Create rule response:", data);
     if (data.success) {
       return {
         id: data.data._id,
@@ -91,6 +100,7 @@ export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Pr
         transferDetails: data.data.transferDetails,
       };
     }
+    console.error("Create rule failed:", data.message || "Unknown error");
     return null;
   } catch (error) {
     console.error("Create rule error:", error);

@@ -254,7 +254,8 @@ router.put("/:id", async (req, res) => {
 // @access  Private
 router.delete("/:id", async (req, res) => {
   try {
-    const callRecord = await CallRecord.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+    // First find the call record to get recording info for cleanup
+    const callRecord = await CallRecord.findOne({ _id: req.params.id, userId: req.user._id });
     
     if (!callRecord) {
       return res.status(404).json({
@@ -262,6 +263,49 @@ router.delete("/:id", async (req, res) => {
         message: "Call record not found",
       });
     }
+
+    // Try to delete any Twilio recordings associated with this call
+    if (callRecord.recordingSid || callRecord.voicemailUrl) {
+      try {
+        // Import User model to get Twilio credentials
+        const User = (await import("../models/User.js")).default;
+        const user = await User.findById(req.user._id);
+        
+        if (user?.twilioAccountSid && user?.twilioAuthToken) {
+          const twilio = (await import("twilio")).default;
+          const twilioClient = twilio(user.twilioAccountSid, user.twilioAuthToken);
+          
+          // Delete recording if we have the SID
+          if (callRecord.recordingSid) {
+            try {
+              await twilioClient.recordings(callRecord.recordingSid).remove();
+              console.log(`Deleted Twilio recording: ${callRecord.recordingSid}`);
+            } catch (recErr) {
+              console.log(`Could not delete recording ${callRecord.recordingSid}:`, recErr.message);
+            }
+          }
+          
+          // Extract recording SID from voicemail URL if available
+          if (callRecord.voicemailUrl && !callRecord.recordingSid) {
+            const voicemailMatch = callRecord.voicemailUrl.match(/Recordings\/([A-Z0-9]+)/i);
+            if (voicemailMatch) {
+              try {
+                await twilioClient.recordings(voicemailMatch[1]).remove();
+                console.log(`Deleted Twilio voicemail recording: ${voicemailMatch[1]}`);
+              } catch (vmErr) {
+                console.log(`Could not delete voicemail recording:`, vmErr.message);
+              }
+            }
+          }
+        }
+      } catch (twilioErr) {
+        console.log("Error during Twilio cleanup:", twilioErr.message);
+        // Continue with deletion even if Twilio cleanup fails
+      }
+    }
+
+    // Now delete the call record from database
+    await CallRecord.deleteOne({ _id: callRecord._id });
 
     res.json({
       success: true,

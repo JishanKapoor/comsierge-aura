@@ -1390,6 +1390,40 @@ router.post("/webhook/sms", async (req, res) => {
           const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
           const notifyTags = conditions.notifyTags || [];
           
+          // Check time window schedule for message-notify rules
+          const schedule = conditions.schedule || rule.schedule;
+          if (schedule && schedule.start && schedule.end) {
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+            const currentTime = currentHours * 60 + currentMinutes;
+            
+            const [startH, startM] = schedule.start.split(':').map(Number);
+            const [endH, endM] = schedule.end.split(':').map(Number);
+            const startTime = startH * 60 + (startM || 0);
+            const endTime = endH * 60 + (endM || 0);
+            
+            let inTimeWindow;
+            if (startTime <= endTime) {
+              inTimeWindow = currentTime >= startTime && currentTime <= endTime;
+            } else {
+              inTimeWindow = currentTime >= startTime || currentTime <= endTime;
+            }
+            
+            let inDayWindow = true;
+            if (schedule.days && schedule.days.length > 0) {
+              const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+              const today = dayNames[now.getDay()];
+              inDayWindow = schedule.days.some(d => d.toLowerCase().startsWith(today));
+            }
+            
+            if (!inTimeWindow || !inDayWindow) {
+              console.log(`   📢 Outside time window (${schedule.start}-${schedule.end}), skipping rule`);
+              continue;
+            }
+            console.log(`   📢 Within time window (${schedule.start}-${schedule.end})`);
+          }
+          
           // Get translation settings from rule conditions
           if (conditions.translateEnabled) {
             translateEnabled = true;
@@ -2253,28 +2287,24 @@ router.post("/webhook/voice", async (req, res) => {
           const mode = conditions.mode || "all";
           const transferDetails = rule.transferDetails || {};
           const sourceContactPhone = conditions.sourceContactPhone;
+          const transferTargetPhone = transferDetails.contactPhone;
           
-          console.log(`   🔍 Checking transfer rule: "${rule.rule}" (mode: ${mode})`);
+          console.log(`   🔍 Checking transfer rule: "${rule.rule}"`);
+          console.log(`      - sourceContactPhone: ${sourceContactPhone || 'not set'}`);
+          console.log(`      - transferTargetPhone: ${transferTargetPhone || 'not set'}`);
+          console.log(`      - transferMode: ${transferDetails.mode || 'both'}`);
+          console.log(`      - conditions.mode: ${mode}`);
 
           // If this transfer rule is scoped to a specific conversation, only apply it for that caller.
           if (sourceContactPhone) {
-            const normalizePhone = (p) => {
-              const cleaned = p ? String(p).replace(/[^\d+]/g, "") : "";
-              if (cleaned.startsWith("+")) return cleaned;
-              const digits = String(p || "").replace(/\D/g, "");
-              if (digits.length === 10) return `+1${digits}`;
-              if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-              return cleaned;
-            };
-
-            const caller = normalizePhone(From);
-            const src = normalizePhone(sourceContactPhone);
-            const callerDigits = String(caller).replace(/\D/g, "").slice(-10);
-            const srcDigits = String(src).replace(/\D/g, "").slice(-10);
-            if (!caller || !src || callerDigits !== srcDigits) {
+            const callerDigits = String(From).replace(/\D/g, "").slice(-10);
+            const srcDigits = String(sourceContactPhone).replace(/\D/g, "").slice(-10);
+            console.log(`      - Comparing: caller=${callerDigits} vs source=${srcDigits}`);
+            if (callerDigits !== srcDigits) {
               console.log(`      ⏭️ Transfer rule scoped to ${sourceContactPhone}; caller ${From} does not match`);
               continue;
             }
+            console.log(`      ✓ Source contact phone matched!`);
           }
           
           // Check if rule applies to calls
@@ -2321,9 +2351,6 @@ router.post("/webhook/voice", async (req, res) => {
             default:
               matches = false;
           }
-          
-          // Check if transfer target phone exists
-          const transferTargetPhone = transferDetails.contactPhone;
           
           if (matches && transferTargetPhone) {
             console.log(`   ✅ Transfer rule matched! Routing DIRECTLY to: ${transferTargetPhone}`);
@@ -2395,12 +2422,49 @@ router.post("/webhook/voice", async (req, res) => {
             continue;
           }
           
-          // Check schedule
+          // Check duration-based expiry
           if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
             if (new Date() > new Date(rule.schedule.endTime)) {
               console.log(`      ⏭️ Rule expired, skipping`);
               continue;
             }
+          }
+          
+          // Check time window schedule (e.g., "6pm to 8pm")
+          const schedule = conditions.schedule || rule.schedule;
+          if (schedule && schedule.start && schedule.end) {
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+            const currentTime = currentHours * 60 + currentMinutes;
+            
+            const [startH, startM] = schedule.start.split(':').map(Number);
+            const [endH, endM] = schedule.end.split(':').map(Number);
+            const startTime = startH * 60 + (startM || 0);
+            const endTime = endH * 60 + (endM || 0);
+            
+            let inTimeWindow;
+            if (startTime <= endTime) {
+              // Same day: e.g., 9am-5pm
+              inTimeWindow = currentTime >= startTime && currentTime <= endTime;
+            } else {
+              // Overnight: e.g., 10pm-6am
+              inTimeWindow = currentTime >= startTime || currentTime <= endTime;
+            }
+            
+            // Check day of week if specified
+            let inDayWindow = true;
+            if (schedule.days && schedule.days.length > 0) {
+              const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+              const today = dayNames[now.getDay()];
+              inDayWindow = schedule.days.some(d => d.toLowerCase().startsWith(today));
+            }
+            
+            if (!inTimeWindow || !inDayWindow) {
+              console.log(`      ⏭️ Outside time window (${schedule.start}-${schedule.end}), skipping`);
+              continue;
+            }
+            console.log(`      ✓ Within time window (${schedule.start}-${schedule.end})`);
           }
           
           // Check conditions
