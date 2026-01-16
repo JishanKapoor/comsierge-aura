@@ -68,6 +68,8 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const savedForwardingNumber = useRef(user?.forwardingNumber || "");
   const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
   
   // What to forward
   const [forwardCalls, setForwardCalls] = useState(true);
@@ -105,6 +107,15 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       savedForwardingNumber.current = user.forwardingNumber;
     }
   }, [user?.forwardingNumber, forwardingNumber]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (blurTimeoutRef.current) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Check if forwarding number has changed
   const hasForwardingChanged = forwardingNumber !== savedForwardingNumber.current;
@@ -181,9 +192,17 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
 
   // Handle blur to show save dialog if changed
   const handleForwardingBlur = () => {
-    if (hasForwardingChanged && !forwardingNumberError && !isSavingForwarding) {
-      setShowSaveDialog(true);
+    if (blurTimeoutRef.current) {
+      window.clearTimeout(blurTimeoutRef.current);
     }
+
+    blurTimeoutRef.current = window.setTimeout(() => {
+      if (!isMountedRef.current) return;
+      if (!inputRef.current || inputRef.current.offsetParent === null) return;
+      if (hasForwardingChanged && !forwardingNumberError && !isSavingForwarding && !showSaveDialog) {
+        setShowSaveDialog(true);
+      }
+    }, 150);
   };
 
   const getRoutingDestinationLabel = () => {

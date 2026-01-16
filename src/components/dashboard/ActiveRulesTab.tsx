@@ -357,10 +357,6 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const routingMessageRule = rules.find((r) => r.type === "message-notify");
   const routingActive = Boolean(routingForwardRule?.active || routingMessageRule?.active);
 
-  const activeRulesCount =
-    rules.filter((r) => r.active && r.type !== "forward" && r.type !== "message-notify").length +
-    (routingActive ? 1 : 0);
-
   const routingDestination =
     (routingForwardRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
     (routingMessageRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
@@ -399,6 +395,8 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
     return [routingGroup, ...nonRouting];
   })();
+
+  const activeRulesCount = displayRules.filter((r) => r.active).length;
 
   const setRoutingPartActive = async (part: "calls" | "messages", nextActive: boolean) => {
     suppressRulesReloadUntilRef.current = Date.now() + 800;
@@ -537,7 +535,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
             )}
           >
             <List className="w-3.5 h-3.5" />
-            Rules ({rules.length})
+            Rules ({displayRules.length})
           </button>
         </div>
       </div>
