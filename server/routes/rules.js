@@ -19,7 +19,6 @@ router.get("/", async (req, res) => {
     const seen = new Set();
     const deduped = [];
     const duplicateIds = [];
-    const rulesToActivate = [];
 
     for (const r of rules) {
       if (r.type !== "transfer") {
@@ -39,29 +38,12 @@ router.get("/", async (req, res) => {
       seen.add(key);
       deduped.push(r);
       
-      // Auto-activate transfer rules that were incorrectly left inactive
-      // (bug fix for rules created before the active status was being updated on upsert)
-      if (!r.active && r.transferDetails?.contactPhone) {
-        rulesToActivate.push(r._id);
-      }
+      // NOTE: Removed auto-activation - it was re-enabling rules that users intentionally disabled
+      // The original bug (rules created inactive) is now fixed in the POST handler
     }
 
     if (duplicateIds.length) {
       await Rule.deleteMany({ userId: req.user._id, _id: { $in: duplicateIds } });
-    }
-    
-    // Activate any inactive transfer rules (one-time fix)
-    if (rulesToActivate.length) {
-      await Rule.updateMany(
-        { _id: { $in: rulesToActivate } },
-        { $set: { active: true } }
-      );
-      // Update the deduped array to reflect the change
-      for (const r of deduped) {
-        if (rulesToActivate.includes(r._id)) {
-          r.active = true;
-        }
-      }
     }
 
     res.json({
