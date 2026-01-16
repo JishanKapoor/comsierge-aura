@@ -88,9 +88,74 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const [receiveLanguage, setReceiveLanguage] = useState<string>("es");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
+  type RoutingSnapshot = {
+    forwardCalls: boolean;
+    forwardMessages: boolean;
+    callFilter: CallFilter;
+    selectedCallTags: string[];
+    messageFilter: MessageFilter;
+    selectedMessageTags: string[];
+    translateEnabled: boolean;
+    receiveLanguage: string;
+    forwardingNumber: string;
+  };
+
+  const lastSyncedRef = useRef<RoutingSnapshot | null>(null);
+  const lastLocalChangeRef = useRef(0);
+  const refreshTimerRef = useRef<number | null>(null);
+  const isSavingRoutingRef = useRef(false);
+
   const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
 
+  const markLocalChange = () => {
+    lastLocalChangeRef.current = Date.now();
+  };
+
+  const arraysEqual = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((v, i) => v === b[i]);
+
+  const getSnapshot = (override?: Partial<RoutingSnapshot>): RoutingSnapshot => ({
+    forwardCalls,
+    forwardMessages,
+    callFilter,
+    selectedCallTags,
+    messageFilter,
+    selectedMessageTags,
+    translateEnabled,
+    receiveLanguage,
+    forwardingNumber,
+    ...override,
+  });
+
+  const isSameSnapshot = (a: RoutingSnapshot | null, b: RoutingSnapshot | null) => {
+    if (!a || !b) return false;
+    return (
+      a.forwardCalls === b.forwardCalls &&
+      a.forwardMessages === b.forwardMessages &&
+      a.callFilter === b.callFilter &&
+      arraysEqual(a.selectedCallTags, b.selectedCallTags) &&
+      a.messageFilter === b.messageFilter &&
+      arraysEqual(a.selectedMessageTags, b.selectedMessageTags) &&
+      a.translateEnabled === b.translateEnabled &&
+      a.receiveLanguage === b.receiveLanguage &&
+      a.forwardingNumber === b.forwardingNumber
+    );
+  };
+
+  const applySnapshot = (next: RoutingSnapshot) => {
+    if (forwardCalls !== next.forwardCalls) setForwardCalls(next.forwardCalls);
+    if (forwardMessages !== next.forwardMessages) setForwardMessages(next.forwardMessages);
+    if (callFilter !== next.callFilter) setCallFilter(next.callFilter);
+    if (!arraysEqual(selectedCallTags, next.selectedCallTags)) setSelectedCallTags(next.selectedCallTags);
+    if (messageFilter !== next.messageFilter) setMessageFilter(next.messageFilter);
+    if (!arraysEqual(selectedMessageTags, next.selectedMessageTags)) setSelectedMessageTags(next.selectedMessageTags);
+    if (translateEnabled !== next.translateEnabled) setTranslateEnabled(next.translateEnabled);
+    if (receiveLanguage !== next.receiveLanguage) setReceiveLanguage(next.receiveLanguage);
+    if (forwardingNumber !== next.forwardingNumber) setForwardingNumber(next.forwardingNumber);
+  };
+
   const validateForwardingNumber = (value: string) => {
+    markLocalChange();
     setForwardingNumber(value);
     // Allow empty or valid phone numbers
     if (value.trim() && !isValidUsPhoneNumber(value)) {
@@ -113,6 +178,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       isMountedRef.current = false;
       if (blurTimeoutRef.current) {
         window.clearTimeout(blurTimeoutRef.current);
+      }
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
       }
     };
   }, []);
@@ -210,7 +278,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     return raw || "your forwarding number";
   };
 
-  const loadRoutingFromBackend = async () => {
+  const loadRoutingFromBackend = async (opts?: { force?: boolean }) => {
     try {
       const rules = await fetchRules();
 
@@ -223,9 +291,13 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       const persisted =
         safeParseJson<Record<string, any>>(localStorage.getItem(STORAGE_KEY)) || {};
 
+      let nextForwardCalls = false;
+      let nextCallFilter: CallFilter = "all";
+      let nextSelectedCallTags: string[] = [];
+
       if (callRule) {
-        setForwardCalls(Boolean(callRule.active));
-        persisted.forwardCalls = Boolean(callRule.active);
+        nextForwardCalls = Boolean(callRule.active);
+        persisted.forwardCalls = nextForwardCalls;
         const mode = callRule.conditions?.mode || "all";
         const modeToFilter: Record<string, CallFilter> = {
           all: "all",
@@ -233,43 +305,58 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           saved: "contacts",
           tags: "tagged",
         };
-        setCallFilter(modeToFilter[mode] || "all");
+        nextCallFilter = modeToFilter[mode] || "all";
         if (mode === "tags" && Array.isArray(callRule.conditions?.tags)) {
-          setSelectedCallTags(callRule.conditions.tags);
-        } else {
-          setSelectedCallTags([]);
+          nextSelectedCallTags = callRule.conditions.tags;
         }
       } else {
-        setForwardCalls(false);
         persisted.forwardCalls = false;
-        setCallFilter("all");
-        setSelectedCallTags([]);
       }
+
+      let nextForwardMessages = false;
+      let nextMessageFilter: MessageFilter = "all";
+      let nextSelectedMessageTags: string[] = [];
+      let nextTranslateEnabled = false;
+      let nextReceiveLanguage = "es";
 
       if (msgRule) {
-        setForwardMessages(Boolean(msgRule.active));
-        persisted.forwardMessages = Boolean(msgRule.active);
+        nextForwardMessages = Boolean(msgRule.active);
+        persisted.forwardMessages = nextForwardMessages;
         const priorityFilter = msgRule.conditions?.priorityFilter || "all";
-        setMessageFilter(priorityFilter as MessageFilter);
+        nextMessageFilter = priorityFilter as MessageFilter;
         if (Array.isArray(msgRule.conditions?.notifyTags)) {
-          setSelectedMessageTags(msgRule.conditions.notifyTags);
-        } else {
-          setSelectedMessageTags([]);
+          nextSelectedMessageTags = msgRule.conditions.notifyTags;
         }
 
-        setTranslateEnabled(Boolean(msgRule.conditions?.translateEnabled));
+        nextTranslateEnabled = Boolean(msgRule.conditions?.translateEnabled);
         const lang = msgRule.conditions?.receiveLanguage;
         if (typeof lang === "string" && lang && lang !== "en") {
-          setReceiveLanguage(lang);
+          nextReceiveLanguage = lang;
         }
       } else {
-        setForwardMessages(false);
         persisted.forwardMessages = false;
-        setMessageFilter("all");
-        setSelectedMessageTags([]);
-        setTranslateEnabled(false);
-        setReceiveLanguage("es");
       }
+
+      const nextSnapshot = getSnapshot({
+        forwardCalls: nextForwardCalls,
+        forwardMessages: nextForwardMessages,
+        callFilter: nextCallFilter,
+        selectedCallTags: nextSelectedCallTags,
+        messageFilter: nextMessageFilter,
+        selectedMessageTags: nextSelectedMessageTags,
+        translateEnabled: nextTranslateEnabled,
+        receiveLanguage: nextReceiveLanguage,
+      });
+
+      const hasLocalEdits =
+        lastSyncedRef.current && !isSameSnapshot(getSnapshot(), lastSyncedRef.current);
+      const isUserActive = Date.now() - lastLocalChangeRef.current < 600;
+      if (!opts?.force && (isSavingRoutingRef.current || hasLocalEdits || isUserActive)) {
+        return;
+      }
+
+      applySnapshot(nextSnapshot);
+      lastSyncedRef.current = nextSnapshot;
 
       // Persist toggles to avoid stale UI after refresh
       try {
@@ -304,17 +391,32 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
       if (typeof saved.translateEnabled === "boolean") setTranslateEnabled(saved.translateEnabled);
       if (saved.receiveLanguage) setReceiveLanguage(saved.receiveLanguage);
+      lastSyncedRef.current = getSnapshot({
+        forwardCalls: saved.forwardCalls ?? forwardCalls,
+        forwardMessages: saved.forwardMessages ?? forwardMessages,
+        callFilter: saved.callFilter ?? callFilter,
+        selectedCallTags: saved.selectedCallTags ?? selectedCallTags,
+        messageFilter: saved.messageFilter ?? messageFilter,
+        selectedMessageTags: saved.selectedMessageTags ?? selectedMessageTags,
+        translateEnabled: saved.translateEnabled ?? translateEnabled,
+        receiveLanguage: saved.receiveLanguage ?? receiveLanguage,
+      });
     }
 
     // Then load from backend to ensure we're in sync
-    loadRoutingFromBackend();
+    loadRoutingFromBackend({ force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Subscribe to rules change events (instant refresh when toggled elsewhere)
   useEffect(() => {
     const unsubscribe = onRulesChange(() => {
-      loadRoutingFromBackend();
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+      refreshTimerRef.current = window.setTimeout(() => {
+        loadRoutingFromBackend();
+      }, 200);
     });
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -353,8 +455,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   }, [baseTags, selectedCallTags, selectedMessageTags]);
 
   const handleSave = async () => {
+    isSavingRoutingRef.current = true;
     // Validate: if "Specific tags" is selected for calls but no tags chosen, show error
     if (forwardCalls && callFilter === "tagged" && selectedCallTags.length === 0) {
+      isSavingRoutingRef.current = false;
       toast.error("Please select at least one tag for call filtering, or choose a different filter.");
       return;
     }
@@ -468,19 +572,24 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       ]);
 
       toast.success("Routing settings saved!");
+      lastSyncedRef.current = getSnapshot();
     } catch (error) {
       console.error("Failed to save routing rule:", error);
       toast.error("Settings saved locally, but failed to sync to server");
+    } finally {
+      isSavingRoutingRef.current = false;
     }
   };
 
   const toggleCallTag = (tag: string) => {
+    markLocalChange();
     setSelectedCallTags((prev) => 
       prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]
     );
   };
 
   const toggleMessageTag = (tag: string) => {
+    markLocalChange();
     setSelectedMessageTags((prev) => 
       prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]
     );
@@ -578,7 +687,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <h3 className="font-medium text-gray-900 text-sm">Calls</h3>
           </div>
           <button
-            onClick={() => setForwardCalls(!forwardCalls)}
+            onClick={() => {
+              markLocalChange();
+              setForwardCalls(!forwardCalls);
+            }}
             className={cn(
               "relative w-10 h-5 rounded-full transition-colors",
               forwardCalls ? "bg-indigo-500" : "bg-gray-300"
@@ -606,7 +718,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
               ].map((opt) => (
                 <button
                   key={opt.id}
-                  onClick={() => setCallFilter(opt.id)}
+                  onClick={() => {
+                    markLocalChange();
+                    setCallFilter(opt.id);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
                     callFilter === opt.id
@@ -686,7 +801,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <h3 className="font-medium text-gray-900 text-sm">Messages</h3>
           </div>
           <button
-            onClick={() => setForwardMessages(!forwardMessages)}
+            onClick={() => {
+              markLocalChange();
+              setForwardMessages(!forwardMessages);
+            }}
             className={cn(
               "relative w-10 h-5 rounded-full transition-colors",
               forwardMessages ? "bg-indigo-500" : "bg-gray-300"
@@ -713,7 +831,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
               ].map((opt) => (
                 <button
                   key={opt.id}
-                  onClick={() => setMessageFilter(opt.id)}
+                  onClick={() => {
+                    markLocalChange();
+                    setMessageFilter(opt.id);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
                     messageFilter === opt.id
@@ -781,7 +902,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <h3 className="font-medium text-gray-900 text-sm">Translation</h3>
           </div>
           <button
-            onClick={() => setTranslateEnabled(!translateEnabled)}
+            onClick={() => {
+              markLocalChange();
+              setTranslateEnabled(!translateEnabled);
+            }}
             className={cn(
               "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
               translateEnabled ? "bg-indigo-500" : "bg-gray-200"
@@ -815,6 +939,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
                     <button
                       key={lang.code}
                       onClick={() => {
+                        markLocalChange();
                         setReceiveLanguage(lang.code);
                         setShowLanguageDropdown(false);
                       }}
