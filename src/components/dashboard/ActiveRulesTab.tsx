@@ -579,16 +579,21 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                               </span>
                               {/* Show transfer mode badge for transfer rules */}
                               {rule.type === "transfer" && rule.transferDetails?.mode && (
-                                <span className={cn(
-                                  "text-[10px] px-1.5 py-0.5 rounded font-medium",
-                                  rule.transferDetails.mode === "calls" ? "bg-green-100 text-green-700" :
-                                  rule.transferDetails.mode === "messages" ? "bg-blue-100 text-blue-700" :
-                                  "bg-purple-100 text-purple-700"
-                                )}>
-                                  {rule.transferDetails.mode === "calls" ? "📞 Calls only" :
-                                   rule.transferDetails.mode === "messages" ? "💬 Messages only" :
-                                   "📞💬 Both"}
-                                </span>
+                                rule.transferDetails.mode === "both" ? (
+                                  <>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">Calls</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">Messages</span>
+                                  </>
+                                ) : (
+                                  <span className={cn(
+                                    "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                    rule.transferDetails.mode === "calls"
+                                      ? "bg-purple-100 text-purple-700"
+                                      : "bg-blue-100 text-blue-700"
+                                  )}>
+                                    {rule.transferDetails.mode === "calls" ? "Calls" : "Messages"}
+                                  </span>
+                                )
                               )}
                               <span className="text-xs text-gray-400">Created {rule.createdAt}</span>
                               {rule.schedule && rule.schedule.mode !== "always" && (

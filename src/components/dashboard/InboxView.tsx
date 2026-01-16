@@ -2416,9 +2416,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     });
     
     if (newRule) {
-      toast.success(`Transfer rule created! ${transferDescription} -> ${contactName}`);
+      toast.success(`Saved transfer rule: ${transferDescription} → ${contactName}`);
     } else {
-      toast.error("Failed to create transfer rule");
+      toast.error("Failed to save transfer rule");
     }
 
     // Remember last used transfer settings per conversation
@@ -2469,6 +2469,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       toast.error("Failed to delete transfer rule");
     }
   };
+
+  const transferFormDisabled = Boolean(existingTransferRule && !transferRuleEnabled);
 
   const filteredTransferContacts = contacts.filter(c => 
     c.name.toLowerCase().includes(transferContactSearch.toLowerCase()) ||
@@ -4204,16 +4206,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     <div>
                       <p className="text-xs font-medium text-gray-800">
                         {existingTransferRule 
-                          ? (transferRuleEnabled ? "Transfer Active" : "Transfer Paused") 
-                          : "New Transfer Rule"
+                          ? (transferRuleEnabled ? "Rule enabled" : "Rule paused") 
+                          : "New rule"
                         }
                       </p>
                       <p className="text-[10px] text-gray-500">
                         {existingTransferRule 
-                          ? `→ ${existingTransferRule.transferDetails?.contactName || existingTransferRule.transferDetails?.contactPhone}`
-                          : "Configure and save to enable"
+                          ? `To: ${existingTransferRule.transferDetails?.contactName || existingTransferRule.transferDetails?.contactPhone}`
+                          : "Configure settings then save"
                         }
                       </p>
+                      {transferFormDisabled && (
+                        <p className="text-[10px] text-gray-400 mt-1">Enable the rule to edit settings.</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -4249,7 +4254,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   </div>
                 </div>
 
-                {/* Transfer Mode: Calls, Messages, Both */}
+                {/* Transfer Mode: Calls, Messages, Calls + messages */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center">
@@ -4257,18 +4262,20 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     </div>
                     <p className="text-xs font-semibold text-gray-800">What to transfer</p>
                   </div>
-                  <p className="text-[11px] text-gray-500 -mt-1">Choose whether this rule transfers calls, messages, or both.</p>
+                  <p className="text-[11px] text-gray-500 -mt-1">Choose whether this rule transfers calls, messages, or calls + messages.</p>
 
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-1">
                     <div className="grid grid-cols-3 gap-1">
                       <button
                         type="button"
+                        disabled={transferFormDisabled}
                         onClick={() => {
                           setTransferMode("calls");
                           setTransferType("all");
                         }}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferFormDisabled && "opacity-50 cursor-not-allowed",
                           transferMode === "calls"
                             ? "bg-white text-gray-900 border border-gray-200"
                             : "text-gray-600 hover:bg-white/60"
@@ -4278,9 +4285,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       </button>
                       <button
                         type="button"
+                        disabled={transferFormDisabled}
                         onClick={() => setTransferMode("messages")}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferFormDisabled && "opacity-50 cursor-not-allowed",
                           transferMode === "messages"
                             ? "bg-white text-gray-900 border border-gray-200"
                             : "text-gray-600 hover:bg-white/60"
@@ -4290,15 +4299,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       </button>
                       <button
                         type="button"
+                        disabled={transferFormDisabled}
                         onClick={() => setTransferMode("both")}
                         className={cn(
                           "px-3 py-1.5 rounded-md text-xs transition-colors",
+                          transferFormDisabled && "opacity-50 cursor-not-allowed",
                           transferMode === "both"
                             ? "bg-white text-gray-900 border border-gray-200"
                             : "text-gray-600 hover:bg-white/60"
                         )}
                       >
-                        Both
+                        Calls + messages
                       </button>
                     </div>
                   </div>
@@ -4314,9 +4325,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                         <div className="flex gap-0.5">
                           <button
                             type="button"
+                            disabled={transferFormDisabled}
                             onClick={() => setTransferType("all")}
                             className={cn(
                               "px-3 py-1 rounded-md text-xs font-medium transition-colors",
+                              transferFormDisabled && "opacity-50 cursor-not-allowed",
                               transferType === "all"
                                 ? "bg-white text-gray-900 shadow-sm"
                                 : "text-gray-500 hover:text-gray-700"
@@ -4326,9 +4339,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           </button>
                           <button
                             type="button"
+                            disabled={transferFormDisabled}
                             onClick={() => setTransferType("high-priority")}
                             className={cn(
                               "px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
+                              transferFormDisabled && "opacity-50 cursor-not-allowed",
                               transferType === "high-priority"
                                 ? "bg-white text-gray-900 shadow-sm"
                                 : "text-gray-500 hover:text-gray-700"
@@ -4358,6 +4373,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       type="text"
                       placeholder="Search or enter number..."
                       value={transferContactSearch}
+                      disabled={transferFormDisabled}
                       onChange={(e) => setTransferContactSearch(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && transferContactSearch.trim()) {
@@ -4368,16 +4384,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                           }
                         }
                       }}
-                      className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-white text-gray-700 placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className={cn(
+                        "w-full pl-9 pr-3 py-2 rounded-lg text-sm placeholder:text-gray-400 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-300",
+                        transferFormDisabled ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-700"
+                      )}
                     />
                   </div>
 
                   {transferContactSearch.trim() && isValidUsPhoneNumber(transferContactSearch) && (
                     <button
                       type="button"
+                      disabled={transferFormDisabled}
                       onClick={() => setTransferTo(`custom:${transferContactSearch.trim()}`)}
                       className={cn(
                         "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border border-dashed rounded-lg text-sm",
+                        transferFormDisabled && "opacity-50 cursor-not-allowed",
                         transferTo === `custom:${transferContactSearch.trim()}`
                           ? "border-indigo-300 bg-indigo-50 text-indigo-700"
                           : "border-gray-300 text-gray-600 hover:bg-gray-50"
@@ -4396,9 +4417,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                       <button
                         key={contact.id}
                         type="button"
+                        disabled={transferFormDisabled}
                         onClick={() => setTransferTo(contact.id)}
                         className={cn(
                           "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
+                          transferFormDisabled && "opacity-50 cursor-not-allowed",
                           transferTo === contact.id ? "bg-indigo-50" : "hover:bg-gray-50"
                         )}
                       >
@@ -4432,9 +4455,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 </Button>
                 <Button
                   onClick={handleTransferSubmit}
-                  className="flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white"
+                  disabled={transferFormDisabled}
+                  className={cn(
+                    "flex-1 h-9 text-sm bg-indigo-500 hover:bg-indigo-600 text-white",
+                    transferFormDisabled && "opacity-50 cursor-not-allowed"
+                  )}
                 >
-                  Transfer
+                  Save
                 </Button>
               </div>
             </div>
