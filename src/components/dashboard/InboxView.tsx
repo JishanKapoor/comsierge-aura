@@ -3014,19 +3014,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         )}
 
         {/* Conversation list */}
-        <div className="flex-1 min-h-0 overflow-y-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
-          {showUpdatingPill && (
-            <div className="pointer-events-none absolute top-2 right-2 z-10">
-              <div className="text-[11px] px-2 py-0.5 rounded-full bg-white/90 text-gray-700 border border-gray-200 shadow-sm flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Updating
-              </div>
-            </div>
-          )}
-
-          <div
-            className={`transition-opacity duration-300 ${isRefreshingMessages ? "opacity-70" : ""}`}
-          >
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+          <div>
             {isLoadingMessages && messages.length === 0 ? (
               <div className="divide-y divide-gray-100">
                 {[...Array(8)].map((_, i) => (

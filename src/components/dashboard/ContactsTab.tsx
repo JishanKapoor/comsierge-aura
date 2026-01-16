@@ -634,14 +634,6 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
 
       {/* Contacts List */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-visible relative">
-        {isRefreshing && contacts.length > 0 && (
-          <div className="absolute top-2 right-2 z-20">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/90 border border-gray-200 px-2 py-1 text-[10px] text-gray-600 shadow-sm">
-              <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-              Updating
-            </span>
-          </div>
-        )}
         {loading && contacts.length === 0 ? (
           <div className="divide-y divide-gray-100">
             {/* Letter header skeleton */}
@@ -664,7 +656,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
             {contacts.length === 0 ? "No contacts yet. Add your first contact!" : "No contacts match your search."}
           </div>
         ) : (
-          <div className={cn("transition-opacity duration-300", isRefreshing && "opacity-80")}>
+          <div>
             {Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
               <div key={letter}>
                 <div className="px-3 py-1 bg-gray-50">
