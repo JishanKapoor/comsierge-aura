@@ -2875,16 +2875,26 @@ const updateForwardingNumberTool = tool(
       const normalized = '+1' + digits;
       console.log("Normalized phone:", normalized);
       
+      // Get user to check their Comsierge number
+      const user = await User.findById(userId);
+      if (!user) {
+        return "User not found.";
+      }
+      
+      // Prevent setting forwarding number to user's own Comsierge number
+      if (user.phoneNumber) {
+        const comsiergeDigits = user.phoneNumber.replace(/\D/g, '').slice(-10);
+        if (digits === comsiergeDigits) {
+          return `You can't forward to your own Comsierge number (${user.phoneNumber}). That would create a loop! Please provide a different phone number where you'd like calls and messages forwarded to (like your personal cell phone).`;
+        }
+      }
+      
       // Update user's forwarding number
-      const user = await User.findByIdAndUpdate(
+      const updatedUser = await User.findByIdAndUpdate(
         userId,
         { forwardingNumber: normalized },
         { new: true }
       );
-      
-      if (!user) {
-        return "User not found.";
-      }
       
       return `Done! Your forwarding number has been updated to ${normalized}. All incoming calls and messages to your Comsierge number will now forward there.`;
     } catch (error) {
