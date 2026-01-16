@@ -1,6 +1,6 @@
 import * as chrono from "chrono-node";
 
-const EMERGENCY_RE = /(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\s+me\b|\bsos\b)/i;
+const EMERGENCY_RE = /(\bemergency\b|\burgent\b|\basap\b|\bimmediately\b|\bright\s+now\b|\b911\b|\bhelp\s+me\b|\bsos\b|\b(mom|dad|grandma|grandpa|grandmother|grandfather|mother|father|wife|husband|son|daughter|brother|sister|baby|child|kid)\s+(is|got|has|had|was|were|been)\s*(very\s+)?(ill|sick|hurt|injured|hospitalized|hospital|accident|fell|passed|died|dying|critical)\b|\b(ill|sick|hurt|injured|hospitalized)\s+(mom|dad|grandma|grandpa|mother|father)\b)/i;
 // Deadline must have actual due date context, not just the word
 const DEADLINE_RE = /(\bdeadline\s+(is|by|on|at)\b|\bdue\s+(by|on|at|today|tomorrow|friday|monday|tuesday|wednesday|thursday|saturday|sunday)\b|\bdue\s+date\b|\bsubmit\s+by\b|\bpayment\s+due\b)/i;
 // Meeting must have time context or action words, not just the word "meeting"

@@ -1884,9 +1884,10 @@ router.post("/webhook/sms", async (req, res) => {
               if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
                 const transferClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
                 
-                // Build transferred message with sender info
+                // Build transferred message with sender info (name + phone)
                 const senderName = contact?.name || From;
-                const transferredBody = `[Transferred SMS from ${senderName}]\n${Body}`;
+                const senderPhone = From;
+                const transferredBody = `[Transfer from ${senderName} (${senderPhone})]\n${Body}`;
                 
                 const transferResult = await transferClient.messages.create({
                   body: transferredBody,
