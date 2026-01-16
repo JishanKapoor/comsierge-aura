@@ -372,16 +372,13 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   // Filter calls - API already filters by type, just do client-side search
   // For voicemail filter, we filter client-side since API doesn't have voicemail filter
   // For routed filter, show only forwarded or transferred calls
-  // Blocked calls only appear in "blocked" filter, not in any other filter
+  // Blocked calls show everywhere; "blocked" filter shows only blocked calls
   const filteredCalls = calls.filter((call) => {
     const isBlockedCall = call.status === "blocked" || call.isBlocked;
     
     // Blocked filter - show only blocked calls
     if (filter === "blocked") {
       if (!isBlockedCall) return false;
-    } else {
-      // All other filters - exclude blocked calls
-      if (isBlockedCall) return false;
     }
     
     // Voicemail filter - show only calls with voicemails
