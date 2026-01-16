@@ -1638,19 +1638,24 @@ router.post("/webhook/sms", async (req, res) => {
         // The user doesn't receive the message directly - it goes to the transfer target
         // But the message is still recorded in the user's dashboard as "transferred"
         // ===============================================
-        const transferRules = await Rule.find({
-          userId: user._id,
-          type: "transfer",
-          active: true
-        });
-        
-        console.log(`   🔄 Found ${transferRules.length} active transfer rules for messages`);
-        
-        let wasTransferred = false;
-        let transferredTo = null;
-        let matchedTransferRule = null;
-        
-        for (const rule of transferRules) {
+        // Twilio can retry webhooks; if we already marked this inbound message as transferred,
+        // do NOT transfer again.
+        let wasTransferred = !!savedMessage?.wasTransferred;
+        let transferredTo = savedMessage?.transferredTo || null;
+        let matchedTransferRule = savedMessage?.matchedTransferRule || null;
+
+        if (wasTransferred) {
+          console.log(`   🔁 Message already transferred (sid=${MessageSid}); skipping transfer send`);
+        } else {
+          const transferRules = await Rule.find({
+            userId: user._id,
+            type: "transfer",
+            active: true
+          });
+          
+          console.log(`   🔄 Found ${transferRules.length} active transfer rules for messages`);
+          
+          for (const rule of transferRules) {
           const transferDetails = rule.transferDetails || {};
           const conditions = rule.conditions || {};
           const actions = rule.actions || {};
@@ -1909,6 +1914,33 @@ router.post("/webhook/sms", async (req, res) => {
                   transferredTwilioSid: transferResult.sid,
                   matchedTransferRule: rule.rule
                 });
+
+                // ALSO persist an outbound message to the transfer recipient so a conversation
+                // appears for them in the inbox (e.g., Jake).
+                try {
+                  const recipientPhone = normalizeToE164ish(transferTargetPhone) || transferTargetPhone;
+                  await saveMessageToDB({
+                    userId: user._id,
+                    contactPhone: recipientPhone,
+                    contactName: transferDetails.contactName || "Unknown",
+                    direction: "outgoing",
+                    body: transferredBody,
+                    status: "pending",
+                    twilioSid: transferResult.sid,
+                    fromNumber: normalizedTo,
+                    toNumber: recipientPhone,
+                    isRead: true,
+                    metadata: {
+                      transferCopy: true,
+                      transferSourceFrom: normalizeToE164ish(From),
+                      transferSourceName: contact?.name || null,
+                      transferSourceMessageId: savedMessage._id,
+                      matchedTransferRule: rule.rule,
+                    },
+                  });
+                } catch (persistErr) {
+                  console.error(`   ⚠️ Failed to persist transfer-recipient message:`, persistErr.message);
+                }
                 
               } else {
                 console.log(`   ❌ No TwilioAccount found for ${To} - cannot transfer SMS`);
@@ -1918,6 +1950,7 @@ router.post("/webhook/sms", async (req, res) => {
             }
             
             break; // Only process first matching transfer rule
+          }
           }
         }
         
