@@ -16,6 +16,15 @@ import { detectPriorityContext } from "../utils/priorityContext.js";
 
 const router = express.Router();
 
+// When "Urgent only" is enabled, allow a short follow-up window so split messages
+// ("Will u be there at 7" + "For date") still reach the user.
+// This is anchored by the last *direct* urgent-forward so it doesn't self-extend forever.
+const URGENT_FOLLOWUP_WINDOW_MS = Number(process.env.URGENT_FOLLOWUP_WINDOW_MS) || 45_000;
+
+// Include short bursts of split texts in a single forwarded SMS for context.
+// Example: "meeting" + "at 6" + "is cancelled".
+const FORWARD_CONTEXT_WINDOW_MS = Number(process.env.FORWARD_CONTEXT_WINDOW_MS) || 90_000;
+
 // Translation helper using Google Translate (free endpoint)
 async function translateText(text, targetLang, sourceLang = 'auto') {
   console.log(`   🌐 translateText called: targetLang=${targetLang}, text="${text?.substring(0, 30)}..."`);
@@ -1236,7 +1245,9 @@ router.post("/webhook/sms", async (req, res) => {
         const existingConversation = await Conversation.findOne({
           userId: user._id,
           contactPhone: normalizeToE164ish(From),
-        }).select("isPriority priorityContext lastAiAnalysis priority");
+        }).select(
+          "isPriority priorityContext lastAiAnalysis priority lastForwardedAt lastForwardedTo forwardBurstAnchorAt forwardBurstAnchorTo"
+        );
         
         try {
           console.log(`   Running AI analysis...`);
@@ -1389,6 +1400,7 @@ router.post("/webhook/sms", async (req, res) => {
         console.log(`   📢 Found ${messageNotifyRules.length} message-notify rules`);
 
         // Evaluate message notification rules
+        let shouldSetUrgentBurstAnchor = false;
         for (const rule of messageNotifyRules) {
           const conditions = rule.conditions || {};
           console.log(`   📢 Rule conditions:`, JSON.stringify(conditions));
@@ -1465,6 +1477,27 @@ router.post("/webhook/sms", async (req, res) => {
           // Held messages are considered spam - they should only be forwarded if user selects "all"
           const messagePriority = computeEffectivePriority(Body, aiAnalysis?.priority);
           const isSpamOrHeld = isHeld || messageStatus === "spam" || spamAnalysis?.isSpam === true;
+
+          // Burst-aware follow-up logic for "urgent".
+          // If we JUST forwarded an urgent message from this contact, forward the immediate follow-up
+          // even if it isn't independently classified as high priority.
+          const normalizedDest = user.forwardingNumber ? normalizeToE164ish(user.forwardingNumber) : null;
+          const anchorAt = existingConversation?.forwardBurstAnchorAt
+            ? new Date(existingConversation.forwardBurstAnchorAt)
+            : null;
+          const anchorTo = existingConversation?.forwardBurstAnchorTo
+            ? normalizeToE164ish(existingConversation.forwardBurstAnchorTo)
+            : null;
+          const inUrgentFollowupWindow =
+            !!anchorAt && !Number.isNaN(anchorAt.getTime()) && (now.getTime() - anchorAt.getTime()) <= URGENT_FOLLOWUP_WINDOW_MS;
+          const urgentFollowupAllowed =
+            priorityFilter === "urgent" &&
+            !isSpamOrHeld &&
+            messagePriority !== "high" &&
+            !!normalizedDest &&
+            !!anchorTo &&
+            anchorTo === normalizedDest &&
+            inUrgentFollowupWindow;
           
           console.log(`   Message priority: ${messagePriority}, isSpamOrHeld: ${isSpamOrHeld}, isSavedContact: ${senderContext.isSavedContact}`);
           
@@ -1493,6 +1526,13 @@ router.post("/webhook/sms", async (req, res) => {
                 console.log(`   Held/spam message - skipping notification (filter: urgent)`);
               } else if (messagePriority === "high") {
                 shouldNotify = true;
+                shouldSetUrgentBurstAnchor = true;
+                console.log(`   Urgent match - will set follow-up burst anchor`);
+              } else if (urgentFollowupAllowed) {
+                shouldNotify = true;
+                console.log(
+                  `   Urgent follow-up window active - forwarding split follow-up message (windowMs=${URGENT_FOLLOWUP_WINDOW_MS})`
+                );
               } else {
                 shouldNotify = false;
                 console.log(`   Non-urgent message - skipping notification (filter: urgent)`);
@@ -2010,23 +2050,53 @@ router.post("/webhook/sms", async (req, res) => {
               console.log(`   Found TwilioAccount for ${To}: ${twilioAccount.accountSid.slice(0, 8)}...`);
               const forwardClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
               
-              // Build forwarded message with sender info
+              // Build forwarded message with sender info (+ recent context)
               const senderName = contact?.name || From;
               let forwardedBody;
+
+              // Collect recent incoming messages from this sender that haven't been forwarded/transferred yet.
+              // This makes urgent-only forwarding feel conversation-aware without forwarding every low-signal fragment.
+              let contextMessages = [];
+              try {
+                const cutoff = new Date(now.getTime() - FORWARD_CONTEXT_WINDOW_MS);
+                const contactPhoneKey = savedMessage?.contactPhone || normalizeToE164ish(From);
+                contextMessages = await Message.find({
+                  userId: user._id,
+                  contactPhone: contactPhoneKey,
+                  direction: "incoming",
+                  createdAt: { $gte: cutoff },
+                  wasForwarded: false,
+                  wasTransferred: false,
+                  status: { $nin: ["blocked"] },
+                })
+                  .sort({ createdAt: 1 })
+                  .limit(4);
+              } catch (ctxErr) {
+                console.error(`   ⚠️ Failed to load forward context messages:`, ctxErr.message);
+              }
+
+              const contextText =
+                contextMessages && contextMessages.length > 1
+                  ? contextMessages
+                      .map((m) => String(m.body || "").trim())
+                      .filter((t) => t)
+                      .map((t) => `- ${t}`)
+                      .join("\n")
+                  : String(Body || "").trim();
               
               console.log(`   📢 Translation check: translateEnabled=${translateEnabled}, receiveLanguage=${receiveLanguage}`);
               
               // Translate the message if translation is enabled
               if (translateEnabled && receiveLanguage && receiveLanguage !== 'en') {
                 console.log(`   🌐 TRANSLATING message to ${receiveLanguage}...`);
-                const translatedBody = await translateText(Body, receiveLanguage);
+                const translatedBody = await translateText(contextText, receiveLanguage);
                 console.log(`   🌐 Translation result: "${translatedBody?.substring(0, 50)}..."`);
                 // Include both original and translated
-                forwardedBody = `[SMS from ${senderName}]\n${Body}\n\n[Translated]\n${translatedBody}`;
+                forwardedBody = `[SMS from ${senderName}]\n${contextText}\n\n[Translated]\n${translatedBody}`;
                 console.log(`   🌐 Final forwarded body length: ${forwardedBody.length}`);
               } else {
                 console.log(`   📢 NOT translating - translateEnabled=${translateEnabled}, lang=${receiveLanguage}`);
-                forwardedBody = `[SMS from ${senderName}]\n${Body}`;
+                forwardedBody = `[SMS from ${senderName}]\n${contextText}`;
               }
               
               // Use the normalized To number
@@ -2049,6 +2119,53 @@ router.post("/webhook/sms", async (req, res) => {
                 forwardedAt: new Date(),
                 forwardedTwilioSid: forwardResult.sid
               });
+
+              // If we forwarded a context burst, mark the other included messages as forwarded too
+              // so they don't get forwarded again on the next fragment.
+              if (contextMessages && contextMessages.length > 1) {
+                try {
+                  const ids = contextMessages
+                    .map((m) => m?._id)
+                    .filter((id) => id && String(id) !== String(savedMessage._id));
+                  if (ids.length) {
+                    await Message.updateMany(
+                      { _id: { $in: ids } },
+                      {
+                        $set: {
+                          wasForwarded: true,
+                          forwardedTo: user.forwardingNumber,
+                          forwardedAt: new Date(),
+                          forwardedTwilioSid: forwardResult.sid,
+                        },
+                      }
+                    );
+                  }
+                } catch (ctxMarkErr) {
+                  console.error(`   ⚠️ Failed to mark context messages as forwarded:`, ctxMarkErr.message);
+                }
+              }
+
+              // Persist forwarding metadata to the conversation so we can support urgent follow-ups.
+              // IMPORTANT: Only set the *burst anchor* when the message met the urgent filter directly.
+              // Do NOT move the anchor forward for follow-ups, otherwise urgent forwarding would
+              // self-extend during long chat bursts.
+              try {
+                const convSet = {
+                  lastForwardedAt: new Date(),
+                  lastForwardedTo: user.forwardingNumber,
+                };
+                if (shouldSetUrgentBurstAnchor) {
+                  convSet.forwardBurstAnchorAt = new Date();
+                  convSet.forwardBurstAnchorTo = user.forwardingNumber;
+                }
+                await Conversation.findOneAndUpdate(
+                  { userId: user._id, contactPhone: normalizeToE164ish(From) },
+                  { $set: convSet },
+                  { upsert: false }
+                );
+              } catch (convForwardErr) {
+                console.error(`   ⚠️ Failed to persist conversation forward metadata:`, convForwardErr.message);
+              }
               
             } else {
               console.log(`   ❌ No TwilioAccount found for ${To} - cannot forward SMS`);

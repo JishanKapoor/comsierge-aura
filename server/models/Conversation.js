@@ -135,6 +135,28 @@ const conversationSchema = new mongoose.Schema(
         default: "en",
       },
     },
+
+    // Tracks SMS forwarding to the user's personal forwarding number.
+    // Used to support burst-aware forwarding (people often split one thought into multiple messages).
+    lastForwardedAt: {
+      type: Date,
+      default: null,
+    },
+    lastForwardedTo: {
+      type: String,
+      default: null,
+    },
+    // Anchor timestamp for a short follow-up window. This should be set only when a message is
+    // forwarded due to meeting the priority filter directly (not via follow-up), so the window
+    // does NOT extend indefinitely during a long chat.
+    forwardBurstAnchorAt: {
+      type: Date,
+      default: null,
+    },
+    forwardBurstAnchorTo: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
