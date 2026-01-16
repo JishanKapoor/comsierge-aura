@@ -348,6 +348,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [isRefreshingMessages, setIsRefreshingMessages] = useState(false);
+  const [showUpdatingPill, setShowUpdatingPill] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
@@ -418,18 +419,34 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const conversationsRequestId = useRef(0);
   // Minimum time to keep the "updating" state visible so UI changes feel subtle (not flash/jank)
   const conversationsMinTransitionUntilRef = useRef<number>(0);
+  const refreshIndicatorTimerRef = useRef<number | null>(null);
 
   // Reusable function to load conversations from API
   const loadConversations = useCallback(
-    async (opts?: { showLoading?: boolean; replace?: boolean }) => {
+    async (opts?: { showLoading?: boolean; replace?: boolean; showIndicator?: boolean }) => {
       const showLoading = Boolean(opts?.showLoading);
       const replace = Boolean(opts?.replace);
+      const showIndicator = Boolean(opts?.showIndicator);
 
       const requestId = ++conversationsRequestId.current;
       if (showLoading) {
         setIsLoadingMessages(true);
-      } else {
+      } else if (showIndicator) {
         setIsRefreshingMessages(true);
+        if (refreshIndicatorTimerRef.current) {
+          window.clearTimeout(refreshIndicatorTimerRef.current);
+        }
+        setShowUpdatingPill(false);
+        refreshIndicatorTimerRef.current = window.setTimeout(() => {
+          setShowUpdatingPill(true);
+        }, 400);
+      } else {
+        // Background refreshes should not show the updating UI
+        if (refreshIndicatorTimerRef.current) {
+          window.clearTimeout(refreshIndicatorTimerRef.current);
+        }
+        setShowUpdatingPill(false);
+        setIsRefreshingMessages(false);
       }
 
       try {
@@ -530,8 +547,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           setIsLoadingMessages(false);
         }
 
-        if (!showLoading && requestId === conversationsRequestId.current) {
-          window.setTimeout(() => setIsRefreshingMessages(false), 250);
+        if (!showLoading && showIndicator && requestId === conversationsRequestId.current) {
+          if (refreshIndicatorTimerRef.current) {
+            window.clearTimeout(refreshIndicatorTimerRef.current);
+          }
+          window.setTimeout(() => {
+            setShowUpdatingPill(false);
+            setIsRefreshingMessages(false);
+          }, 250);
         }
       }
     },
@@ -555,7 +578,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
 
     const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
-    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading });
+    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading, showIndicator: isFilterChange });
     hasInitiallyLoaded.current = true;
     isFilterTransition.current = false;
   }, [activeFilter, loadConversations]);
@@ -563,7 +586,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   // Poll for new messages every 5 seconds
   useEffect(() => {
     const pollInterval = setInterval(() => {
-      loadConversations({ showLoading: false, replace: false }); // Silently refresh
+      loadConversations({ showLoading: false, replace: false, showIndicator: false }); // Silently refresh
     }, 5000);
     return () => clearInterval(pollInterval);
   }, [loadConversations]);
@@ -572,7 +595,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   useEffect(() => {
     const unsubscribe = onContactsChange(() => {
       refreshContacts();
-      loadConversations({ showLoading: false, replace: false }); // Refresh to update contact names
+      loadConversations({ showLoading: false, replace: false, showIndicator: false }); // Refresh to update contact names
     });
     return unsubscribe;
   }, [refreshContacts, loadConversations]);
@@ -2334,7 +2357,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       if (success) {
         toast.success(wasPinned ? "Conversation unpinned" : "Conversation pinned");
         // Ensure server truth is reflected (prevents mobile-only weirdness)
-        await loadConversations({ showLoading: false, replace: true });
+        await loadConversations({ showLoading: false, replace: true, showIndicator: true });
         setSelectedMessageId(conversationId);
       } else {
         // Revert optimistic update
@@ -2370,11 +2393,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (success) {
       toast.success("Removed from priority");
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
     } else {
       // Reconcile with server state
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
       toast.error("Failed to remove priority");
     }
     setShowMoreMenu(false);
@@ -2580,10 +2603,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (success) {
       toast.success("Contact blocked");
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
     } else {
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
       toast.error("Failed to block contact");
     }
     setShowMoreMenu(false);
@@ -2606,10 +2629,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (success) {
       toast.success("Contact unblocked");
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
     } else {
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
       toast.error("Failed to unblock contact");
     }
     setShowMoreMenu(false);
@@ -2637,10 +2660,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (success) {
       toast.success(isCurrentlyHeld ? "Message released from hold" : "Message put on hold");
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
     } else {
       conversationsMinTransitionUntilRef.current = Date.now() + 250;
-      await loadConversations({ showLoading: false, replace: true });
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
       toast.error("Failed to update hold status");
     }
     setShowMoreMenu(false);
@@ -2939,7 +2962,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isHeld: false }));
                   await Promise.all(promises);
                   toast.success("All messages released from hold");
-                  await loadConversations({ showLoading: false, replace: true });
+                  await loadConversations({ showLoading: false, replace: true, showIndicator: true });
                 }}
                 className="px-2 py-1 text-xs bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors"
               >
@@ -2953,7 +2976,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     await Promise.all(promises);
                     toast.success("All held messages deleted");
                     setSelectedMessageId(null);
-                    await loadConversations({ showLoading: false, replace: true });
+                    await loadConversations({ showLoading: false, replace: true, showIndicator: true });
                   }
                 }}
                 className="px-2 py-1 text-xs bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
@@ -2980,7 +3003,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isBlocked: false }));
                   await Promise.all(promises);
                   toast.success("All contacts unblocked");
-                  await loadConversations({ showLoading: false, replace: true });
+                  await loadConversations({ showLoading: false, replace: true, showIndicator: true });
                 }}
                 className="px-2 py-1 text-xs bg-white border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
               >
@@ -2992,7 +3015,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
         {/* Conversation list */}
         <div className="flex-1 min-h-0 overflow-y-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
-          {(isRefreshingMessages || (isLoadingMessages && messages.length > 0)) && (
+          {showUpdatingPill && (
             <div className="pointer-events-none absolute top-2 right-2 z-10">
               <div className="text-[11px] px-2 py-0.5 rounded-full bg-white/90 text-gray-700 border border-gray-200 shadow-sm flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -3002,7 +3025,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           )}
 
           <div
-            className={`transition-opacity duration-300 ${(isRefreshingMessages || (isLoadingMessages && messages.length > 0)) ? "opacity-70" : ""}`}
+            className={`transition-opacity duration-300 ${isRefreshingMessages ? "opacity-70" : ""}`}
           >
             {isLoadingMessages && messages.length === 0 ? (
               <div className="divide-y divide-gray-100">
@@ -3088,7 +3111,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   if (success) {
                     toast.success(wasPinned ? "Unpinned" : "Pinned");
                     // Force refresh to ensure sort order persists
-                    await loadConversations({ showLoading: false, replace: true });
+                    await loadConversations({ showLoading: false, replace: true, showIndicator: true });
                   } else {
                     console.warn("[togglePinFromRow] Update failed (success=false)");
                     // Revert
