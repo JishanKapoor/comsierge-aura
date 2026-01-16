@@ -2795,6 +2795,10 @@ router.post("/webhook/forward-status", async (req, res) => {
       response.say({ voice: "alice" }, "Thank you. Goodbye.");
     } else {
       console.log(`   ✅ Call was answered, no voicemail needed`);
+      // IMPORTANT: End the caller leg explicitly.
+      // Without this, the caller can remain in a ringing/connected state after the dialed party hangs up,
+      // especially with the press-1 screening flow (callee may have answered but never bridged).
+      response.hangup();
     }
     
     res.type("text/xml");
