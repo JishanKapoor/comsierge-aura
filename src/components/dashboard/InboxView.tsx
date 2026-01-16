@@ -572,9 +572,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     previousFilter.current = activeFilter;
 
     if (isFilterChange) {
-      // Keep current list visible but show a subtle updating state.
       setSelectedMessageId(null);
-      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      // Clear list to avoid showing stale data for the new filter.
+      setMessages([]);
+      setIsLoadingMessages(true);
     }
 
     const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
