@@ -201,8 +201,12 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       const callRule = forwardRules.find((r) => r.active) ?? forwardRules[0];
       const msgRule = notifyRules.find((r) => r.active) ?? notifyRules[0];
 
+      const persisted =
+        safeParseJson<Record<string, any>>(localStorage.getItem(STORAGE_KEY)) || {};
+
       if (callRule) {
         setForwardCalls(Boolean(callRule.active));
+        persisted.forwardCalls = Boolean(callRule.active);
         const mode = callRule.conditions?.mode || "all";
         const modeToFilter: Record<string, CallFilter> = {
           all: "all",
@@ -218,12 +222,14 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         }
       } else {
         setForwardCalls(false);
+        persisted.forwardCalls = false;
         setCallFilter("all");
         setSelectedCallTags([]);
       }
 
       if (msgRule) {
         setForwardMessages(Boolean(msgRule.active));
+        persisted.forwardMessages = Boolean(msgRule.active);
         const priorityFilter = msgRule.conditions?.priorityFilter || "all";
         setMessageFilter(priorityFilter as MessageFilter);
         if (Array.isArray(msgRule.conditions?.notifyTags)) {
@@ -239,10 +245,18 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         }
       } else {
         setForwardMessages(false);
+        persisted.forwardMessages = false;
         setMessageFilter("all");
         setSelectedMessageTags([]);
         setTranslateEnabled(false);
         setReceiveLanguage("es");
+      }
+
+      // Persist toggles to avoid stale UI after refresh
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+      } catch {
+        // ignore
       }
     } catch (e) {
       console.error("Failed to load routing rules from backend:", e);

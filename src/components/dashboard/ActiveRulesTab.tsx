@@ -572,6 +572,25 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                                 }
                                 
                                 return `Transfer ${what} from ${srcName} to ${tgtName}`;
+                              })() : rule.type === "forward" ? (() => {
+                                const mode = (rule.conditions?.mode as string | undefined) || "all";
+                                const tags = (rule.conditions?.tags as string[] | undefined) || [];
+
+                                if (mode === "favorites") return `Route calls from favorites to ${destination}`;
+                                if (mode === "saved") return `Route calls from saved contacts to ${destination}`;
+                                if (mode === "tags") {
+                                  const tagText = tags.length ? ` (${tags.join(", ")})` : "";
+                                  return `Route calls from tagged contacts${tagText} to ${destination}`;
+                                }
+                                return `Route all calls to ${destination}`;
+                              })() : rule.type === "message-notify" ? (() => {
+                                const pf = (rule.conditions?.priorityFilter as string | undefined) || "all";
+                                const label = pf === "urgent" ? "urgent" : pf === "important" ? "important" : "all";
+                                const translate = Boolean(rule.conditions?.translateEnabled);
+                                const lang = String(rule.conditions?.receiveLanguage || "en").toUpperCase();
+                                return translate
+                                  ? `Route ${label} messages to ${destination} (translate ${lang})`
+                                  : `Route ${label} messages to ${destination}`;
                               })() : rule.rule}
                             </p>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
