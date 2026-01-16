@@ -5100,37 +5100,101 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
     
     // Check for pending clarification in chat history
     let pendingClarification = null;
+    let pendingDNDClarification = null;
+    
     for (let i = chatHistory.length - 1; i >= 0; i--) {
       const msg = chatHistory[i];
-      if (msg.role === "assistant" && msg.text && msg.text.startsWith("CLARIFICATION_NEEDED|")) {
-        const parts = msg.text.split("|");
-        if (parts.length >= 3) {
-          pendingClarification = {
-            parsedRule: JSON.parse(parts[1]),
-            question: parts[2],
-            originalDescription: msg.originalDescription
+      if (msg.role === "assistant" && msg.text) {
+        // Check for DND clarification (asks about calls and messages)
+        if (msg.text.includes("CLARIFICATION_NEEDED:") && msg.text.includes("Do Not Disturb") && 
+            (msg.text.includes("**Calls**") || msg.text.includes("Calls:"))) {
+          // Extract time info if present
+          const timeMatch = msg.text.match(/from\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+to\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+          pendingDNDClarification = {
+            startTime: timeMatch?.[1] || null,
+            endTime: timeMatch?.[2] || null,
           };
+          break;
         }
-        break;
-      }
-      // Also check for clarification questions in normal text
-      if (msg.role === "assistant" && msg.text && (
-        msg.text.includes("Who should these messages be forwarded to?") ||
-        msg.text.includes("Which contact should receive") ||
-        msg.text.includes("Please provide a contact name or phone")
-      )) {
-        // Look back further for the original rule request
-        for (let j = i - 1; j >= 0; j--) {
-          if (chatHistory[j].role === "user") {
+        
+        // Check for smart rule clarification
+        if (msg.text.startsWith("CLARIFICATION_NEEDED|")) {
+          const parts = msg.text.split("|");
+          if (parts.length >= 3) {
             pendingClarification = {
-              originalDescription: chatHistory[j].text,
-              question: msg.text
+              parsedRule: JSON.parse(parts[1]),
+              question: parts[2],
+              originalDescription: msg.originalDescription
             };
-            break;
           }
+          break;
         }
-        break;
+        
+        // Also check for clarification questions in normal text
+        if (msg.text.includes("Who should these messages be forwarded to?") ||
+            msg.text.includes("Which contact should receive") ||
+            msg.text.includes("Please provide a contact name or phone")) {
+          // Look back further for the original rule request
+          for (let j = i - 1; j >= 0; j--) {
+            if (chatHistory[j].role === "user") {
+              pendingClarification = {
+                originalDescription: chatHistory[j].text,
+                question: msg.text
+              };
+              break;
+            }
+          }
+          break;
+        }
       }
+    }
+    
+    // Handle DND clarification response - parse user's calls/messages preferences and execute
+    if (pendingDNDClarification && message.toLowerCase() !== "cancel" && message.toLowerCase() !== "nevermind") {
+      console.log("Handling DND clarification response:", message);
+      const lowerMsg = message.toLowerCase();
+      
+      // Parse calls preference
+      let callsMode = "none"; // default for DND
+      if (/\b(all\s*calls|every\s*call|calls\s*ring|ring\s*for\s*all)\b/i.test(lowerMsg)) {
+        callsMode = "all";
+      } else if (/\b(favorite|favourites?)\b/i.test(lowerMsg)) {
+        callsMode = "favorites";
+      } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
+        callsMode = "saved";
+      } else if (/\b(no\s*calls?|none|block\s*calls?|no\s*ring|don'?t\s*ring|silent)\b/i.test(lowerMsg)) {
+        callsMode = "none";
+      }
+      
+      // Parse messages preference
+      let messagesMode = "important"; // default for DND
+      if (/\b(all\s*messages?|every\s*message|all\s*notifications?)\b/i.test(lowerMsg)) {
+        messagesMode = "all";
+      } else if (/\b(important|priority)\b/i.test(lowerMsg) && !/\bnot\s+important\b/i.test(lowerMsg)) {
+        messagesMode = "important";
+      } else if (/\b(urgent|critical|emergency)\b/i.test(lowerMsg)) {
+        messagesMode = "urgent";
+      } else if (/\b(no\s*messages?|no\s*notifications?|none|silent|mute)\b/i.test(lowerMsg) && !/\b(important|urgent)\b/i.test(lowerMsg)) {
+        messagesMode = "none";
+      }
+      
+      console.log("Parsed DND preferences:", { callsMode, messagesMode, schedule: pendingDNDClarification });
+      
+      // Build schedule if times were specified
+      const schedule = pendingDNDClarification.startTime && pendingDNDClarification.endTime
+        ? { startTime: pendingDNDClarification.startTime, endTime: pendingDNDClarification.endTime }
+        : null;
+      
+      // Execute set_routing_preferences directly
+      const result = await setRoutingPreferencesTool.invoke({
+        userId,
+        callsMode,
+        messagesMode,
+        schedule,
+        isDefault: !schedule, // If no schedule, this is the default routing
+      });
+      
+      return result;
     }
     
     // If there's a pending clarification and user responded, complete the rule
