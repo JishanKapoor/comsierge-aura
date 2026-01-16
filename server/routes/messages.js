@@ -813,14 +813,15 @@ router.delete("/:messageId", async (req, res) => {
     }
 
     // Update conversation's last message if needed
+    const phoneVariations = buildPhoneCandidates(message.contactPhone);
     const latestMsg = await Message.findOne({
       userId: req.user._id,
-      contactPhone: message.contactPhone,
+      contactPhone: { $in: phoneVariations },
     }).sort({ createdAt: -1 });
 
     if (latestMsg) {
       await Conversation.findOneAndUpdate(
-        { userId: req.user._id, contactPhone: message.contactPhone },
+        { userId: req.user._id, contactPhone: { $in: phoneVariations } },
         {
           lastMessage: latestMsg.body.substring(0, 100),
           lastMessageAt: latestMsg.createdAt,
@@ -830,7 +831,7 @@ router.delete("/:messageId", async (req, res) => {
       // No messages left, delete conversation
       await Conversation.findOneAndDelete({
         userId: req.user._id,
-        contactPhone: message.contactPhone,
+        contactPhone: { $in: phoneVariations },
       });
     }
 

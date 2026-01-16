@@ -59,6 +59,7 @@ import {
   fetchConversations, 
   fetchThread, 
   updateConversation,
+  deleteMessage,
   deleteConversation,
   deleteConversationById,
   searchMessages,
@@ -2349,6 +2350,59 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     setShowMoreMenu(false);
   };
 
+  const handleDeleteSingleMessage = async (bubble: ChatBubble) => {
+    if (!selectedMessage) return;
+    if (bubble.role === "ai") return;
+
+    const isRealMessageId = !String(bubble.id).includes("-local-") && !String(bubble.id).includes("-seed-");
+    const confirmed = window.confirm("Delete this message permanently? This can't be undone.");
+    if (!confirmed) return;
+
+    // Optimistic remove
+    setThreadsByContactId((prev) => {
+      const current = prev[selectedMessage.contactId] ?? [];
+      return {
+        ...prev,
+        [selectedMessage.contactId]: current.filter((b) => b.id !== bubble.id),
+      };
+    });
+
+    if (!isRealMessageId) {
+      toast.success("Message removed");
+      return;
+    }
+
+    const ok = await deleteMessage(String(bubble.id));
+    if (!ok) {
+      toast.error("Failed to delete message");
+      // Best-effort refresh from server truth
+      try {
+        const latest = await fetchThread(selectedMessage.contactPhone);
+        const bubbles: ChatBubble[] = (latest ?? []).map((m) => ({
+          id: m.id,
+          role: m.direction === "incoming" ? "incoming" : "outgoing",
+          content: m.body,
+          timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase(),
+          status: m.status,
+          twilioErrorCode: m.metadata?.twilioErrorCode ?? null,
+          wasForwarded: m.wasForwarded || false,
+          forwardedTo: m.forwardedTo || undefined,
+          wasTransferred: m.wasTransferred || false,
+          transferredTo: m.transferredTo || undefined,
+          attachments: m.attachments || [],
+        }));
+        setThreadsByContactId((prev) => ({ ...prev, [selectedMessage.contactId]: bubbles }));
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    toast.success("Message deleted");
+    // Refresh conversation preview list (lastMessage may have changed)
+    await loadConversations({ showLoading: false, replace: false });
+  };
+
   const handleTransferSubmit = async () => {
     if (!transferTo) {
       toast.error("Please select a contact or enter a number to transfer to");
@@ -3573,6 +3627,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                                 : "bg-white border border-gray-200 text-gray-700 rounded-bl-sm"
                           )}
                         >
+                          {/* Delete message (subtle, hover) */}
+                          {!isAi && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSingleMessage(bubble)}
+                              className={cn(
+                                "absolute -top-2 -right-2 p-1 rounded-md border border-gray-200 bg-white shadow-sm",
+                                "opacity-0 group-hover:opacity-100 transition-opacity",
+                                "text-gray-400 hover:text-red-600 hover:border-red-200"
+                              )}
+                              title="Delete message"
+                              aria-label="Delete message"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           {isAi && (
                             <div className="flex items-center gap-1.5 mb-1">
                               <Sparkles className="w-3 h-3 text-purple-500" />
@@ -3584,24 +3655,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                             <div className="flex items-center gap-1 mb-1 text-purple-600">
                               <ArrowRightLeft className="w-3 h-3" />
                               <span className="text-[10px] font-medium">
-                                Transferred via active rule
+                                Transferred via rule
                                 {bubble.transferredTo && (
-                                  <span className="text-purple-500"> → {(() => {
-                                    const contact = contacts?.find(c => 
-                                      c.phone === bubble.transferredTo || 
-                                      c.phone?.replace(/\D/g, '') === bubble.transferredTo?.replace(/\D/g, '')
-                                    );
-                                    return contact?.name || bubble.transferredTo;
+                                  <span className="text-purple-500"> • To: {(() => {
+                                    const toNorm = normalizePhone(bubble.transferredTo);
+                                    const contact = contacts?.find((c) => normalizePhone(c.phone) === toNorm);
+                                    const toLabel = contact?.name || bubble.transferredTo;
+                                    return toLabel;
                                   })()}</span>
                                 )}
                               </span>
-                            </div>
-                          )}
-                          {/* Show forwarded indicator for incoming messages */}
-                          {bubble.wasForwarded && !isOutgoing && !bubble.wasTransferred && (
-                            <div className="flex items-center gap-1 mb-1 text-green-600">
-                              <Forward className="w-3 h-3" />
-                              <span className="text-[10px] font-medium">Forwarded to your phone</span>
                             </div>
                           )}
                           
