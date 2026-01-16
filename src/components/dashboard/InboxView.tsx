@@ -46,12 +46,14 @@ import {
   Forward,
   Play,
   Pause,
+  Check,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { languages } from "./mockData";
 import type { Contact, Message } from "./types";
 import { fetchContacts, onContactsChange } from "./contactsApi";
-import { createRule, ActiveRule } from "./rulesApi";
+import { createRule, ActiveRule, fetchRules, toggleRule as toggleRuleApi, deleteRule as deleteRuleApi } from "./rulesApi";
 import { loadTwilioAccounts } from "./adminStore";
 import { 
   fetchConversations, 
@@ -803,6 +805,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [transferTo, setTransferTo] = useState<string>("");
   const [transferContactSearch, setTransferContactSearch] = useState("");
+  const [existingTransferRule, setExistingTransferRule] = useState<ActiveRule | null>(null);
+  const [transferRuleEnabled, setTransferRuleEnabled] = useState(false);
 
   // Fetch contacts from API on mount
   useEffect(() => {
@@ -1925,27 +1929,76 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
   };
 
-  const handleTransfer = () => {
+  const handleTransfer = async () => {
+    // Check for existing transfer rule for this conversation
+    let existingRule: ActiveRule | null = null;
     if (selectedMessage) {
-      const prefs = transferPrefsByConversation[selectedMessage.id];
-      if (prefs) {
-        setTransferType(prefs.type);
-        setPriorityFilter(prefs.priorityFilter);
-        setTransferTo(prefs.to);
-        setTransferMode(prefs.mode || "both");
-        if (prefs.to.startsWith("custom:")) {
-          setTransferContactSearch(prefs.to.replace("custom:", ""));
-        } else {
-          setTransferContactSearch("");
+      try {
+        const rules = await fetchRules();
+        const sourcePhone = selectedMessage.contactPhone;
+        const sourceDigits = sourcePhone.replace(/\D/g, "").slice(-10);
+        
+        existingRule = rules.find(r => {
+          if (r.type !== "transfer") return false;
+          const ruleSourcePhone = r.conditions?.sourceContactPhone;
+          if (!ruleSourcePhone) return false;
+          const ruleDigits = ruleSourcePhone.replace(/\D/g, "").slice(-10);
+          return ruleDigits === sourceDigits;
+        }) || null;
+        
+        setExistingTransferRule(existingRule);
+        setTransferRuleEnabled(existingRule?.active ?? false);
+      } catch (e) {
+        console.error("Failed to check existing transfer rule:", e);
+        setExistingTransferRule(null);
+        setTransferRuleEnabled(false);
+      }
+    }
+    
+    if (selectedMessage) {
+      // If existing rule found, populate from it
+      if (existingRule) {
+        setTransferMode(existingRule.transferDetails?.mode || "both");
+        setTransferType(existingRule.transferDetails?.priority || "all");
+        setPriorityFilter((existingRule.transferDetails?.priorityFilter as PriorityFilter) || "all");
+        // Find contact ID by phone or set custom
+        const targetPhone = existingRule.transferDetails?.contactPhone;
+        if (targetPhone) {
+          const matchingContact = contacts.find(c => {
+            const cDigits = c.phone.replace(/\D/g, "").slice(-10);
+            const tDigits = targetPhone.replace(/\D/g, "").slice(-10);
+            return cDigits === tDigits;
+          });
+          if (matchingContact) {
+            setTransferTo(matchingContact.id);
+            setTransferContactSearch("");
+          } else {
+            setTransferTo(`custom:${targetPhone}`);
+            setTransferContactSearch(targetPhone);
+          }
         }
       } else {
-        // Reset to defaults when no prefs for this conversation
-        // Default to "calls" since that's simpler (no priority section)
-        setTransferType("all");
-        setPriorityFilter("all");
-        setTransferTo("");
-        setTransferContactSearch("");
-        setTransferMode("calls");
+        // Check saved prefs
+        const prefs = transferPrefsByConversation[selectedMessage.id];
+        if (prefs) {
+          setTransferType(prefs.type);
+          setPriorityFilter(prefs.priorityFilter);
+          setTransferTo(prefs.to);
+          setTransferMode(prefs.mode || "both");
+          if (prefs.to.startsWith("custom:")) {
+            setTransferContactSearch(prefs.to.replace("custom:", ""));
+          } else {
+            setTransferContactSearch("");
+          }
+        } else {
+          // Reset to defaults when no prefs for this conversation
+          setTransferType("all");
+          setPriorityFilter("all");
+          setTransferTo("");
+          setTransferContactSearch("");
+          setTransferMode("calls");
+        }
+        setTransferRuleEnabled(false);
       }
     } else {
       // No selected message - reset everything
@@ -1954,6 +2007,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       setTransferTo("");
       setTransferContactSearch("");
       setTransferMode("calls");
+      setExistingTransferRule(null);
+      setTransferRuleEnabled(false);
     }
     setShowTransferModal(true);
     setShowMoreMenu(false);
@@ -2380,6 +2435,39 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
 
     setShowTransferModal(false);
+  };
+
+  // Handle toggling the transfer rule on/off
+  const handleTransferToggle = async (enabled: boolean) => {
+    if (!existingTransferRule) {
+      // If no existing rule, just update local state - rule will be created on submit
+      setTransferRuleEnabled(enabled);
+      return;
+    }
+    
+    // Toggle the existing rule
+    const success = await toggleRuleApi(existingTransferRule.id);
+    if (success) {
+      setTransferRuleEnabled(enabled);
+      setExistingTransferRule({ ...existingTransferRule, active: enabled });
+      toast.success(enabled ? "Transfer rule enabled" : "Transfer rule disabled");
+    } else {
+      toast.error("Failed to toggle transfer rule");
+    }
+  };
+
+  // Handle deleting the transfer rule
+  const handleDeleteTransferRule = async () => {
+    if (!existingTransferRule) return;
+    
+    const success = await deleteRuleApi(existingTransferRule.id);
+    if (success) {
+      setExistingTransferRule(null);
+      setTransferRuleEnabled(false);
+      toast.success("Transfer rule deleted");
+    } else {
+      toast.error("Failed to delete transfer rule");
+    }
   };
 
   const filteredTransferContacts = contacts.filter(c => 
@@ -4094,6 +4182,73 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                 className="px-6 py-5 space-y-5 overflow-y-auto max-h-[60vh]"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
+                {/* Transfer Rule Toggle - Shows status and allows enable/disable */}
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center",
+                      existingTransferRule 
+                        ? (transferRuleEnabled ? "bg-green-100" : "bg-gray-100")
+                        : "bg-blue-100"
+                    )}>
+                      {existingTransferRule ? (
+                        transferRuleEnabled ? (
+                          <Check className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <X className="w-4 h-4 text-gray-400" />
+                        )
+                      ) : (
+                        <Zap className="w-4 h-4 text-blue-600" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-gray-800">
+                        {existingTransferRule 
+                          ? (transferRuleEnabled ? "Transfer Active" : "Transfer Paused") 
+                          : "New Transfer Rule"
+                        }
+                      </p>
+                      <p className="text-[10px] text-gray-500">
+                        {existingTransferRule 
+                          ? `→ ${existingTransferRule.transferDetails?.contactName || existingTransferRule.transferDetails?.contactPhone}`
+                          : "Configure and save to enable"
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {existingTransferRule && (
+                      <button
+                        onClick={handleDeleteTransferRule}
+                        className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                        title="Delete transfer rule"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleTransferToggle(!transferRuleEnabled)}
+                      disabled={!existingTransferRule}
+                      className={cn(
+                        "w-10 h-5 rounded-full transition-colors relative",
+                        !existingTransferRule 
+                          ? "bg-gray-200 cursor-not-allowed opacity-50"
+                          : transferRuleEnabled 
+                            ? "bg-green-500" 
+                            : "bg-gray-300"
+                      )}
+                      title={existingTransferRule ? (transferRuleEnabled ? "Disable" : "Enable") : "Save to enable"}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow-sm",
+                          transferRuleEnabled ? "left-5" : "left-0.5"
+                        )}
+                      />
+                    </button>
+                  </div>
+                </div>
+
                 {/* Transfer Mode: Calls, Messages, Both */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
