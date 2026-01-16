@@ -27,6 +27,7 @@ import {
   createRule, 
   deleteRule as deleteRuleApi, 
   toggleRule as toggleRuleApi, 
+  updateRule as updateRuleApi,
   formatSchedule,
   onRulesChange as subscribeToRulesChange,
 } from "./rulesApi";
@@ -307,7 +308,126 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     setDraggedRuleId(null);
   };
 
-  const activeRulesCount = rules.filter((r) => r.active).length;
+  const routingForwardRule = rules.find((r) => r.type === "forward");
+  const routingMessageRule = rules.find((r) => r.type === "message-notify");
+  const routingActive = Boolean(routingForwardRule?.active || routingMessageRule?.active);
+
+  const activeRulesCount =
+    rules.filter((r) => r.active && r.type !== "forward" && r.type !== "message-notify").length +
+    (routingActive ? 1 : 0);
+
+  const routingDestination =
+    (routingForwardRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
+    (routingMessageRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
+    (user?.forwardingNumber as string | undefined)?.trim() ||
+    "your forwarding number";
+
+  const displayRules: ActiveRule[] = (() => {
+    const nonRouting = rules.filter((r) => r.type !== "forward" && r.type !== "message-notify");
+    if (!routingForwardRule && !routingMessageRule) return nonRouting;
+
+    const createdAt = (routingForwardRule?.createdAt || routingMessageRule?.createdAt || "").toString();
+    const routingGroup: ActiveRule = {
+      id: "__routing__",
+      type: "custom",
+      rule: "Routing",
+      active: routingActive,
+      createdAt,
+      conditions: {
+        __routingGroup: true,
+        destination: routingDestination,
+        calls: {
+          id: routingForwardRule?.id,
+          active: Boolean(routingForwardRule?.active),
+          mode: routingForwardRule?.conditions?.mode || "all",
+          tags: routingForwardRule?.conditions?.tags || [],
+        },
+        messages: {
+          id: routingMessageRule?.id,
+          active: Boolean(routingMessageRule?.active),
+          priorityFilter: routingMessageRule?.conditions?.priorityFilter || "all",
+          translateEnabled: Boolean(routingMessageRule?.conditions?.translateEnabled),
+          receiveLanguage: routingMessageRule?.conditions?.receiveLanguage || "en",
+        },
+      },
+    };
+
+    return [routingGroup, ...nonRouting];
+  })();
+
+  const setRoutingPartActive = async (part: "calls" | "messages", nextActive: boolean) => {
+    const existing = part === "calls" ? routingForwardRule : routingMessageRule;
+
+    // If toggling on but rule doesn't exist yet, create a default one.
+    if (!existing && nextActive) {
+      const created = await createRule(
+        part === "calls"
+          ? ({
+              rule: `Route all calls to ${routingDestination}`,
+              type: "forward",
+              active: true,
+              schedule: { mode: "always" },
+              transferDetails: { mode: "calls" },
+              conditions: { mode: "all", tags: [], destinationLabel: routingDestination },
+            } as any)
+          : ({
+              rule: `Route all messages to ${routingDestination}`,
+              type: "message-notify",
+              active: true,
+              schedule: { mode: "always" },
+              transferDetails: { mode: "messages" },
+              conditions: {
+                priorityFilter: "all",
+                translateEnabled: false,
+                receiveLanguage: "en",
+                destinationLabel: routingDestination,
+              },
+            } as any)
+      );
+
+      if (created) {
+        setRules((prev) => [created, ...prev]);
+        toast.success("Routing updated");
+      } else {
+        toast.error("Failed to enable routing");
+      }
+      return;
+    }
+
+    if (!existing) {
+      return;
+    }
+
+    // Optimistic update
+    setRules((prev) => prev.map((r) => (r.id === existing.id ? { ...r, active: nextActive } : r)));
+
+    const ok = await updateRuleApi(existing.id, { active: nextActive } as any);
+    if (!ok) {
+      // Revert
+      setRules((prev) => prev.map((r) => (r.id === existing.id ? { ...r, active: !nextActive } : r)));
+      toast.error("Failed to update routing");
+      return;
+    }
+
+    toast.success("Routing updated");
+  };
+
+  const deleteRoutingGroup = async () => {
+    const ids = [routingForwardRule?.id, routingMessageRule?.id].filter(Boolean) as string[];
+    if (ids.length === 0) return;
+
+    const previous = [...rules];
+    setRules((prev) => prev.filter((r) => r.type !== "forward" && r.type !== "message-notify"));
+
+    const results = await Promise.all(ids.map((id) => deleteRuleApi(id)));
+    if (results.some((x) => !x)) {
+      setRules(previous);
+      toast.error("Failed to delete routing rule");
+      return;
+    }
+
+    toast.success("Routing removed");
+  };
 
   // Call mode handlers
   const handleBrowserCall = () => {
@@ -501,23 +621,32 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                   </div>
                 ) : rules.length > 0 ? (
                   <div>
-                    {rules.map((rule) => {
-                      const meta = RULE_TYPE_META[rule.type as RuleType] || RULE_TYPE_META.custom;
+                    {displayRules.map((rule) => {
+                      const isRoutingGroup = Boolean(rule.conditions?.__routingGroup);
+                      const meta = isRoutingGroup
+                        ? ({
+                            label: "Routing",
+                            icon: ArrowRightLeft,
+                            color: "text-indigo-600",
+                            bgColor: "bg-indigo-50",
+                          } as const)
+                        : RULE_TYPE_META[rule.type as RuleType] || RULE_TYPE_META.custom;
                       const Icon = meta.icon;
                       const isDragging = draggedRuleId === rule.id;
 
-                      const destination =
-                        (rule.conditions?.destinationLabel as string | undefined)?.trim() ||
-                        (user?.forwardingNumber as string | undefined)?.trim() ||
-                        "your forwarding number";
+                      const destination = isRoutingGroup
+                        ? (rule.conditions?.destination as string | undefined) || "your forwarding number"
+                        : (rule.conditions?.destinationLabel as string | undefined)?.trim() ||
+                          (user?.forwardingNumber as string | undefined)?.trim() ||
+                          "your forwarding number";
 
                       return (
                         <div
                           key={rule.id}
-                          draggable
-                          onDragStart={() => handleDragStart(rule.id)}
-                          onDragOver={(e) => handleDragOver(e, rule.id)}
-                          onDragEnd={handleDragEnd}
+                          draggable={!isRoutingGroup}
+                          onDragStart={() => !isRoutingGroup && handleDragStart(rule.id)}
+                          onDragOver={(e) => !isRoutingGroup && handleDragOver(e, rule.id)}
+                          onDragEnd={() => !isRoutingGroup && handleDragEnd()}
                           className={cn(
                             "group px-4 py-3 flex items-start gap-3 border-b border-gray-100 last:border-b-0 transition-colors hover:bg-gray-50",
                             rule.active ? "bg-white" : "bg-gray-50",
@@ -547,7 +676,41 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                                 rule.active ? "text-gray-800" : "text-gray-500"
                               )}
                             >
-                              {rule.type === "transfer" && rule.transferDetails ? (() => {
+                              {isRoutingGroup ? (() => {
+                                const calls = rule.conditions?.calls || {};
+                                const msgs = rule.conditions?.messages || {};
+
+                                const callsActive = Boolean(calls.active);
+                                const msgsActive = Boolean(msgs.active);
+                                const callsMode = (calls.mode as string | undefined) || "all";
+                                const tags = (calls.tags as string[] | undefined) || [];
+                                const pf = (msgs.priorityFilter as string | undefined) || "all";
+                                const translate = Boolean(msgs.translateEnabled);
+                                const lang = String(msgs.receiveLanguage || "en").toUpperCase();
+
+                                const callsLabel = callsMode === "favorites"
+                                  ? "favorites"
+                                  : callsMode === "saved"
+                                    ? "saved"
+                                    : callsMode === "tags"
+                                      ? (tags.length ? `tags (${tags.join(", ")})` : "tags")
+                                      : "all";
+
+                                const msgLabel = pf === "urgent" ? "urgent" : pf === "important" ? "important" : "all";
+
+                                if (callsActive && msgsActive) {
+                                  return translate
+                                    ? `Route calls (${callsLabel}) + ${msgLabel} messages to ${destination} (translate ${lang})`
+                                    : `Route calls (${callsLabel}) + ${msgLabel} messages to ${destination}`;
+                                }
+                                if (callsActive) return `Route calls (${callsLabel}) to ${destination}`;
+                                if (msgsActive) {
+                                  return translate
+                                    ? `Route ${msgLabel} messages to ${destination} (translate ${lang})`
+                                    : `Route ${msgLabel} messages to ${destination}`;
+                                }
+                                return `Routing is off (destination: ${destination})`;
+                              })() : rule.type === "transfer" && rule.transferDetails ? (() => {
                                 const mode = rule.transferDetails.mode || "both";
                                 const priority = rule.transferDetails.priority || "all";
                                 const tgtName = rule.transferDetails.contactName || rule.transferDetails.contactPhone || "Unknown";
@@ -603,6 +766,30 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                               >
                                 {meta.label}
                               </span>
+
+                              {isRoutingGroup && (
+                                <>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-100 text-indigo-700">
+                                    To {destination}
+                                  </span>
+                                  {Boolean(rule.conditions?.calls?.active) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-100 text-purple-700">
+                                      Calls
+                                    </span>
+                                  )}
+                                  {Boolean(rule.conditions?.messages?.active) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">
+                                      Messages
+                                    </span>
+                                  )}
+                                  {Boolean(rule.conditions?.messages?.translateEnabled) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">
+                                      Translate ({String(rule.conditions?.messages?.receiveLanguage || "en").toUpperCase()})
+                                    </span>
+                                  )}
+                                </>
+                              )}
+
                               {/* Show transfer mode badge for transfer rules */}
                               {rule.type === "transfer" && rule.transferDetails?.mode && (
                                 rule.transferDetails.mode === "both" ? (
@@ -672,29 +859,83 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
                           {/* Actions */}
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={() => toggleRule(rule.id)}
-                              className={cn(
-                                "w-10 h-5 rounded-full transition-colors relative",
-                                rule.active ? "bg-indigo-500" : "bg-gray-300"
-                              )}
-                              aria-label={rule.active ? "Disable rule" : "Enable rule"}
-                              title={rule.active ? "Disable" : "Enable"}
-                            >
-                              <span
-                                className={cn(
-                                  "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-                                  rule.active ? "left-5" : "left-0.5"
-                                )}
-                              />
-                            </button>
-                            <button
-                              onClick={() => deleteRule(rule.id)}
-                              className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {isRoutingGroup ? (
+                              <div className="flex items-center gap-2">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-gray-500">Calls</span>
+                                    <button
+                                      onClick={() => setRoutingPartActive("calls", !Boolean(rule.conditions?.calls?.active))}
+                                      className={cn(
+                                        "w-9 h-4 rounded-full transition-colors relative",
+                                        Boolean(rule.conditions?.calls?.active) ? "bg-indigo-500" : "bg-gray-300"
+                                      )}
+                                      aria-label={Boolean(rule.conditions?.calls?.active) ? "Disable call routing" : "Enable call routing"}
+                                      title={Boolean(rule.conditions?.calls?.active) ? "Disable Calls" : "Enable Calls"}
+                                    >
+                                      <span
+                                        className={cn(
+                                          "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                                          Boolean(rule.conditions?.calls?.active) ? "left-5" : "left-0.5"
+                                        )}
+                                      />
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-gray-500">Msgs</span>
+                                    <button
+                                      onClick={() => setRoutingPartActive("messages", !Boolean(rule.conditions?.messages?.active))}
+                                      className={cn(
+                                        "w-9 h-4 rounded-full transition-colors relative",
+                                        Boolean(rule.conditions?.messages?.active) ? "bg-indigo-500" : "bg-gray-300"
+                                      )}
+                                      aria-label={Boolean(rule.conditions?.messages?.active) ? "Disable message routing" : "Enable message routing"}
+                                      title={Boolean(rule.conditions?.messages?.active) ? "Disable Messages" : "Enable Messages"}
+                                    >
+                                      <span
+                                        className={cn(
+                                          "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform",
+                                          Boolean(rule.conditions?.messages?.active) ? "left-5" : "left-0.5"
+                                        )}
+                                      />
+                                    </button>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={deleteRoutingGroup}
+                                  className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete routing"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => toggleRule(rule.id)}
+                                  className={cn(
+                                    "w-10 h-5 rounded-full transition-colors relative",
+                                    rule.active ? "bg-indigo-500" : "bg-gray-300"
+                                  )}
+                                  aria-label={rule.active ? "Disable rule" : "Enable rule"}
+                                  title={rule.active ? "Disable" : "Enable"}
+                                >
+                                  <span
+                                    className={cn(
+                                      "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
+                                      rule.active ? "left-5" : "left-0.5"
+                                    )}
+                                  />
+                                </button>
+                                <button
+                                  onClick={() => deleteRule(rule.id)}
+                                  className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       );

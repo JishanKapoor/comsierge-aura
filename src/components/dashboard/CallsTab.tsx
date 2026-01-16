@@ -544,13 +544,24 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
       });
       const contactsData = await contactsRes.json();
       
-      // Find contact by phone
+      // Normalize phone for robust matching/storage
       const normalizedPhone = phone.replace(/[^\d+]/g, "");
+      const digitsOnly = normalizedPhone.replace(/\D/g, "");
+      const e164 = digitsOnly.length === 10
+        ? `+1${digitsOnly}`
+        : digitsOnly.length === 11 && digitsOnly.startsWith("1")
+          ? `+${digitsOnly}`
+          : normalizedPhone.startsWith("+")
+            ? normalizedPhone
+            : digitsOnly
+              ? `+${digitsOnly}`
+              : normalizedPhone;
+
       const contact = contactsData.data?.find((c: any) => {
         const contactPhone = c.phone?.replace(/[^\d+]/g, "");
-        return contactPhone === normalizedPhone || 
-               contactPhone === normalizedPhone.replace("+1", "") ||
-               "+1" + contactPhone === normalizedPhone;
+        return contactPhone === e164 ||
+               contactPhone === e164.replace("+1", "") ||
+               "+1" + contactPhone === e164;
       });
       
       if (contact) {
@@ -582,8 +593,8 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ 
-            phone: phone,
-            name: phone,
+            phone: e164 || phone,
+            name: e164 || phone,
             isBlocked: true,
           }),
         });

@@ -1137,8 +1137,12 @@ router.post("/webhook/sms", async (req, res) => {
 
       if (user) {
         // Look up contact info
-        const { variations: fromCandidates } = buildPhoneVariations(From);
-        const contact = await Contact.findOne({ userId: user._id, phone: { $in: fromCandidates } });
+        const { variations: fromCandidates, last10: fromLast10 } = buildPhoneVariations(From);
+        let contact = await Contact.findOne({ userId: user._id, phone: { $in: fromCandidates } });
+        if (!contact && fromLast10.length === 10) {
+          const regexPattern = fromLast10.split("").join("[^0-9]*");
+          contact = await Contact.findOne({ userId: user._id, phone: { $regex: regexPattern, $options: "i" } });
+        }
         
         // Build sender context for AI analysis
         const senderContext = {
@@ -2281,9 +2285,13 @@ router.post("/webhook/voice", async (req, res) => {
         }
         
         // Check caller info against contacts - use phone variations for robust lookup
-        const { variations: callerVariations } = buildPhoneVariations(From);
+        const { variations: callerVariations, last10: callerLast10 } = buildPhoneVariations(From);
         console.log(`   🔍 Looking up contact with variations:`, callerVariations);
-        const contact = await Contact.findOne({ userId: user._id, phone: { $in: callerVariations } });
+        let contact = await Contact.findOne({ userId: user._id, phone: { $in: callerVariations } });
+        if (!contact && callerLast10.length === 10) {
+          const regexPattern = callerLast10.split("").join("[^0-9]*");
+          contact = await Contact.findOne({ userId: user._id, phone: { $regex: regexPattern, $options: "i" } });
+        }
         
         const callerInfo = {
           isSavedContact: !!contact,
