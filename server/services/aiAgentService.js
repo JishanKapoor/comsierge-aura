@@ -5115,15 +5115,34 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
     for (let i = chatHistory.length - 1; i >= 0; i--) {
       const msg = chatHistory[i];
       if (msg.role === "assistant" && msg.text) {
-        // Check for DND clarification (asks about calls and messages)
-        if (msg.text.includes("CLARIFICATION_NEEDED:") && msg.text.includes("Do Not Disturb") && 
-            (msg.text.includes("**Calls**") || msg.text.includes("Calls:"))) {
+        const txt = msg.text.toLowerCase();
+        
+        // Check for DND/routing clarification - detect by content patterns
+        // The AI asks about calls AND messages for DND/routing setup
+        const isDNDContext = (
+          // Explicit DND or routing mentions
+          (txt.includes("do not disturb") || txt.includes("dnd") || txt.includes("routing")) &&
+          // AND asks about calls/messages preferences
+          ((txt.includes("call") && txt.includes("message")) || 
+           txt.includes("what should happen to calls") ||
+           txt.includes("what message notifications"))
+        ) || (
+          // Or asking specifically about call routing options
+          (txt.includes("all calls") || txt.includes("favorites") || txt.includes("saved contacts") || txt.includes("go to ai")) &&
+          (txt.includes("ring") || txt.includes("notification"))
+        ) || (
+          // Check for raw CLARIFICATION_NEEDED prefix (in case it wasn't stripped)
+          msg.text.includes("CLARIFICATION_NEEDED:") && msg.text.includes("Do Not Disturb")
+        );
+        
+        if (isDNDContext) {
           // Extract time info if present
           const timeMatch = msg.text.match(/from\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+to\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
           pendingDNDClarification = {
             startTime: timeMatch?.[1] || null,
             endTime: timeMatch?.[2] || null,
           };
+          console.log("Detected DND clarification context:", pendingDNDClarification);
           break;
         }
         
@@ -5156,6 +5175,10 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
           }
           break;
         }
+        
+        // If we hit an assistant message that's not a clarification, stop looking
+        // (don't look past the most recent AI response)
+        break;
       }
     }
     
@@ -5164,47 +5187,59 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       console.log("Handling DND clarification response:", message);
       const lowerMsg = message.toLowerCase();
       
-      // Parse calls preference
-      let callsMode = "none"; // default for DND
-      if (/\b(all\s*calls|every\s*call|calls\s*ring|ring\s*for\s*all)\b/i.test(lowerMsg)) {
+      // Parse calls preference - more permissive patterns
+      let callsMode = null;
+      if (/\b(all\s*call(s|ers)?|every\s*call(er)?|let\s*(all|everyone)\s*(call|ring))\b/i.test(lowerMsg)) {
         callsMode = "all";
       } else if (/\b(favorite|favourites?)\b/i.test(lowerMsg)) {
         callsMode = "favorites";
       } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
         callsMode = "saved";
-      } else if (/\b(no\s*calls?|none|block\s*calls?|no\s*ring|don'?t\s*ring|silent)\b/i.test(lowerMsg)) {
+      } else if (/\b(no\s*calls?|block\s*calls?|no\s*ring|don'?t\s*ring|silent|calls?\s*to\s*ai)\b/i.test(lowerMsg)) {
         callsMode = "none";
       }
       
-      // Parse messages preference
-      let messagesMode = "important"; // default for DND
+      // Parse messages preference - more permissive patterns
+      let messagesMode = null;
       if (/\b(all\s*messages?|every\s*message|all\s*notifications?)\b/i.test(lowerMsg)) {
         messagesMode = "all";
-      } else if (/\b(important|priority)\b/i.test(lowerMsg) && !/\bnot\s+important\b/i.test(lowerMsg)) {
+      } else if (/\b(important)\b/i.test(lowerMsg) && !/\bnot\s+important\b/i.test(lowerMsg)) {
         messagesMode = "important";
       } else if (/\b(urgent|critical|emergency)\b/i.test(lowerMsg)) {
         messagesMode = "urgent";
-      } else if (/\b(no\s*messages?|no\s*notifications?|none|silent|mute)\b/i.test(lowerMsg) && !/\b(important|urgent)\b/i.test(lowerMsg)) {
+      } else if (/\b(no\s*messages?|no\s*notification|none|silent|mute)\b/i.test(lowerMsg)) {
         messagesMode = "none";
       }
       
-      console.log("Parsed DND preferences:", { callsMode, messagesMode, schedule: pendingDNDClarification });
+      // If user only specified one (calls or messages), we still need to execute
+      // Use defaults for unspecified: if they want calls, assume no messages (DND style)
+      if (callsMode && !messagesMode) {
+        messagesMode = "none"; // DND default
+      }
+      if (messagesMode && !callsMode) {
+        callsMode = "none"; // DND default
+      }
       
-      // Build schedule if times were specified
-      const schedule = pendingDNDClarification.startTime && pendingDNDClarification.endTime
-        ? { startTime: pendingDNDClarification.startTime, endTime: pendingDNDClarification.endTime }
-        : null;
-      
-      // Execute set_routing_preferences directly
-      const result = await setRoutingPreferencesTool.invoke({
-        userId,
-        callsMode,
-        messagesMode,
-        schedule,
-        isDefault: !schedule, // If no schedule, this is the default routing
-      });
-      
-      return result;
+      // Only proceed if we parsed at least one preference
+      if (callsMode || messagesMode) {
+        console.log("Parsed DND preferences:", { callsMode, messagesMode, schedule: pendingDNDClarification });
+        
+        // Build schedule if times were specified
+        const schedule = pendingDNDClarification.startTime && pendingDNDClarification.endTime
+          ? { startTime: pendingDNDClarification.startTime, endTime: pendingDNDClarification.endTime }
+          : null;
+        
+        // Execute set_routing_preferences directly
+        const result = await setRoutingPreferencesTool.invoke({
+          userId,
+          callsMode: callsMode || "none",
+          messagesMode: messagesMode || "none",
+          schedule,
+          isDefault: !schedule, // If no schedule, this is the default routing
+        });
+        
+        return result;
+      }
     }
     
     // If there's a pending clarification and user responded, complete the rule
