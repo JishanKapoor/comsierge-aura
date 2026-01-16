@@ -5454,7 +5454,7 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "triage my messages" -> get_message_triage
 - "what's important in my inbox" -> get_message_triage
 - "filter my messages" -> get_message_triage
-- "forward bank alerts to my accountant" -> create_smart_rule
+- "forward account alerts to my accountant" -> create_smart_rule
 - "route delivery messages to my email" -> create_smart_rule
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, NOT a bank routing number. Use get_phone_info for any routing/forwarding questions.
@@ -5470,6 +5470,37 @@ Always resolve contacts by name when user provides a name.
 
 User ID: ${userId}`;
 
+    function inferContactFromChatHistory(history) {
+      for (let i = (history || []).length - 1; i >= 0; i--) {
+        const text = history[i]?.text;
+        if (typeof text !== "string") continue;
+
+        // Common tool output formats
+        const summaryMatch = text.match(/Summary with\s+([^:\n]+):/i);
+        if (summaryMatch?.[1]) {
+          return { contactName: summaryMatch[1].trim() };
+        }
+
+        const lastFromMatch = text.match(/Last message\s+FROM\s+([^\(\n]+)(?:\(|:|\n)/i);
+        if (lastFromMatch?.[1]) {
+          return { contactName: lastFromMatch[1].trim() };
+        }
+
+        // Pattern: "Name: +15551234567"
+        const namePhoneMatch = text.match(/([^:\n]{1,80})\s*:\s*(\+\d{7,15})/);
+        if (namePhoneMatch?.[2]) {
+          return { contactName: namePhoneMatch[1]?.trim(), contactPhone: namePhoneMatch[2].trim() };
+        }
+
+        // Any phone number in the text
+        const phoneMatch = text.match(/(\+\d{7,15})/);
+        if (phoneMatch?.[1]) {
+          return { contactPhone: phoneMatch[1].trim() };
+        }
+      }
+      return null;
+    }
+
     const messages = [
       new SystemMessage(systemPrompt),
       ...chatHistory.map((h) => (h.role === "user" ? new HumanMessage(h.text) : new AIMessage(h.text))),
@@ -5484,12 +5515,53 @@ User ID: ${userId}`;
     // Execute tool calls
     if (response.tool_calls && response.tool_calls.length > 0) {
       const results = [];
+
+      const inferredContact = inferContactFromChatHistory(chatHistory);
+      const injectContactArgs = (args) => {
+        if (!inferredContact) return args;
+        const next = { ...args };
+
+        // Tools that use contactName/contactPhone
+        if (!next.contactName && !next.contactPhone) {
+          if (inferredContact.contactName) next.contactName = inferredContact.contactName;
+          if (inferredContact.contactPhone) next.contactPhone = inferredContact.contactPhone;
+        }
+
+        // Tools that use sourceContact/sourcePhone
+        if (!next.sourceContact && !next.sourcePhone) {
+          if (inferredContact.contactName) next.sourceContact = inferredContact.contactName;
+          if (inferredContact.contactPhone) next.sourcePhone = inferredContact.contactPhone;
+        }
+
+        return next;
+      };
       
       for (const toolCall of response.tool_calls) {
         console.log(`Executing tool: ${toolCall.name}`, toolCall.args);
         
         // Auto-inject userId
-        const args = { ...toolCall.args, userId };
+        let args = { ...toolCall.args, userId };
+
+        // If the user says "this conversation" / uses pronouns, some tool calls may omit contact info.
+        // We defensively fill from the most recent referenced contact in chat history.
+        const needsConversationContextTools = new Set([
+          "summarize_conversation",
+          "get_last_message",
+          "get_last_incoming_message",
+          "pin_conversation",
+          "mute_conversation",
+          "archive_conversation",
+          "mark_conversation_read",
+          "hold_conversation",
+          "delete_conversation",
+          "block_contact",
+          "unblock_contact",
+          "create_transfer_rule",
+        ]);
+
+        if (needsConversationContextTools.has(toolCall.name)) {
+          args = injectContactArgs(args);
+        }
         
         const selectedTool = fullAgentToolMap[toolCall.name];
         if (selectedTool) {
