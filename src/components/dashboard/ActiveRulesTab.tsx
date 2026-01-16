@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   ActiveRule, 
   fetchRules, 
@@ -64,6 +65,7 @@ const AI_EXAMPLES = [
 ];
 
 const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRulesTabProps) => {
+  const { user } = useAuth();
   const [rules, setRules] = useState<ActiveRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [aiDraft, setAiDraft] = useState("");
@@ -504,6 +506,11 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                       const Icon = meta.icon;
                       const isDragging = draggedRuleId === rule.id;
 
+                      const destination =
+                        (rule.conditions?.destinationLabel as string | undefined)?.trim() ||
+                        (user?.forwardingNumber as string | undefined)?.trim() ||
+                        "your forwarding number";
+
                       return (
                         <div
                           key={rule.id}
@@ -596,6 +603,45 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                                 )
                               )}
                               <span className="text-xs text-gray-400">Created {rule.createdAt}</span>
+
+                              {/* Routing details */}
+                              {rule.type === "forward" && (
+                                <>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-teal-100 text-teal-700">
+                                    To {destination}
+                                  </span>
+                                  {(() => {
+                                    const mode = (rule.conditions?.mode as string | undefined) || "all";
+                                    const tags = (rule.conditions?.tags as string[] | undefined) || [];
+                                    if (mode === "favorites") return <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700">Favorites</span>;
+                                    if (mode === "saved") return <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700">Saved</span>;
+                                    if (mode === "tags") {
+                                      const label = tags.length ? `Tags: ${tags.join(", ")}` : "Tags";
+                                      return <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700">{label}</span>;
+                                    }
+                                    return <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700">All calls</span>;
+                                  })()}
+                                </>
+                              )}
+
+                              {rule.type === "message-notify" && (
+                                <>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-100 text-indigo-700">
+                                    To {destination}
+                                  </span>
+                                  {(() => {
+                                    const pf = (rule.conditions?.priorityFilter as string | undefined) || "all";
+                                    const label = pf === "urgent" ? "Urgent" : pf === "important" ? "Important" : "All";
+                                    return <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-gray-100 text-gray-700">{label}</span>;
+                                  })()}
+                                  {Boolean(rule.conditions?.translateEnabled) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700">
+                                      Translate ({String(rule.conditions?.receiveLanguage || "en").toUpperCase()})
+                                    </span>
+                                  )}
+                                </>
+                              )}
+
                               {rule.schedule && rule.schedule.mode !== "always" && (
                                 <span className="inline-flex items-center gap-1 text-xs text-amber-600">
                                   <Clock className="w-3 h-3" />

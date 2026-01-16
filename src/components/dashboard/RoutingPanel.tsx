@@ -216,6 +216,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         } else {
           setSelectedCallTags([]);
         }
+      } else {
+        setForwardCalls(false);
+        setCallFilter("all");
+        setSelectedCallTags([]);
       }
 
       if (msgRule) {
@@ -233,6 +237,12 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         if (typeof lang === "string" && lang && lang !== "en") {
           setReceiveLanguage(lang);
         }
+      } else {
+        setForwardMessages(false);
+        setMessageFilter("all");
+        setSelectedMessageTags([]);
+        setTranslateEnabled(false);
+        setReceiveLanguage("es");
       }
     } catch (e) {
       console.error("Failed to load routing rules from backend:", e);
