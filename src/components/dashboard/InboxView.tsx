@@ -3002,10 +3002,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           )}
 
           <div
-            className={cn(
-              "transition-opacity duration-300",
-              (isRefreshingMessages || (isLoadingMessages && messages.length > 0)) && "opacity-70"
-            )}
+            className={`transition-opacity duration-300 ${(isRefreshingMessages || (isLoadingMessages && messages.length > 0)) ? "opacity-70" : ""}`}
           >
             {isLoadingMessages && messages.length === 0 ? (
               <div className="divide-y divide-gray-100">
