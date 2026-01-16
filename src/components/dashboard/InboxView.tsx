@@ -347,6 +347,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [isRefreshingMessages, setIsRefreshingMessages] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
@@ -415,6 +416,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Prevent stale conversation fetches (e.g., rapid filter switching) from flashing old data
   const conversationsRequestId = useRef(0);
+  // Minimum time to keep the "updating" state visible so UI changes feel subtle (not flash/jank)
+  const conversationsMinTransitionUntilRef = useRef<number>(0);
 
   // Reusable function to load conversations from API
   const loadConversations = useCallback(
@@ -423,7 +426,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const replace = Boolean(opts?.replace);
 
       const requestId = ++conversationsRequestId.current;
-      if (showLoading) setIsLoadingMessages(true);
+      if (showLoading) {
+        setIsLoadingMessages(true);
+      } else {
+        setIsRefreshingMessages(true);
+      }
 
       try {
         const conversations = await fetchConversations(activeFilter as ApiFilterType);
@@ -480,6 +487,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         dedupedMsgs.push(m);
       }
 
+        // Ensure the "updating" state is visible for at least a short duration.
+        if (replace) {
+          const waitMs = Math.max(0, conversationsMinTransitionUntilRef.current - Date.now());
+          if (waitMs > 0) {
+            await new Promise((r) => setTimeout(r, waitMs));
+            // Bail if a newer request started while we waited.
+            if (requestId !== conversationsRequestId.current) return;
+          }
+        }
+
         if (replace) {
           // Atomic update (used for initial load and filter changes) to avoid flicker
           setMessages(dedupedMsgs);
@@ -512,6 +529,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         if (showLoading && requestId === conversationsRequestId.current) {
           setIsLoadingMessages(false);
         }
+
+        if (!showLoading && requestId === conversationsRequestId.current) {
+          window.setTimeout(() => setIsRefreshingMessages(false), 250);
+        }
       }
     },
     [activeFilter, contacts, normalizePhone]
@@ -528,10 +549,9 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     previousFilter.current = activeFilter;
 
     if (isFilterChange) {
-      // Make filter changes atomic: clear list + selection and show skeleton until new data arrives.
+      // Keep current list visible but show a subtle updating state.
       setSelectedMessageId(null);
-      setMessages([]);
-      setIsLoadingMessages(true);
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
     }
 
     const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
@@ -2336,15 +2356,25 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const handleRemovePriority = async () => {
     if (!selectedMessage) return;
     const phone = selectedMessage.contactPhone;
+    const conversationId = selectedMessage.id;
+
+    // Optimistic update: priority view should remove immediately
+    if (activeFilter === "priority") {
+      setMessages((prev) => prev.filter((m) => m.id !== conversationId));
+      setSelectedMessageId(null);
+    } else {
+      setMessages((prev) => prev.map((m) => (m.id === conversationId ? { ...m, isPriority: false, status: "normal" } : m)));
+    }
+
     const success = await updateConversation(phone, { isPriority: false });
     if (success) {
       toast.success("Removed from priority");
-      await loadConversations();
-      // If we're on the priority tab, clear selection since this conversation is no longer priority
-      if (activeFilter === "priority") {
-        setSelectedMessageId(null);
-      }
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
     } else {
+      // Reconcile with server state
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
       toast.error("Failed to remove priority");
     }
     setShowMoreMenu(false);
@@ -2534,16 +2564,26 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const handleBlock = async () => {
     if (!selectedMessage) return;
     const phone = selectedMessage.contactPhone;
+    const conversationId = selectedMessage.id;
+
+    // Optimistic update
+    if (activeFilter !== "blocked") {
+      setMessages((prev) => prev.filter((m) => m.id !== conversationId));
+      setSelectedMessageId(null);
+    } else {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === conversationId ? { ...m, isBlocked: true, isHeld: false, status: "blocked" } : m))
+      );
+    }
+
     const success = await updateConversation(phone, { isBlocked: true, isHeld: false });
     if (success) {
       toast.success("Contact blocked");
-      // Refresh conversations to reflect the change based on current filter
-      await loadConversations();
-      // If current filter is not "blocked", clear selection (blocked contact won't be in list)
-      if (activeFilter !== "blocked") {
-        setSelectedMessageId(null);
-      }
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
     } else {
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
       toast.error("Failed to block contact");
     }
     setShowMoreMenu(false);
@@ -2552,16 +2592,24 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const handleUnblock = async () => {
     if (!selectedMessage) return;
     const phone = selectedMessage.contactPhone;
+    const conversationId = selectedMessage.id;
+
+    // Optimistic update
+    if (activeFilter === "blocked") {
+      setMessages((prev) => prev.filter((m) => m.id !== conversationId));
+      setSelectedMessageId(null);
+    } else {
+      setMessages((prev) => prev.map((m) => (m.id === conversationId ? { ...m, isBlocked: false } : m)));
+    }
+
     const success = await updateConversation(phone, { isBlocked: false });
     if (success) {
       toast.success("Contact unblocked");
-      // Refresh conversations to reflect the change
-      await loadConversations();
-      // If current filter is "blocked", clear selection (unblocked contact won't be in list)
-      if (activeFilter === "blocked") {
-        setSelectedMessageId(null);
-      }
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
     } else {
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
       toast.error("Failed to unblock contact");
     }
     setShowMoreMenu(false);
@@ -2571,16 +2619,28 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     if (!selectedMessage) return;
     const phone = selectedMessage.contactPhone;
     const isCurrentlyHeld = selectedMessage.status === "held";
+    const conversationId = selectedMessage.id;
+
+    // Optimistic update/removal depending on current filter
+    const willBeHeld = !isCurrentlyHeld;
+    const shouldRemove = (activeFilter === "held" && isCurrentlyHeld) || (activeFilter === "all" && willBeHeld);
+    if (shouldRemove) {
+      setMessages((prev) => prev.filter((m) => m.id !== conversationId));
+      setSelectedMessageId(null);
+    } else {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === conversationId ? { ...m, isHeld: willBeHeld, status: willBeHeld ? "held" : "normal" } : m))
+      );
+    }
+
     const success = await updateConversation(phone, { isHeld: !isCurrentlyHeld });
     if (success) {
       toast.success(isCurrentlyHeld ? "Message released from hold" : "Message put on hold");
-      // Refresh conversations to reflect the change
-      await loadConversations();
-      // If filter is "held" and we just unheld, or filter is "all" and we just held, clear selection
-      if ((activeFilter === "held" && isCurrentlyHeld) || (activeFilter === "all" && !isCurrentlyHeld)) {
-        setSelectedMessageId(null);
-      }
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
     } else {
+      conversationsMinTransitionUntilRef.current = Date.now() + 250;
+      await loadConversations({ showLoading: false, replace: true });
       toast.error("Failed to update hold status");
     }
     setShowMoreMenu(false);
@@ -2879,7 +2939,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isHeld: false }));
                   await Promise.all(promises);
                   toast.success("All messages released from hold");
-                  await loadConversations();
+                  await loadConversations({ showLoading: false, replace: true });
                 }}
                 className="px-2 py-1 text-xs bg-white border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors"
               >
@@ -2893,7 +2953,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                     await Promise.all(promises);
                     toast.success("All held messages deleted");
                     setSelectedMessageId(null);
-                    await loadConversations();
+                    await loadConversations({ showLoading: false, replace: true });
                   }
                 }}
                 className="px-2 py-1 text-xs bg-red-50 border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
@@ -2920,7 +2980,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   const promises = filteredMessages.map(m => updateConversation(m.contactPhone, { isBlocked: false }));
                   await Promise.all(promises);
                   toast.success("All contacts unblocked");
-                  await loadConversations();
+                  await loadConversations({ showLoading: false, replace: true });
                 }}
                 className="px-2 py-1 text-xs bg-white border border-red-300 text-red-700 rounded hover:bg-red-100 transition-colors"
               >
@@ -2931,15 +2991,30 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         )}
 
         {/* Conversation list */}
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-          {isLoadingMessages && messages.length === 0 ? (
-            <div className="divide-y divide-gray-100">
-              {[...Array(8)].map((_, i) => (
-                <ConversationSkeleton key={i} />
-              ))}
+        <div className="flex-1 min-h-0 overflow-y-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
+          {(isRefreshingMessages || (isLoadingMessages && messages.length > 0)) && (
+            <div className="pointer-events-none absolute top-2 right-2 z-10">
+              <div className="text-[11px] px-2 py-0.5 rounded-full bg-white/90 text-gray-700 border border-gray-200 shadow-sm flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Updating
+              </div>
             </div>
-          ) : searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
-            <div className="border-b border-gray-100">
+          )}
+
+          <div
+            className={cn(
+              "transition-opacity duration-300",
+              (isRefreshingMessages || (isLoadingMessages && messages.length > 0)) && "opacity-70"
+            )}
+          >
+            {isLoadingMessages && messages.length === 0 ? (
+              <div className="divide-y divide-gray-100">
+                {[...Array(8)].map((_, i) => (
+                  <ConversationSkeleton key={i} />
+                ))}
+              </div>
+            ) : searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
+              <div className="border-b border-gray-100">
               {matchingContacts.map((contact) => (
                 <button
                   key={`contact-${contact.id}`}
@@ -3184,6 +3259,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               );
             })
           )}
+          </div>
         </div>
       </section>
 
