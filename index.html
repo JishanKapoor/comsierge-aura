@@ -24,6 +24,13 @@
 
   <body style="background-color: #f3f4f6;">
     <div id="root"></div>
+    <script>
+      // Global fallback for cn to avoid runtime ReferenceError if bundler drops import.
+      window.cn = (...classes) => classes.filter(Boolean).join(" ");
+      // Also expose as a global identifier for module scope resolution.
+      // eslint-disable-next-line no-var
+      var cn = window.cn;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
