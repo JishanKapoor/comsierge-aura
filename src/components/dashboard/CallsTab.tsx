@@ -275,16 +275,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
 
   // Track if this is the initial load
   const hasInitiallyLoaded = useRef(false);
-  
-  // Track if we're in the middle of a blocking operation (to skip auto-reload)
-  const isBlockingRef = useRef(false);
 
   // Fetch call history from API on mount and when filter changes
   useEffect(() => {
-    // Skip if we're in the middle of a blocking operation
-    if (isBlockingRef.current) {
-      return;
-    }
     // Only show loading skeleton on very first load, not on filter changes
     const shouldShowLoading = !hasInitiallyLoaded.current;
     loadCalls(shouldShowLoading);
@@ -294,10 +287,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
   // Poll for new calls every 10 seconds (silent refresh)
   useEffect(() => {
     const pollInterval = setInterval(() => {
-      // Skip polling if we're in the middle of a blocking operation
-      if (!isBlockingRef.current) {
-        loadCalls(false);
-      }
+      loadCalls(false);
     }, 10000);
     return () => clearInterval(pollInterval);
   }, [loadCalls]);
@@ -545,22 +535,6 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
 
   // Block/unblock a phone number
   const toggleBlockNumber = async (phone: string, currentlyBlocked: boolean) => {
-    const newBlockedState = !currentlyBlocked;
-    
-    // Prevent auto-reload from wiping our optimistic update
-    isBlockingRef.current = true;
-    
-    // Optimistically update local calls state immediately (use normalized matching)
-    setCalls(prev => prev.map(c => {
-      const cNorm = c.phone?.replace(/[^\d+]/g, "") || "";
-      const phoneNorm = phone.replace(/[^\d+]/g, "");
-      const match = cNorm === phoneNorm ||
-                    cNorm === phoneNorm.replace("+1", "") ||
-                    "+1" + cNorm === phoneNorm ||
-                    cNorm === "+1" + phoneNorm.replace("+1", "");
-      return match ? { ...c, isBlocked: newBlockedState } : c;
-    }));
-
     try {
       const token = localStorage.getItem("comsierge_token");
       
@@ -598,28 +572,17 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ isBlocked: newBlockedState }),
+          body: JSON.stringify({ isBlocked: !currentlyBlocked }),
         });
         
         if (res.ok) {
           toast.success(currentlyBlocked ? "Number unblocked" : "Number blocked");
-          // Refresh contacts so blockedPhones set is accurate on next loadCalls
-          await loadContactsData();
-          // Re-enable auto-reload after contacts are updated
-          setTimeout(() => { isBlockingRef.current = false; }, 500);
+          // Update local state
+          setCalls(prev => prev.map(c => 
+            c.phone === phone ? { ...c, isBlocked: !currentlyBlocked } : c
+          ));
         } else {
-          // Revert optimistic update
-          setCalls(prev => prev.map(c => {
-            const cNorm = c.phone?.replace(/[^\d+]/g, "") || "";
-            const phoneNorm = phone.replace(/[^\d+]/g, "");
-            const match = cNorm === phoneNorm ||
-                          cNorm === phoneNorm.replace("+1", "") ||
-                          "+1" + cNorm === phoneNorm ||
-                          cNorm === "+1" + phoneNorm.replace("+1", "");
-            return match ? { ...c, isBlocked: currentlyBlocked } : c;
-          }));
           toast.error("Failed to update block status");
-          isBlockingRef.current = false;
         }
       } else {
         // Create new contact and block it
@@ -638,39 +601,16 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
         
         if (res.ok) {
           toast.success("Number blocked");
-          // Refresh contacts so blockedPhones set is accurate on next loadCalls
-          await loadContactsData();
-          // Re-enable auto-reload after contacts are updated
-          setTimeout(() => { isBlockingRef.current = false; }, 500);
+          setCalls(prev => prev.map(c => 
+            c.phone === phone ? { ...c, isBlocked: true } : c
+          ));
         } else {
-          // Revert optimistic update
-          setCalls(prev => prev.map(c => {
-            const cNorm = c.phone?.replace(/[^\d+]/g, "") || "";
-            const phoneNorm = phone.replace(/[^\d+]/g, "");
-            const match = cNorm === phoneNorm ||
-                          cNorm === phoneNorm.replace("+1", "") ||
-                          "+1" + cNorm === phoneNorm ||
-                          cNorm === "+1" + phoneNorm.replace("+1", "");
-            return match ? { ...c, isBlocked: false } : c;
-          }));
           toast.error("Failed to block number");
-          isBlockingRef.current = false;
         }
       }
     } catch (error) {
       console.error("Block/unblock error:", error);
-      // Revert optimistic update
-      setCalls(prev => prev.map(c => {
-        const cNorm = c.phone?.replace(/[^\d+]/g, "") || "";
-        const phoneNorm = phone.replace(/[^\d+]/g, "");
-        const match = cNorm === phoneNorm ||
-                      cNorm === phoneNorm.replace("+1", "") ||
-                      "+1" + cNorm === phoneNorm ||
-                      cNorm === "+1" + phoneNorm.replace("+1", "");
-        return match ? { ...c, isBlocked: currentlyBlocked } : c;
-      }));
       toast.error("Failed to update block status");
-      isBlockingRef.current = false;
     }
   };
 
