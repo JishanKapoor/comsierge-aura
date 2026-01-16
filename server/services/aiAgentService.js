@@ -175,6 +175,105 @@ function parseNaturalTime(timeStr, referenceDate = new Date()) {
   return null;
 }
 
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function startOfWeek(d, weekStartsOn = 1) {
+  const x = startOfDay(d);
+  const day = x.getDay();
+  const diff = (day - weekStartsOn + 7) % 7;
+  x.setDate(x.getDate() - diff);
+  return x;
+}
+
+function endOfWeek(d, weekStartsOn = 1) {
+  const s = startOfWeek(d, weekStartsOn);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  return endOfDay(e);
+}
+
+function startOfMonth(d) {
+  const x = startOfDay(d);
+  x.setDate(1);
+  return x;
+}
+
+function endOfMonth(d) {
+  const x = startOfMonth(d);
+  x.setMonth(x.getMonth() + 1);
+  x.setDate(0);
+  return endOfDay(x);
+}
+
+function parseNaturalDateRange(input, referenceDate = new Date()) {
+  if (!input) return null;
+  const now = new Date(referenceDate);
+  const lower = String(input).toLowerCase().trim();
+
+  // Explicit ranges: "from X to Y" / "between X and Y"
+  const fromTo = lower.match(/\bfrom\s+(.+?)\s+to\s+(.+)$/i);
+  if (fromTo?.[1] && fromTo?.[2]) {
+    const start = parseNaturalTime(fromTo[1], now) || new Date(fromTo[1]);
+    const end = parseNaturalTime(fromTo[2], now) || new Date(fromTo[2]);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      return { start: startOfDay(start), end: endOfDay(end) };
+    }
+  }
+
+  const betweenAnd = lower.match(/\bbetween\s+(.+?)\s+and\s+(.+)$/i);
+  if (betweenAnd?.[1] && betweenAnd?.[2]) {
+    const start = parseNaturalTime(betweenAnd[1], now) || new Date(betweenAnd[1]);
+    const end = parseNaturalTime(betweenAnd[2], now) || new Date(betweenAnd[2]);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      return { start: startOfDay(start), end: endOfDay(end) };
+    }
+  }
+
+  // Common shortcuts
+  if (lower === "today") return { start: startOfDay(now), end: endOfDay(now) };
+  if (lower === "yesterday") {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    return { start: startOfDay(y), end: endOfDay(y) };
+  }
+
+  if (lower === "this week") return { start: startOfWeek(now), end: endOfDay(now) };
+  if (lower === "last week") {
+    const lastWeekRef = new Date(now);
+    lastWeekRef.setDate(lastWeekRef.getDate() - 7);
+    return { start: startOfWeek(lastWeekRef), end: endOfWeek(lastWeekRef) };
+  }
+
+  if (lower === "this month") return { start: startOfMonth(now), end: endOfDay(now) };
+  if (lower === "last month") {
+    const lastMonthRef = new Date(now);
+    lastMonthRef.setMonth(lastMonthRef.getMonth() - 1);
+    return { start: startOfMonth(lastMonthRef), end: endOfMonth(lastMonthRef) };
+  }
+
+  const lastNDays = lower.match(/\blast\s+(\d+)\s+days\b/);
+  if (lastNDays?.[1]) {
+    const n = parseInt(lastNDays[1]);
+    if (!isNaN(n) && n > 0) {
+      const start = new Date(now);
+      start.setDate(start.getDate() - n);
+      return { start: startOfDay(start), end: endOfDay(now) };
+    }
+  }
+
+  return null;
+}
+
 // AI-powered contact resolution - uses LLM for intelligent matching
 async function resolveContactWithAI(userId, nameOrPhone) {
   if (!nameOrPhone) return null;
@@ -1871,11 +1970,22 @@ const searchMessagesByDateTool = tool(
   async ({ userId, startDate, endDate, contactPhone }) => {
     try {
       console.log("Searching messages by date:", { userId, startDate, endDate, contactPhone });
-      
-      // Parse dates
-      const start = new Date(startDate);
-      const end = endDate ? new Date(endDate) : new Date();
-      end.setHours(23, 59, 59, 999); // End of day
+
+      const now = new Date();
+
+      // Accept natural language ranges like "last week" by putting it in startDate
+      let range = null;
+      if (typeof startDate === "string" && !endDate) {
+        range = parseNaturalDateRange(startDate, now);
+      }
+
+      // Parse dates (supports ISO or natural-ish)
+      const start = range?.start || startOfDay(parseNaturalTime(startDate, now) || new Date(startDate));
+      const end = range?.end || endOfDay(parseNaturalTime(endDate || "", now) || (endDate ? new Date(endDate) : new Date()));
+
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return `Could not understand that date range. Try "last week", "yesterday", "this month", or "from Jan 5 to Jan 12".`;
+      }
       
       // Get all messages in date range
       let messages = await Message.find({
@@ -1916,11 +2026,11 @@ const searchMessagesByDateTool = tool(
   },
   {
     name: "search_messages_by_date",
-    description: "Search messages within a date range. Use when user asks 'what did we talk about on January 1', 'show messages from last week', 'summarize conversations from March'.",
+    description: "Search messages within a date range. Supports natural ranges like 'last week', 'yesterday', 'this month', or 'from Jan 5 to Jan 12'. Use when user asks 'what did we talk about on January 1', 'show messages from last week', 'messages between dates'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
-      startDate: z.string().describe("Start date in ISO format or natural language (e.g., 2024-01-01, January 1 2024)"),
-      endDate: z.string().optional().describe("End date - defaults to today"),
+      startDate: z.string().describe("Start date OR a natural date range like 'last week' or 'from Jan 5 to Jan 12'"),
+      endDate: z.string().optional().describe("End date (optional if startDate is a range like 'last week')"),
       contactPhone: z.string().optional().describe("Filter to specific contact"),
     }),
   }
@@ -2058,9 +2168,9 @@ Return the ID of the rule to delete:`)
 
 // Tool: Summarize Conversation (AI-powered)
 const summarizeConversationTool = tool(
-  async ({ userId, contactPhone, contactName }) => {
+  async ({ userId, contactPhone, contactName, timeframe, maxMessages }) => {
     try {
-      console.log("Summarizing conversation:", { userId, contactPhone, contactName });
+      console.log("Summarizing conversation:", { userId, contactPhone, contactName, timeframe, maxMessages });
       
       // If we have a name but no phone, use AI to find contact
       let resolvedPhone = contactPhone;
@@ -2078,17 +2188,36 @@ const summarizeConversationTool = tool(
       if (!resolvedPhone) {
         return `Could not find contact "${contactName}". Try using their exact name.`;
       }
+
+      const now = new Date();
+      const range = timeframe ? parseNaturalDateRange(timeframe, now) : null;
       
       // Get messages using phone digit matching
       const phoneDigits = resolvedPhone.replace(/\D/g, '').slice(-10);
-      
-      const allMessages = await Message.find({ userId }).sort({ createdAt: -1 }).limit(500);
-      const messages = allMessages.filter(m => 
+
+      const query = { userId };
+      if (range?.start && range?.end) {
+        query.createdAt = { $gte: range.start, $lte: range.end };
+      }
+
+      const hardLimit = Math.max(30, Math.min(400, Number(maxMessages) || 30));
+
+      // Fetch a generous window then filter by digits (phone formats vary)
+      const allMessages = await Message.find(query).sort({ createdAt: -1 }).limit(800);
+      let messages = allMessages.filter(m =>
         m.contactPhone && m.contactPhone.replace(/\D/g, '').includes(phoneDigits)
-      ).slice(0, 30);
+      );
+
+      // If user asked for "old" or "older" and no explicit range, bias toward older messages
+      if (!range && typeof timeframe === "string" && /\bold\b|\bolder\b|\bearlier\b/i.test(timeframe)) {
+        messages = messages.reverse().slice(0, hardLimit).reverse();
+      } else {
+        messages = messages.slice(0, hardLimit);
+      }
       
       if (messages.length === 0) {
-        return `No messages found with ${resolvedName || resolvedPhone}.`;
+        const rangeHint = timeframe ? ` in ${timeframe}` : "";
+        return `No messages found with ${resolvedName || resolvedPhone}${rangeHint}.`;
       }
       
       // Build conversation text for summarization
@@ -2111,11 +2240,13 @@ const summarizeConversationTool = tool(
   },
   {
     name: "summarize_conversation",
-    description: "Summarize chat history with a contact. Use for: 'summarize my chats from X', 'what did X and I talk about', 'summary with X'.",
+    description: "Summarize chat history with a contact. Supports timeframe like 'last week', 'yesterday', 'this month', or 'old'. Use for: 'summarize my chats from X', 'what did X and I talk about', 'summary with X', 'summarize our conversation last week'.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
       contactPhone: z.string().optional().describe("Phone of contact"),
       contactName: z.string().optional().describe("Name of contact to summarize chats with"),
+      timeframe: z.string().optional().describe("Optional timeframe or range like 'last week', 'yesterday', 'this month', 'from Jan 5 to Jan 12', or 'old'"),
+      maxMessages: z.number().optional().describe("Optional cap for how many messages to include (default 30, max 400)"),
     }),
   }
 );
