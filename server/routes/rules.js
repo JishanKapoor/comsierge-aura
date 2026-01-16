@@ -27,12 +27,9 @@ router.get("/", async (req, res) => {
         continue;
       }
 
-      // Simplified key: just source + target phone = same transfer rule
-      // Mode/priority changes should UPDATE, not create new rules
-      const key = JSON.stringify({
-        source: r.conditions?.sourceContactPhone || null,
-        target: r.transferDetails?.contactPhone || null,
-      });
+      // Key is just the SOURCE contact phone - only one transfer rule per source
+      // When user creates transfer FROM X, it replaces any existing transfer FROM X
+      const key = `transfer:${r.conditions?.sourceContactPhone || 'global'}`;
 
       if (seen.has(key)) {
         duplicateIds.push(r._id);
@@ -105,13 +102,15 @@ router.post("/", async (req, res) => {
       const priorityFilter = transferDetails?.priorityFilter || null;
 
       if (tgt) {
-        // Find ANY existing transfer rule for same source->target (regardless of mode/priority)
-        // This ensures we UPDATE instead of creating duplicates
+        // Find ANY existing transfer rule for the same SOURCE contact
+        // When user sets up transfer FROM X, it should replace any existing transfer FROM X
+        // regardless of the previous target
         const existing = await Rule.findOne({
           userId: req.user._id,
           type: "transfer",
-          "transferDetails.contactPhone": tgt,
-          ...(src ? { "conditions.sourceContactPhone": src } : {}),
+          ...(src 
+            ? { "conditions.sourceContactPhone": src } 
+            : { "conditions.sourceContactPhone": { $exists: false } }),
         }).sort({ createdAt: -1 });
 
         if (existing) {
@@ -270,10 +269,8 @@ router.delete("/cleanup/transfers", async (req, res) => {
     const duplicateIds = [];
     
     for (const r of rules) {
-      const key = JSON.stringify({
-        source: r.conditions?.sourceContactPhone || null,
-        target: r.transferDetails?.contactPhone || null,
-      });
+      // Key is just the SOURCE - only one transfer rule per source contact
+      const key = `transfer:${r.conditions?.sourceContactPhone || 'global'}`;
       
       if (seen.has(key)) {
         duplicateIds.push(r._id);
