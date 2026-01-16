@@ -6,13 +6,23 @@ export function isClearChatCommand(text: string): boolean {
   const t = (text || "").trim().toLowerCase();
   if (!t) return false;
 
-  // Common phrases users try
-  if (t === "clear" || t === "clear chat" || t === "clear chats" || t === "clear the chat" || t === "clear the chats") {
+  // Intent-based detection: does the user want to clear/delete/reset the chat/conversation/history?
+  // Action words
+  const actionWords = /\b(clear|delete|remove|reset|wipe|erase|clean|empty|flush|nuke|start\s*over|fresh\s*start)\b/;
+  // Target words
+  const targetWords = /\b(chat|chats|convo|conversation|conversations|history|messages|thread|threads|this|everything|all)\b/;
+  
+  // If both an action word and target word are present, it's likely a clear intent
+  if (actionWords.test(t) && targetWords.test(t)) {
     return true;
   }
 
-  // Slightly broader matching, but still intent-specific
-  return /^(clear|reset|wipe)\s+(the\s+)?(chat|chats|chat\s+history|history)$/i.test(t);
+  // Direct phrases that clearly mean clear
+  if (/\b(start\s*(over|fresh)|fresh\s*start|new\s*chat|begin\s*again)\b/.test(t)) {
+    return true;
+  }
+
+  return false;
 }
 
 export function broadcastClearAuraChats(source?: string) {

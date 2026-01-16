@@ -286,6 +286,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
     // Client-side command: clear Aura chats (including this tab's persisted history)
     if (isClearChatCommand(text)) {
+      setAiDraft(""); // Clear input immediately
       broadcastClearAuraChats("ActiveRulesTab");
       clearLocalAuraChat({ silent: false });
       return;
