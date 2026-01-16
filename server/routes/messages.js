@@ -178,7 +178,10 @@ router.get("/conversations", async (req, res) => {
       // We need to find conversations with at least one transferred message
       const transferredConvs = await Message.distinct("contactPhone", {
         userId: req.user._id,
-        wasTransferred: true
+        $or: [
+          { wasTransferred: true },
+          { "metadata.transferCopy": true },
+        ],
       });
 
       // Conversations and messages may have different phone formatting (legacy data, imports, etc).
