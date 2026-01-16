@@ -4011,14 +4011,66 @@ router.post("/end-call", authMiddleware, async (req, res) => {
     const client = twilio(accountSid, authToken);
 
     try {
-      const call = await client.calls(callSid).update({ status: "completed" });
+      // IMPORTANT: A "call" can have multiple legs (parent/child calls).
+      // When we end a call from the dashboard we must end *all* active legs,
+      // otherwise a transfer/forward dial leg may continue ringing.
+
+      const toEnd = new Map(); // sid -> status (best-effort)
+
+      let callInfo = null;
+      try {
+        callInfo = await client.calls(callSid).fetch();
+        if (callInfo?.sid) toEnd.set(callInfo.sid, String(callInfo.status || ""));
+      } catch (e) {
+        console.error("End call: failed to fetch call info:", e.message);
+      }
+
+      const parentSid = callInfo?.parentCallSid || callSid;
+
+      if (parentSid && parentSid !== callSid) {
+        try {
+          const parentInfo = await client.calls(parentSid).fetch();
+          if (parentInfo?.sid) toEnd.set(parentInfo.sid, String(parentInfo.status || ""));
+        } catch (e) {
+          console.error("End call: failed to fetch parent call info:", e.message);
+        }
+      }
+
+      // End any active child legs under the parent.
+      try {
+        const children = await client.calls.list({ parentCallSid: parentSid, limit: 50 });
+        for (const c of children || []) {
+          toEnd.set(c.sid, String(c.status || ""));
+        }
+      } catch (e) {
+        console.error("End call: failed to list child calls:", e.message);
+      }
+
+      const activeStatuses = new Set(["queued", "ringing", "in-progress"]);
+      const ended = [];
+      const errors = [];
+
+      for (const [sid, status] of toEnd.entries()) {
+        const statusLower = String(status || "").toLowerCase();
+        if (statusLower && !activeStatuses.has(statusLower)) {
+          continue;
+        }
+        try {
+          await client.calls(sid).update({ status: "completed" });
+          ended.push({ sid, previousStatus: statusLower || null });
+        } catch (e) {
+          errors.push({ sid, error: e.message });
+        }
+      }
 
       res.json({
         success: true,
         message: "Call ended successfully",
         data: {
-          callSid: call.sid,
-          status: call.status,
+          requestedCallSid: callSid,
+          parentCallSid: parentSid,
+          ended,
+          errors,
         },
       });
     } catch (error) {
