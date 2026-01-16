@@ -1,6 +1,19 @@
 // API-based store for rules (replaces localStorage)
 import { API_BASE_URL } from "@/config";
 
+// Event emitter for rules changes - allows components to subscribe to rule updates
+type RulesChangeListener = () => void;
+const rulesChangeListeners: Set<RulesChangeListener> = new Set();
+
+export const onRulesChange = (listener: RulesChangeListener): (() => void) => {
+  rulesChangeListeners.add(listener);
+  return () => { rulesChangeListeners.delete(listener); };
+};
+
+const notifyRulesChange = () => {
+  rulesChangeListeners.forEach(listener => listener());
+};
+
 export interface ActiveRule {
   id: string;
   rule: string;
@@ -88,6 +101,8 @@ export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Pr
     const data = await response.json();
     console.log("Create rule response:", data);
     if (data.success) {
+      // Notify listeners that rules have changed
+      notifyRulesChange();
       return {
         id: data.data._id,
         rule: data.data.rule,
@@ -132,6 +147,9 @@ export const deleteRule = async (id: string): Promise<boolean> => {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
+    if (data.success) {
+      notifyRulesChange();
+    }
     return data.success;
   } catch (error) {
     console.error("Delete rule error:", error);
@@ -147,6 +165,9 @@ export const toggleRule = async (id: string): Promise<boolean> => {
       headers: getAuthHeaders(),
     });
     const data = await response.json();
+    if (data.success) {
+      notifyRulesChange();
+    }
     return data.success;
   } catch (error) {
     console.error("Toggle rule error:", error);

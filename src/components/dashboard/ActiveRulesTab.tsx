@@ -26,7 +26,8 @@ import {
   createRule, 
   deleteRule as deleteRuleApi, 
   toggleRule as toggleRuleApi, 
-  formatSchedule 
+  formatSchedule,
+  onRulesChange as subscribeToRulesChange,
 } from "./rulesApi";
 
 interface ActiveRulesTabProps {
@@ -123,12 +124,21 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     loadRules(true);
   }, [loadRules]);
 
-  // Poll for rule updates every 30 seconds (silent refresh)
+  // Poll for rule updates every 10 seconds (faster refresh)
   useEffect(() => {
     const pollInterval = setInterval(() => {
       loadRules(false);
-    }, 30000);
+    }, 10000);
     return () => clearInterval(pollInterval);
+  }, [loadRules]);
+  
+  // Subscribe to rules change events (instant refresh when rules created/deleted elsewhere)
+  useEffect(() => {
+    const unsubscribe = subscribeToRulesChange(() => {
+      console.log("Rules changed event received, refreshing...");
+      loadRules(false);
+    });
+    return unsubscribe;
   }, [loadRules]);
 
   // Sync with external rules (from Transfer modal)
@@ -557,7 +567,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                                 return `Transfer ${what} from ${srcName} to ${tgtName}`;
                               })() : rule.rule}
                             </p>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                               <span
                                 className={cn(
                                   "text-[10px] font-medium px-1.5 py-0.5 rounded",
@@ -567,6 +577,19 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                               >
                                 {meta.label}
                               </span>
+                              {/* Show transfer mode badge for transfer rules */}
+                              {rule.type === "transfer" && rule.transferDetails?.mode && (
+                                <span className={cn(
+                                  "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                  rule.transferDetails.mode === "calls" ? "bg-green-100 text-green-700" :
+                                  rule.transferDetails.mode === "messages" ? "bg-blue-100 text-blue-700" :
+                                  "bg-purple-100 text-purple-700"
+                                )}>
+                                  {rule.transferDetails.mode === "calls" ? "📞 Calls only" :
+                                   rule.transferDetails.mode === "messages" ? "💬 Messages only" :
+                                   "📞💬 Both"}
+                                </span>
+                              )}
                               <span className="text-xs text-gray-400">Created {rule.createdAt}</span>
                               {rule.schedule && rule.schedule.mode !== "always" && (
                                 <span className="inline-flex items-center gap-1 text-xs text-amber-600">
