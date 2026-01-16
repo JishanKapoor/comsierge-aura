@@ -567,6 +567,533 @@ const unblockContactTool = tool(
   }
 );
 
+// ==================== CONVERSATION MANAGEMENT TOOLS ====================
+
+// Tool: Pin/Unpin Conversation
+const pinConversationTool = tool(
+  async ({ userId, contactName, contactPhone, pin }) => {
+    try {
+      console.log("Pin conversation:", { userId, contactName, contactPhone, pin });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Update conversation
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        convo.isPinned = pin;
+        await convo.save();
+      }
+      
+      const action = pin ? "pinned" : "unpinned";
+      return `Done. Conversation with ${name} is now ${action}.`;
+    } catch (error) {
+      console.error("Pin conversation error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "pin_conversation",
+    description: "Pin or unpin a conversation to keep it at the top of the inbox. Use when user says: pin, unpin, keep at top, remove from top.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      pin: z.boolean().describe("true to pin, false to unpin"),
+    }),
+  }
+);
+
+// Tool: Mute/Unmute Conversation
+const muteConversationTool = tool(
+  async ({ userId, contactName, contactPhone, mute }) => {
+    try {
+      console.log("Mute conversation:", { userId, contactName, contactPhone, mute });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Update conversation
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        convo.isMuted = mute;
+        await convo.save();
+      }
+      
+      const action = mute ? "muted" : "unmuted";
+      return `Done. Conversation with ${name} is now ${action}. ${mute ? "You won't get notifications for new messages." : "You'll now get notifications again."}`;
+    } catch (error) {
+      console.error("Mute conversation error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "mute_conversation",
+    description: "Mute or unmute a conversation to stop/start notifications. Use when user says: mute notifications, silence, unmute, get notifications again.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      mute: z.boolean().describe("true to mute, false to unmute"),
+    }),
+  }
+);
+
+// Tool: Archive Conversation
+const archiveConversationTool = tool(
+  async ({ userId, contactName, contactPhone, archive }) => {
+    try {
+      console.log("Archive conversation:", { userId, contactName, contactPhone, archive });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Update conversation
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        convo.isArchived = archive;
+        await convo.save();
+      }
+      
+      const action = archive ? "archived" : "unarchived";
+      return `Done. Conversation with ${name} is now ${action}.`;
+    } catch (error) {
+      console.error("Archive conversation error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "archive_conversation",
+    description: "Archive or unarchive a conversation. Use when user says: archive, hide, unarchive, bring back.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      archive: z.boolean().describe("true to archive, false to unarchive"),
+    }),
+  }
+);
+
+// Tool: Mark Conversation Read/Unread
+const markConversationReadTool = tool(
+  async ({ userId, contactName, contactPhone, markRead }) => {
+    try {
+      console.log("Mark conversation read:", { userId, contactName, contactPhone, markRead });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Update conversation and messages
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      
+      // Update conversation unread count
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        convo.unreadCount = markRead ? 0 : (convo.unreadCount || 0) + 1;
+        await convo.save();
+      }
+      
+      // Update messages isRead
+      const phoneVariations = [phone, normalizedPhone, `+1${normalizedPhone}`, `1${normalizedPhone}`];
+      await Message.updateMany(
+        { userId, contactPhone: { $in: phoneVariations }, direction: "incoming" },
+        { isRead: markRead }
+      );
+      
+      const action = markRead ? "marked as read" : "marked as unread";
+      return `Done. Conversation with ${name} is now ${action}.`;
+    } catch (error) {
+      console.error("Mark read error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "mark_conversation_read",
+    description: "Mark a conversation as read or unread. Use when user says: mark as read, mark as unread, clear unread, I've read it.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      markRead: z.boolean().describe("true to mark as read, false to mark as unread"),
+    }),
+  }
+);
+
+// Tool: Hold/Release Conversation
+const holdConversationTool = tool(
+  async ({ userId, contactName, contactPhone, hold }) => {
+    try {
+      console.log("Hold conversation:", { userId, contactName, contactPhone, hold });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Update conversation
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        convo.isHeld = hold;
+        await convo.save();
+      }
+      
+      const action = hold ? "moved to Held" : "released from Held";
+      return `Done. Conversation with ${name} is now ${action}.`;
+    } catch (error) {
+      console.error("Hold conversation error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "hold_conversation",
+    description: "Move a conversation to Held or release it. Use when user says: hold, put on hold, release, unhold, move to held.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+      hold: z.boolean().describe("true to hold, false to release"),
+    }),
+  }
+);
+
+// Tool: Delete Conversation
+const deleteConversationTool = tool(
+  async ({ userId, contactName, contactPhone }) => {
+    try {
+      console.log("Delete conversation:", { userId, contactName, contactPhone });
+      
+      // Resolve contact
+      let phone = contactPhone;
+      let name = contactName;
+      
+      if (contactName && !contactPhone) {
+        const resolved = await resolveContactWithAI(userId, contactName);
+        if (resolved) {
+          phone = resolved.phone;
+          name = resolved.name;
+        }
+      }
+      
+      if (!phone && contactName) {
+        const allConvos = await Conversation.find({ userId });
+        const convoList = allConvos.map(c => `${c.contactName || 'Unknown'}: ${c.contactPhone}`).join('\n');
+        const matchResponse = await llm.invoke([
+          new SystemMessage(`Find the conversation that best matches the input name. Return ONLY the phone number, nothing else. If no match, return "NO_MATCH".`),
+          new HumanMessage(`Input name: "${contactName}"\n\nConversations:\n${convoList}\n\nPhone number:`)
+        ]);
+        const matchedPhone = matchResponse.content.trim();
+        if (matchedPhone !== "NO_MATCH" && matchedPhone.length > 5) {
+          phone = matchedPhone;
+          const convo = allConvos.find(c => c.contactPhone === matchedPhone);
+          if (convo) name = convo.contactName || contactName;
+        }
+      }
+      
+      if (!phone) {
+        return `Could not find contact "${contactName}". Please specify the phone number.`;
+      }
+      
+      // Delete conversation and all messages
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const phoneVariations = [phone, normalizedPhone, `+1${normalizedPhone}`, `1${normalizedPhone}`];
+      
+      // Delete messages
+      const deletedMessages = await Message.deleteMany({
+        userId,
+        contactPhone: { $in: phoneVariations }
+      });
+      
+      // Delete conversation
+      const allConvos = await Conversation.find({ userId });
+      const matchingConvos = allConvos.filter(c => {
+        const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return convoDigits === normalizedPhone;
+      });
+      
+      for (const convo of matchingConvos) {
+        await Conversation.deleteOne({ _id: convo._id });
+      }
+      
+      return `Done. Deleted conversation with ${name} and ${deletedMessages.deletedCount} messages.`;
+    } catch (error) {
+      console.error("Delete conversation error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_conversation",
+    description: "Delete a conversation and all its messages permanently. Use when user says: delete conversation, remove chat, clear messages with.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      contactName: z.string().optional().describe("Contact name"),
+      contactPhone: z.string().optional().describe("Contact phone"),
+    }),
+  }
+);
+
+// Tool: Toggle Rule Active/Inactive
+const toggleRuleTool = tool(
+  async ({ userId, ruleDescription, active }) => {
+    try {
+      console.log("Toggle rule:", { userId, ruleDescription, active });
+      
+      // Find matching rule using AI
+      const allRules = await Rule.find({ userId });
+      if (allRules.length === 0) {
+        return "You have no rules to toggle.";
+      }
+      
+      const ruleList = allRules.map((r, i) => `${i}: ${r.rule} (${r.active ? "active" : "inactive"})`).join('\n');
+      const matchResponse = await llm.invoke([
+        new SystemMessage(`Find the rule that best matches the user's description. Return ONLY the index number (0, 1, 2, etc). If no match found, return "NO_MATCH".`),
+        new HumanMessage(`User wants to ${active ? "enable" : "disable"}: "${ruleDescription}"\n\nRules:\n${ruleList}\n\nIndex:`)
+      ]);
+      
+      const matchIndex = parseInt(matchResponse.content.trim());
+      if (isNaN(matchIndex) || matchIndex < 0 || matchIndex >= allRules.length) {
+        return `Could not find rule matching "${ruleDescription}".`;
+      }
+      
+      const rule = allRules[matchIndex];
+      rule.active = active;
+      await rule.save();
+      
+      const status = active ? "enabled" : "disabled";
+      return `Done. Rule "${rule.rule}" is now ${status}.`;
+    } catch (error) {
+      console.error("Toggle rule error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "toggle_rule",
+    description: "Enable or disable a rule without deleting it. Use when user says: disable rule, turn off, pause, enable, turn on, activate, deactivate.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      ruleDescription: z.string().describe("Part of rule description to match"),
+      active: z.boolean().describe("true to enable, false to disable"),
+    }),
+  }
+);
+
+// Tool: Set Translation Settings
+const setTranslationSettingsTool = tool(
+  async ({ userId, receiveLanguage, sendLanguage, autoTranslateIncoming }) => {
+    try {
+      console.log("Set translation settings:", { userId, receiveLanguage, sendLanguage, autoTranslateIncoming });
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        return "User not found.";
+      }
+      
+      // Update translation settings
+      if (!user.translationSettings) {
+        user.translationSettings = {};
+      }
+      
+      if (receiveLanguage !== undefined) {
+        user.translationSettings.receiveLanguage = receiveLanguage;
+      }
+      if (sendLanguage !== undefined) {
+        user.translationSettings.sendLanguage = sendLanguage;
+      }
+      if (autoTranslateIncoming !== undefined) {
+        user.translationSettings.autoTranslateIncoming = autoTranslateIncoming;
+      }
+      
+      await user.save();
+      
+      const parts = [];
+      if (receiveLanguage) parts.push(`receive in ${receiveLanguage.toUpperCase()}`);
+      if (sendLanguage) parts.push(`send in ${sendLanguage.toUpperCase()}`);
+      if (autoTranslateIncoming !== undefined) parts.push(autoTranslateIncoming ? "auto-translate ON" : "auto-translate OFF");
+      
+      return `Done. Translation settings updated: ${parts.join(", ")}.`;
+    } catch (error) {
+      console.error("Set translation settings error:", error);
+      return `Error: ${error.message}`;
+    }
+  },
+  {
+    name: "set_translation_settings",
+    description: "Set translation language preferences. Use when user says: translate to Spanish, I speak French, auto-translate incoming messages, turn off translation.",
+    schema: z.object({
+      userId: z.string().describe("User ID - REQUIRED"),
+      receiveLanguage: z.string().optional().describe("Language code for receiving messages (e.g., 'en', 'es', 'fr', 'zh')"),
+      sendLanguage: z.string().optional().describe("Language code for sending messages (e.g., 'en', 'es', 'fr', 'zh')"),
+      autoTranslateIncoming: z.boolean().optional().describe("Whether to automatically translate incoming messages"),
+    }),
+  }
+);
+
 // Tool: Update Contact Name
 const updateContactTool = tool(
   async ({ userId, currentName, currentPhone, newName }) => {
@@ -2764,7 +3291,7 @@ const setDNDTool = tool(
           userId, 
           rule: { $regex: /dnd|do not disturb/i }
         });
-        return "✅ Do Not Disturb is OFF. Your default routing is now active.";
+        return "Do Not Disturb is OFF. Your default routing is now active.";
       }
       
       // DND requested - we need to ask what they want
@@ -2772,13 +3299,13 @@ const setDNDTool = tool(
       
       return `CLARIFICATION_NEEDED: Setting up Do Not Disturb${timeInfo}. Please tell me:
 
-📞 **Calls**: What should happen to calls?
+   **Calls**: What should happen to calls?
    - All calls ring your phone
    - Only favorites
    - Only saved contacts  
    - All calls go to AI (no ringing)
 
-💬 **Messages**: What should notify you?
+   **Messages**: What should notify you?
    - All messages
    - Important only (no spam)
    - Urgent only (critical)
@@ -4293,12 +4820,20 @@ const fullAgentTools = [
   deleteAllContactsTool,
   blockContactTool,
   unblockContactTool,
+  // Conversation Management
+  pinConversationTool,
+  muteConversationTool,
+  archiveConversationTool,
+  markConversationReadTool,
+  holdConversationTool,
+  deleteConversationTool,
   // Rules
   createTransferRuleTool,
   createAutoReplyTool,
   markPriorityTool,
   getRulesTool,
   deleteRuleTool,
+  toggleRuleTool,
   createSmartRuleTool,
   // Messages
   getLastMessageTool,
@@ -4309,10 +4844,6 @@ const fullAgentTools = [
   analyzeConversationTool,
   suggestReplyTool,
   extractEventsTool,
-  // Reminders
-  createReminderTool,
-  listRemindersTool,
-  completeReminderTool,
   // Proactive
   getUnreadSummaryTool,
   // Info
@@ -4333,6 +4864,7 @@ const fullAgentTools = [
   getAICallResultTool,
   // Translation & Filtering
   translateTextTool,
+  setTranslationSettingsTool,
   classifyMessageTool,
   createSpamFilterTool,
   getMessageTriageTool,
@@ -4354,11 +4886,20 @@ const fullAgentToolMap = {
   delete_all_contacts: deleteAllContactsTool,
   block_contact: blockContactTool,
   unblock_contact: unblockContactTool,
+  // Conversation Management
+  pin_conversation: pinConversationTool,
+  mute_conversation: muteConversationTool,
+  archive_conversation: archiveConversationTool,
+  mark_conversation_read: markConversationReadTool,
+  hold_conversation: holdConversationTool,
+  delete_conversation: deleteConversationTool,
+  // Rules
   create_transfer_rule: createTransferRuleTool,
   create_auto_reply: createAutoReplyTool,
   mark_priority: markPriorityTool,
   get_rules: getRulesTool,
   delete_rule: deleteRuleTool,
+  toggle_rule: toggleRuleTool,
   create_smart_rule: createSmartRuleTool,
   get_last_message: getLastMessageTool,
   get_last_incoming_message: getLastIncomingMessageTool,
@@ -4368,12 +4909,6 @@ const fullAgentToolMap = {
   analyze_conversation: analyzeConversationTool,
   suggest_reply: suggestReplyTool,
   extract_events: extractEventsTool,
-  create_reminder: createReminderTool,
-  list_reminders: listRemindersTool,
-  complete_reminder: completeReminderTool,
-  schedule_message: scheduleMessageTool,
-  list_scheduled_messages: listScheduledMessagesTool,
-  cancel_scheduled_message: cancelScheduledMessageTool,
   get_unread_summary: getUnreadSummaryTool,
   get_phone_info: getPhoneInfoTool,
   update_forwarding_number: updateForwardingNumberTool,
@@ -4388,6 +4923,7 @@ const fullAgentToolMap = {
   cancel_ai_call: cancelAICallTool,
   get_ai_call_result: getAICallResultTool,
   translate_text: translateTextTool,
+  set_translation_settings: setTranslationSettingsTool,
   classify_message: classifyMessageTool,
   create_spam_filter: createSpamFilterTool,
   get_message_triage: getMessageTriageTool,
@@ -4776,13 +5312,22 @@ RULES & AUTOMATION:
 - create_auto_reply: Set auto-reply for a contact. Use when: "if X replies say Y", "auto reply to X", "when X texts respond with Y", "if X messages say Y"
 - mark_priority: Mark as high priority
 - get_rules: List rules (use includeInactive=true for inactive/disabled rules)
-- delete_rule: Remove/disable/turn off a rule (supports matching by description, type, or contact)
+- delete_rule: Remove a rule
+- toggle_rule: Enable/disable a rule without deleting it. Use when: "disable the transfer rule", "turn off forwarding", "pause the auto-reply", "enable it again"
 - cleanup_rules: Remove duplicate and inactive rules. Use when user asks "why do I have old rules", "clean up rules", "remove duplicates"
 - create_smart_rule: Natural language rule creation for complex rules like:
   * "if I receive a message about X, forward to Y"
   * "forward messages containing 'urgent' to my assistant"
   * "if Mark calls and I don't answer, forward to John"
   * Time-based: "auto-reply after 6pm"
+
+CONVERSATION MANAGEMENT:
+- pin_conversation: Pin/unpin a conversation to keep it at top. Use when: "pin this chat", "keep John at top", "unpin mom"
+- mute_conversation: Mute/unmute notifications for a conversation. Use when: "mute this", "stop notifications from John", "unmute mom"
+- archive_conversation: Archive/unarchive a conversation. Use when: "archive this", "hide this chat", "unarchive John"
+- mark_conversation_read: Mark as read/unread. Use when: "mark as read", "I've read it", "mark as unread"
+- hold_conversation: Move to/from Held folder. Use when: "put on hold", "hold this", "release from hold"
+- delete_conversation: Delete entire conversation and messages. Use when: "delete this conversation", "remove chat with John"
 
 MESSAGES & ANALYSIS:
 - get_last_message: Get the most recent message with a contact
@@ -4792,28 +5337,6 @@ MESSAGES & ANALYSIS:
 - analyze_conversation: Analyze sentiment, topics, patterns with a contact
 - suggest_reply: Get reply suggestions for a conversation
 - extract_events: Find events, dates, appointments from messages
-
-REMINDERS (notify THE USER):
-- create_reminder: Set reminder that calls/texts THE USER (supports "in 30 min", "tomorrow 3pm", "monday 9am")
-- list_reminders: View upcoming reminders
-- complete_reminder: Mark done or delete reminder
-
-SCHEDULED MESSAGES (send TO CONTACTS):
-- schedule_message: Schedule a message to be sent TO A CONTACT at a future time. REQUIRED when time delay is mentioned.
-  - Usage: "reply to him in 30 seconds" -> schedule_message(contactPhone="[phone from history]", messageText="[text]", when="in 30 seconds")
-  - Usage: "text him in 5 min" -> schedule_message(contactPhone="[phone from history]", messageText="[text]", when="in 5 min")
-
-CONTEXT & PRONOUNS:
-- "him", "her", "them", "last person" -> You MUST resolve this to the contact from the most recent message in chat history.
-- Look at the "Yes, you have 1 unread message from X" or "Last message from X" entries in history.
-- If user says "reply to him", grab the Phone Number of that contact and use it for the tool call.
-
-TIMING & SCHEDULING - CRITICAL:
-- If user mentions ANY time delay ("in 30 seconds", "in 5 mins", "tomorrow"), you MUST use:
-  - \`schedule_message\` (if sending to a contact)
-  - \`create_reminder\` (if notifying the user)
-- DO NOT just say "Okay I'll do that" - you MUST call the tool.
-- DO NOT just reply with the text - you must SCHEDULE it.
 
 PROACTIVE:
 - get_unread_summary: Get briefing on unread messages + upcoming reminders
@@ -4856,6 +5379,7 @@ AI CALLS (AUTONOMOUS VOICE AGENT):
 
 TRANSLATION & FILTERING:
 - translate_text: Translate text to another language. Use when: "translate X to Spanish", "what does X mean in French"
+- set_translation_settings: Configure translation preferences. Use when: "translate incoming to English", "I speak Spanish", "auto-translate messages", "turn off translation"
 - classify_message: Classify a message as spam, priority, delivery, financial, or normal. Use when: "is this spam?", "what kind of message is this?"
 - create_spam_filter: Create automated spam blocking rules. Use when: "block spam", "filter car warranty messages", "block unknown numbers"
 - get_message_triage: Get intelligent overview of messages by category (priority, spam, delivery, etc.). Use when: "triage my messages", "what's important?", "filter my inbox"
@@ -4871,17 +5395,14 @@ When user says "text me" or "send me a message" or "call me":
 2. Then use send_message (for text) or make_call (for call) with that forwarding number as the destination
 3. You CAN and SHOULD send messages/calls to the user - this is a core feature!
 
-DELAYED MESSAGES TO USER vs TO CONTACTS:
-- "remind me in 5 min" or "text me in 30 seconds" (notify THE USER) -> use create_reminder
-- "text John in 5 min" or "send hi to mom in 30 seconds" (message TO A CONTACT) -> use schedule_message
-
 CONFIRMATION FLOW FOR SENDING MESSAGES:
 1. User says "send hey to John" -> use send_message tool -> shows "Ready to send... Reply yes to send"
 2. User says "yes" -> use execute_send_message tool with the contact and message
 
-IMPORTANT FOR RULE DELETION:
-- "turn that off" or "disable it" after showing a rule -> use delete_rule
-- Can match by: rule description text, rule type (transfer/block/auto-reply), or contact name involved
+IMPORTANT FOR RULE MANAGEMENT:
+- "turn that off" or "disable it" after showing a rule -> use toggle_rule with active=false
+- "enable the rule" or "turn it back on" -> use toggle_rule with active=true
+- "delete the rule" -> use delete_rule (permanent removal)
 
 CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "if grandma replies say I'm busy" -> create_auto_reply with sourceContact="grandma", replyMessage="I'm busy"
@@ -4894,9 +5415,6 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "show me the last message from jk" -> get_last_message with contactName="jk"
 - "change jk to john" -> update_contact with currentName="jk", newName="john"
 - "forward calls from jk to bob" -> create_transfer_rule
-- "remind me to call mom in 30 min" -> create_reminder (notifies THE USER)
-- "text mom in 30 min saying happy birthday" -> schedule_message (sends TO A CONTACT)
-- "send hi to john in 30 seconds" -> schedule_message (sends TO A CONTACT)
 - "forward messages about baig to jeremy" -> create_smart_rule
 - "if mark texts me, notify jeremy" -> create_smart_rule
 - "if i get a message from mark about a meeting, send it to jake" -> create_smart_rule (source + keyword + target)
@@ -4904,7 +5422,8 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "what did I miss" -> get_unread_summary
 - "analyze my chat with john" -> analyze_conversation
 - "what should I say to sarah" -> suggest_reply
-- "turn that off" or "disable the transfer rule" -> delete_rule
+- "turn that off" or "disable the transfer rule" -> toggle_rule with active=false
+- "delete the rule" -> delete_rule
 - "yes" after "Ready to send..." -> execute_send_message
 - "change my forwarding number to 555-1234" -> update_forwarding_number
 - "what number are calls forwarded to" -> get_phone_info
@@ -4916,14 +5435,21 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "text me hi" -> get_phone_info (to get forwarding number) then send_message to that number
 - "call me" -> get_phone_info (to get forwarding number) then make_call to that number
 - "send me a test message" -> get_phone_info then send_message to forwarding number
-- "show my scheduled messages" -> list_scheduled_messages
-- "cancel the message to john" -> cancel_scheduled_message
 - "AI call George and ask about his day" -> make_ai_call
 - "have AI check on mom tomorrow at 3pm" -> make_ai_call with scheduledAt
 - "what did the AI call find out" -> get_ai_call_result
 - "translate hello to Spanish" -> translate_text
+- "I speak Spanish" -> set_translation_settings with receiveLanguage="es"
+- "auto translate incoming" -> set_translation_settings with autoTranslateIncoming=true
 - "is this spam: you've won $5000" -> classify_message
 - "block car warranty messages" -> create_spam_filter with filterType="car_warranty"
+- "pin this conversation" -> pin_conversation with pin=true
+- "unpin mom" -> pin_conversation with contactName="mom", pin=false
+- "mute john" -> mute_conversation with contactName="john", mute=true
+- "archive this chat" -> archive_conversation with archive=true
+- "mark as read" -> mark_conversation_read with markRead=true
+- "put this on hold" -> hold_conversation with hold=true
+- "delete this conversation" -> delete_conversation
 - "block unknown numbers" -> create_spam_filter with filterType="unknown_numbers"
 - "triage my messages" -> get_message_triage
 - "what's important in my inbox" -> get_message_triage
