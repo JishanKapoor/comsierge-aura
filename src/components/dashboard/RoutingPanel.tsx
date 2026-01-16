@@ -25,6 +25,13 @@ import { isValidUsPhoneNumber, normalizeUsPhoneDigits } from "@/lib/validations"
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchContacts } from "./contactsApi";
 import { languages } from "./mockData";
+import {
+  createRule,
+  deleteRule,
+  fetchRules,
+  onRulesChange,
+  updateRule,
+} from "./rulesApi";
 
 type CallFilter = "all" | "favorites" | "contacts" | "tagged";
 type MessageFilter = "all" | "important" | "urgent";
@@ -179,6 +186,59 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     }
   };
 
+  const getRoutingDestinationLabel = () => {
+    const raw = (forwardingNumber || user?.forwardingNumber || "").trim();
+    return raw || "your forwarding number";
+  };
+
+  const loadRoutingFromBackend = async () => {
+    try {
+      const rules = await fetchRules();
+
+      const forwardRules = rules.filter((r) => r.type === "forward");
+      const notifyRules = rules.filter((r) => r.type === "message-notify");
+
+      const callRule = forwardRules.find((r) => r.active) ?? forwardRules[0];
+      const msgRule = notifyRules.find((r) => r.active) ?? notifyRules[0];
+
+      if (callRule) {
+        setForwardCalls(Boolean(callRule.active));
+        const mode = callRule.conditions?.mode || "all";
+        const modeToFilter: Record<string, CallFilter> = {
+          all: "all",
+          favorites: "favorites",
+          saved: "contacts",
+          tags: "tagged",
+        };
+        setCallFilter(modeToFilter[mode] || "all");
+        if (mode === "tags" && Array.isArray(callRule.conditions?.tags)) {
+          setSelectedCallTags(callRule.conditions.tags);
+        } else {
+          setSelectedCallTags([]);
+        }
+      }
+
+      if (msgRule) {
+        setForwardMessages(Boolean(msgRule.active));
+        const priorityFilter = msgRule.conditions?.priorityFilter || "all";
+        setMessageFilter(priorityFilter as MessageFilter);
+        if (Array.isArray(msgRule.conditions?.notifyTags)) {
+          setSelectedMessageTags(msgRule.conditions.notifyTags);
+        } else {
+          setSelectedMessageTags([]);
+        }
+
+        setTranslateEnabled(Boolean(msgRule.conditions?.translateEnabled));
+        const lang = msgRule.conditions?.receiveLanguage;
+        if (typeof lang === "string" && lang && lang !== "en") {
+          setReceiveLanguage(lang);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load routing rules from backend:", e);
+    }
+  };
+
   useEffect(() => {
     // First try to load from localStorage for instant UI
     const saved = safeParseJson<{
@@ -202,61 +262,18 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       if (typeof saved.translateEnabled === "boolean") setTranslateEnabled(saved.translateEnabled);
       if (saved.receiveLanguage) setReceiveLanguage(saved.receiveLanguage);
     }
-    
+
     // Then load from backend to ensure we're in sync
-    const loadRulesFromBackend = async () => {
-      try {
-        const token = localStorage.getItem("comsierge_token");
-        const response = await fetch(`${API_BASE_URL}/api/rules`, {
-          headers: { Authorization: token ? `Bearer ${token}` : "" }
-        });
-        
-        if (!response.ok) return;
-        
-        const data = await response.json();
-        const rules = data.data || [];
-        
-        // Find forward rule for calls
-        const callRule = rules.find((r: any) => r.type === "forward" && r.active);
-        if (callRule) {
-          setForwardCalls(true);
-          const mode = callRule.conditions?.mode || "all";
-          const modeToFilter: Record<string, CallFilter> = {
-            all: "all",
-            favorites: "favorites",
-            saved: "contacts",
-            tags: "tagged"
-          };
-          setCallFilter(modeToFilter[mode] || "all");
-          if (mode === "tags" && callRule.conditions?.tags) {
-            setSelectedCallTags(callRule.conditions.tags);
-          }
-        }
-        
-        // Find message-notify rule
-        const msgRule = rules.find((r: any) => r.type === "message-notify" && r.active);
-        if (msgRule) {
-          setForwardMessages(true);
-          const priorityFilter = msgRule.conditions?.priorityFilter || "all";
-          setMessageFilter(priorityFilter as MessageFilter);
-          if (msgRule.conditions?.notifyTags) {
-            setSelectedMessageTags(msgRule.conditions.notifyTags);
-          }
-          if (msgRule.conditions?.translateEnabled) {
-            setTranslateEnabled(true);
-          }
-          if (msgRule.conditions?.receiveLanguage && msgRule.conditions.receiveLanguage !== 'en') {
-            setReceiveLanguage(msgRule.conditions.receiveLanguage);
-          }
-        }
-        
-        console.log("📜 Loaded routing rules from backend:", { callRule, msgRule });
-      } catch (e) {
-        console.error("Failed to load routing rules from backend:", e);
-      }
-    };
-    
-    loadRulesFromBackend();
+    loadRoutingFromBackend();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Subscribe to rules change events (instant refresh when toggled elsewhere)
+  useEffect(() => {
+    const unsubscribe = onRulesChange(() => {
+      loadRoutingFromBackend();
+    });
+    return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -316,8 +333,6 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
 
     // Also save to backend as routing rules
     try {
-      const token = localStorage.getItem("comsierge_token");
-      
       // Map UI filter to backend mode
       const modeMap: Record<CallFilter, string> = {
         all: "all",
@@ -326,11 +341,15 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         tagged: "tags"
       };
       
+      const destinationLabel = getRoutingDestinationLabel();
+
       // Build the rule description
-      let ruleDesc = "Forward calls";
-      if (callFilter === "favorites") ruleDesc = "Forward calls from favorites";
-      else if (callFilter === "contacts") ruleDesc = "Forward calls from saved contacts";
-      else if (callFilter === "tagged") ruleDesc = `Forward calls from contacts tagged: ${selectedCallTags.join(", ")}`;
+      let ruleDesc = `Forward calls to ${destinationLabel}`;
+      if (callFilter === "favorites") ruleDesc = `Forward calls from favorites to ${destinationLabel}`;
+      else if (callFilter === "contacts") ruleDesc = `Forward calls from saved contacts to ${destinationLabel}`;
+      else if (callFilter === "tagged") {
+        ruleDesc = `Forward calls from contacts tagged: ${selectedCallTags.join(", ")} to ${destinationLabel}`;
+      }
       
       // Create/update the forward rule for CALLS
       const callRuleData = {
@@ -343,13 +362,14 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
         },
         conditions: {
           mode: modeMap[callFilter],
-          tags: callFilter === "tagged" ? selectedCallTags : []
+          tags: callFilter === "tagged" ? selectedCallTags : [],
+          destinationLabel,
         }
       };
       
       // Create the message notification rule
       const messageRuleData = {
-        rule: `Message notifications: ${messageFilter}`,
+        rule: `Message notifications (${messageFilter}) to ${destinationLabel}`,
         type: "message-notify",
         active: forwardMessages,
         schedule: { mode: "always" },
@@ -363,58 +383,47 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
           notifyTags: selectedMessageTags,
           // Translation settings
           translateEnabled: translateEnabled,
-          receiveLanguage: translateEnabled ? receiveLanguage : "en"
+          receiveLanguage: translateEnabled ? receiveLanguage : "en",
+          destinationLabel,
         }
       };
-      
-      // First, get existing rules and delete them
-      const existingRulesRes = await fetch(`${API_BASE_URL}/api/rules`, {
-        headers: { Authorization: token ? `Bearer ${token}` : "" }
-      });
-      
-      if (existingRulesRes.ok) {
-        const existingData = await existingRulesRes.json();
-        const rulesToDelete = existingData.data?.filter((r: any) => 
-          r.type === "forward" || r.type === "message-notify"
-        ) || [];
-        
-        // Delete old rules
-        for (const oldRule of rulesToDelete) {
-          await fetch(`${API_BASE_URL}/api/rules/${oldRule._id || oldRule.id}`, {
-            method: "DELETE",
-            headers: { Authorization: token ? `Bearer ${token}` : "" }
-          });
-        }
+
+      const existing = await fetchRules();
+      const forwardRules = existing.filter((r) => r.type === "forward");
+      const notifyRules = existing.filter((r) => r.type === "message-notify");
+
+      const callRule = forwardRules.find((r) => r.active) ?? forwardRules[0];
+      const msgRule = notifyRules.find((r) => r.active) ?? notifyRules[0];
+
+      if (callRule) {
+        const ok = await updateRule(callRule.id, callRuleData as any);
+        if (!ok) throw new Error("Failed to save call routing rule");
+      } else {
+        const created = await createRule(callRuleData as any);
+        if (!created) throw new Error("Failed to save call routing rule");
       }
-      
-      // Create new call forwarding rule
-      const createCallRes = await fetch(`${API_BASE_URL}/api/rules`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : ""
-        },
-        body: JSON.stringify(callRuleData)
-      });
-      
-      if (!createCallRes.ok) {
-        throw new Error("Failed to save call routing rule");
+
+      if (msgRule) {
+        const ok = await updateRule(msgRule.id, messageRuleData as any);
+        if (!ok) throw new Error("Failed to save message routing rule");
+      } else {
+        const created = await createRule(messageRuleData as any);
+        if (!created) throw new Error("Failed to save message routing rule");
       }
-      
-      // Create new message notification rule
-      const createMsgRes = await fetch(`${API_BASE_URL}/api/rules`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : ""
-        },
-        body: JSON.stringify(messageRuleData)
-      });
-      
-      if (!createMsgRes.ok) {
-        throw new Error("Failed to save message routing rule");
-      }
-      
+
+      // Remove duplicates created by older versions of the UI
+      const after = await fetchRules();
+      const dupForwards = after.filter((r) => r.type === "forward");
+      const dupNotifies = after.filter((r) => r.type === "message-notify");
+
+      const keepForward = (dupForwards.find((r) => r.active) ?? dupForwards[0])?.id;
+      const keepNotify = (dupNotifies.find((r) => r.active) ?? dupNotifies[0])?.id;
+
+      await Promise.all([
+        ...dupForwards.filter((r) => r.id !== keepForward).map((r) => deleteRule(r.id)),
+        ...dupNotifies.filter((r) => r.id !== keepNotify).map((r) => deleteRule(r.id)),
+      ]);
+
       toast.success("Routing settings saved!");
     } catch (error) {
       console.error("Failed to save routing rule:", error);

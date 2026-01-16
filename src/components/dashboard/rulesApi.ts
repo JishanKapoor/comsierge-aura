@@ -132,6 +132,9 @@ export const updateRule = async (id: string, updates: Partial<ActiveRule>): Prom
       body: JSON.stringify(updates),
     });
     const data = await response.json();
+    if (data.success) {
+      notifyRulesChange();
+    }
     return data.success;
   } catch (error) {
     console.error("Update rule error:", error);
