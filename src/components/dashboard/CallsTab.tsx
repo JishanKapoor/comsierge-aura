@@ -88,6 +88,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
 
   const [calls, setCalls] = useState<Call[]>([]);
   const [isLoadingCalls, setIsLoadingCalls] = useState(true);
+  const [isRefreshingCalls, setIsRefreshingCalls] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [showExtraCallFilters, setShowExtraCallFilters] = useState(false);
@@ -189,6 +190,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
     try {
       // For voicemail, routed, and blocked filters, we need to fetch all calls and filter client-side
       const apiFilter = (filter === "all" || filter === "voicemail" || filter === "routed" || filter === "blocked") ? undefined : filter;
+      if (!showLoading) setIsRefreshingCalls(true);
       const callRecords = await fetchCalls(apiFilter);
       
       // Helper functions for formatting (inside callback to avoid closure issues)
@@ -270,6 +272,9 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
       }
     } finally {
       if (showLoading) setIsLoadingCalls(false);
+      if (!showLoading) {
+        window.setTimeout(() => setIsRefreshingCalls(false), 250);
+      }
     }
   }, [filter, contacts]);
 
@@ -1522,7 +1527,15 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
       </div>
 
       {/* Calls List */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex-1 min-h-0">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex-1 min-h-0 relative">
+        {isRefreshingCalls && calls.length > 0 && (
+          <div className="absolute top-2 right-2 z-20">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/90 border border-gray-200 px-2 py-1 text-[10px] text-gray-600 shadow-sm">
+              <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              Updating
+            </span>
+          </div>
+        )}
         {isLoadingCalls && calls.length === 0 ? (
           <div className="divide-y divide-gray-100">
             {[...Array(6)].map((_, i) => (
@@ -1535,7 +1548,7 @@ const CallsTab = ({ selectedContactPhone, onClearSelection, isActive = true, ini
             <p className="text-xs">{searchQuery ? "No calls matching your search" : "No calls found"}</p>
           </div>
         ) : (
-          <div className="max-h-full overflow-y-auto">
+          <div className={cn("max-h-full overflow-y-auto transition-opacity duration-300", isRefreshingCalls && "opacity-80")}>
             {filteredCalls.map((call) => {
               const callContact = findContactByPhone(call.phone);
               return (

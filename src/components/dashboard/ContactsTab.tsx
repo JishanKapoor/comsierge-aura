@@ -74,6 +74,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [view, setView] = useState<View>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -101,6 +102,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   const [showAddTagInFilter, setShowAddTagInFilter] = useState(false);
   const [newFilterTag, setNewFilterTag] = useState("");
   const filterTagInputRef = useRef<HTMLInputElement>(null);
+  const refreshTimerRef = useRef<number | null>(null);
 
   // Include existing tags from all contacts + selected contact's tags in the edit form
   const allTags = [...new Set(contacts.flatMap(c => c.tags))];
@@ -149,6 +151,7 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   // Reusable function to load contacts from API
   const loadContacts = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
+    if (!showLoading) setIsRefreshing(true);
     try {
       const data = await fetchContacts();
       setContacts(data);
@@ -156,6 +159,9 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       console.error("Error loading contacts:", error);
     } finally {
       if (showLoading) setLoading(false);
+      if (!showLoading) {
+        window.setTimeout(() => setIsRefreshing(false), 250);
+      }
     }
   }, []);
 
@@ -175,9 +181,19 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
   // React immediately to contact changes from other screens (Inbox, etc.)
   useEffect(() => {
     const unsubscribe = onContactsChange(() => {
-      loadContacts(false);
+      // Debounce to avoid rapid refresh flicker when multiple changes fire.
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+      refreshTimerRef.current = window.setTimeout(() => {
+        loadContacts(false);
+        refreshTimerRef.current = null;
+      }, 250);
     });
-    return unsubscribe;
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      unsubscribe();
+    };
   }, [loadContacts]);
 
   // Close menu on outside click
@@ -617,7 +633,15 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
       </div>
 
       {/* Contacts List */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-visible">
+      <div className="bg-white border border-gray-200 rounded-lg overflow-visible relative">
+        {isRefreshing && contacts.length > 0 && (
+          <div className="absolute top-2 right-2 z-20">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/90 border border-gray-200 px-2 py-1 text-[10px] text-gray-600 shadow-sm">
+              <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              Updating
+            </span>
+          </div>
+        )}
         {loading && contacts.length === 0 ? (
           <div className="divide-y divide-gray-100">
             {/* Letter header skeleton */}
@@ -640,90 +664,108 @@ const ContactsTab = ({ onNavigate }: ContactsTabProps) => {
             {contacts.length === 0 ? "No contacts yet. Add your first contact!" : "No contacts match your search."}
           </div>
         ) : (
-          Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
-          <div key={letter}>
-            <div className="px-3 py-1 bg-gray-50">
-              <span className="text-xs font-medium text-gray-500">{letter}</span>
-            </div>
-            {contactList.map((contact) => (
-              <div
-                key={contact.id}
-                onClick={() => openModal(contact)}
-                className={cn(
-                  "w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer relative border-b border-gray-100 last:border-b-0",
-                  openMenuId === contact.id && "z-30"
-                )}
-              >
-                {contact.avatar ? (
-                  <img 
-                    src={contact.avatar} 
-                    alt={contact.name} 
-                    className="w-7 h-7 rounded-full object-cover shrink-0"
-                  />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
-                    <span className="text-gray-700 text-xs font-medium">{contact.name.charAt(0)}</span>
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 text-xs truncate">{contact.name}</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <p className="text-xs text-gray-500 truncate">{contact.phone}</p>
-                    {contact.tags.slice(0, 2).map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-1.5 py-0.5 rounded-full text-[9px] bg-gray-100 text-gray-600 border border-gray-200"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+          <div className={cn("transition-opacity duration-300", isRefreshing && "opacity-80")}>
+            {Object.entries(groupByLetter(visibleContacts)).map(([letter, contactList]) => (
+              <div key={letter}>
+                <div className="px-3 py-1 bg-gray-50">
+                  <span className="text-xs font-medium text-gray-500">{letter}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate?.("inbox", contact.phone); }}
-                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                    title="Send message"
+
+                {contactList.map((contact) => (
+                  <div
+                    key={contact.id}
+                    onClick={() => openModal(contact)}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors text-left cursor-pointer relative border-b border-gray-100 last:border-b-0",
+                      openMenuId === contact.id && "z-30"
+                    )}
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onNavigate?.("calls", contact.phone); }}
-                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                    title="Call"
-                  >
-                    <Phone className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                  <div className="relative" ref={openMenuId === contact.id ? menuRef : null}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === contact.id ? null : contact.id); }}
-                      className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                      title="More options"
-                    >
-                      <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
-                    </button>
-                    {openMenuId === contact.id && (
-                      <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px] z-[60]">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); editContactFromList(contact); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          <Pencil className="w-3.5 h-3.5" /> Edit
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteContact(contact); }}
-                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
+                    {contact.avatar ? (
+                      <img
+                        src={contact.avatar}
+                        alt={contact.name}
+                        className="w-7 h-7 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                        <span className="text-gray-700 text-xs font-medium">{contact.name.charAt(0)}</span>
                       </div>
                     )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-800 text-xs truncate">{contact.name}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <p className="text-xs text-gray-500 truncate">{contact.phone}</p>
+                        {contact.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-1.5 py-0.5 rounded-full text-[9px] bg-gray-100 text-gray-600 border border-gray-200"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate?.("inbox", contact.phone);
+                        }}
+                        className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                        title="Send message"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate?.("calls", contact.phone);
+                        }}
+                        className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                        title="Call"
+                      >
+                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                      </button>
+                      <div className="relative" ref={openMenuId === contact.id ? menuRef : null}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuId(openMenuId === contact.id ? null : contact.id);
+                          }}
+                          className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                          title="More options"
+                        >
+                          <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
+                        </button>
+                        {openMenuId === contact.id && (
+                          <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px] z-[60]">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                editContactFromList(contact);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              <Pencil className="w-3.5 h-3.5" /> Edit
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteContact(contact);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             ))}
           </div>
-        ))
         )}
 
         {!loading && visibleContacts.length === 0 && contacts.length > 0 && (

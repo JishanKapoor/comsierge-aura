@@ -69,6 +69,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const { user } = useAuth();
   const [rules, setRules] = useState<ActiveRule[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [aiDraft, setAiDraft] = useState("");
   const [aiProcessing, setAiProcessing] = useState(false);
   const [chat, setChat] = useState<ChatMessage[]>(() => {
@@ -87,6 +88,8 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const [draggedRuleId, setDraggedRuleId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"chat" | "rules">("chat");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const suppressRulesReloadUntilRef = useRef<number>(0);
+  const refreshTimerRef = useRef<number | null>(null);
   
   // Call mode dialog state
   const [showCallModeDialog, setShowCallModeDialog] = useState(false);
@@ -109,9 +112,29 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   // Reusable function to load rules from API
   const loadRules = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
+    if (!showLoading) setIsRefreshing(true);
+
+    const mergeRulesPreserveOrder = (prevRules: ActiveRule[], apiRules: ActiveRule[]) => {
+      const byId = new Map(apiRules.map((r) => [r.id, r] as const));
+      const seen = new Set<string>();
+
+      const merged: ActiveRule[] = [];
+      for (const r of prevRules) {
+        const next = byId.get(r.id);
+        if (next) {
+          merged.push(next);
+          seen.add(r.id);
+        }
+      }
+      for (const r of apiRules) {
+        if (!seen.has(r.id)) merged.push(r);
+      }
+      return merged;
+    };
+
     try {
       const apiRules = await fetchRules();
-      setRules(apiRules);
+      setRules((prev) => (showLoading ? apiRules : mergeRulesPreserveOrder(prev, apiRules)));
     } catch (error) {
       console.error("Failed to load rules:", error);
       if (showLoading) {
@@ -119,6 +142,10 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       }
     } finally {
       if (showLoading) setIsLoading(false);
+      if (!showLoading) {
+        // Keep refresh indicator visible briefly so it doesn't flash.
+        window.setTimeout(() => setIsRefreshing(false), 250);
+      }
     }
   }, []);
 
@@ -138,10 +165,25 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   // Subscribe to rules change events (instant refresh when rules created/deleted elsewhere)
   useEffect(() => {
     const unsubscribe = subscribeToRulesChange(() => {
-      console.log("Rules changed event received, refreshing...");
-      loadRules(false);
+      const now = Date.now();
+      // If this component just performed a local mutation, rely on optimistic UI and avoid a hard refresh.
+      if (now < suppressRulesReloadUntilRef.current) {
+        return;
+      }
+
+      // Debounce to avoid rapid flicker when multiple rule updates fire.
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+      refreshTimerRef.current = window.setTimeout(() => {
+        loadRules(false);
+        refreshTimerRef.current = null;
+      }, 250);
     });
-    return unsubscribe;
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      unsubscribe();
+    };
   }, [loadRules]);
 
   // Sync with external rules (from Transfer modal)
@@ -164,6 +206,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   }, [activeView, loadRules]);
 
   const toggleRule = async (id: string) => {
+    suppressRulesReloadUntilRef.current = Date.now() + 800;
     // Optimistic update
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r)));
     
@@ -178,6 +221,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   };
 
   const deleteRule = async (id: string) => {
+    suppressRulesReloadUntilRef.current = Date.now() + 800;
     // Optimistic update
     const previousRules = [...rules];
     setRules((prev) => prev.filter((r) => r.id !== id));
@@ -193,6 +237,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   };
 
   const addRule = async (text: string, type?: RuleType) => {
+    suppressRulesReloadUntilRef.current = Date.now() + 800;
     const cleaned = text.trim();
     if (!cleaned) {
       toast.error("Enter a rule first");
@@ -356,6 +401,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   })();
 
   const setRoutingPartActive = async (part: "calls" | "messages", nextActive: boolean) => {
+    suppressRulesReloadUntilRef.current = Date.now() + 800;
     const existing = part === "calls" ? routingForwardRule : routingMessageRule;
 
     // If toggling on but rule doesn't exist yet, create a default one.
@@ -413,6 +459,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   };
 
   const deleteRoutingGroup = async () => {
+    suppressRulesReloadUntilRef.current = Date.now() + 800;
     const ids = [routingForwardRule?.id, routingMessageRule?.id].filter(Boolean) as string[];
     if (ids.length === 0) return;
 
@@ -620,7 +667,15 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                     ))}
                   </div>
                 ) : rules.length > 0 ? (
-                  <div>
+                  <div className={cn("relative", (isRefreshing || aiProcessing) && "transition-opacity duration-300", isRefreshing && "opacity-80")}>
+                    {isRefreshing && (
+                      <div className="absolute top-2 right-2 z-10">
+                        <span className="inline-flex items-center gap-2 rounded-full bg-white/90 border border-gray-200 px-2 py-1 text-[10px] text-gray-600 shadow-sm">
+                          <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                          Updating
+                        </span>
+                      </div>
+                    )}
                     {displayRules.map((rule) => {
                       const isRoutingGroup = Boolean(rule.conditions?.__routingGroup);
                       const meta = isRoutingGroup
