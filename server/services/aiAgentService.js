@@ -2697,18 +2697,32 @@ const executeSendMessageTool = tool(
         });
         await savedMessage.save();
         
-        // Update conversation
+        // Update or create conversation
         const phoneDigits = toNumber.replace(/\D/g, '').slice(-10);
         const allConvos = await Conversation.find({ userId });
         const matchingConvo = allConvos.find(c => {
           const convoDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
           return convoDigits === phoneDigits;
         });
+        
         if (matchingConvo) {
           matchingConvo.lastMessage = messageText;
           matchingConvo.lastMessageAt = new Date();
           matchingConvo.messageCount = (matchingConvo.messageCount || 0) + 1;
           await matchingConvo.save();
+        } else {
+          // Create new conversation
+          await Conversation.create({
+            userId,
+            contactPhone: toNumber,
+            contactName: contactName || toNumber,
+            lastMessage: messageText,
+            lastMessageAt: new Date(),
+            messageCount: 1,
+            isRead: true,
+            status: "active",
+          });
+          console.log("Created new conversation for:", toNumber);
         }
       } catch (dbError) {
         console.error("DB save error (message still sent):", dbError);

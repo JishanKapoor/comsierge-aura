@@ -8,6 +8,7 @@ export type CategoryType = "personal" | "business" | "finance" | "meeting" | "pr
 
 export interface Conversation {
   id: string;
+  contactId?: string;
   contactPhone: string;
   contactName: string;
   lastMessage: string;
@@ -185,6 +186,7 @@ export const fetchConversations = async (filter: FilterType = "all"): Promise<Co
 
   return (data.data ?? []).map((c: any) => ({
     id: c._id,
+    contactId: c.contactId || c._id, // Use conversation ID as fallback for contactId
     contactPhone: c.contactPhone,
     contactName: c.contactName,
     lastMessage: c.lastMessage || "",
