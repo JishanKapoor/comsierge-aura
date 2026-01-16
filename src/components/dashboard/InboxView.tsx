@@ -3047,54 +3047,56 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
                   <ConversationSkeleton key={i} />
                 ))}
               </div>
-            ) : searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
-              <div className="border-b border-gray-100">
-              {matchingContacts.map((contact) => (
-                <button
-                  key={`contact-${contact.id}`}
-                  onClick={() => startConversationForContact(contact)}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-medium bg-indigo-500">
-                      {contact.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-gray-800 font-medium">{contact.name}</p>
-                      <p className="truncate text-xs text-gray-500">{contact.phone}</p>
-                    </div>
-                    <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />
-                  </div>
-                </button>
-              ))}
+            ) : (
+              <>
+                {/* Show matching contacts that don't have conversations yet */}
+                {searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) && (
+                  <div className="border-b border-gray-100">
+                    {matchingContacts.map((contact) => (
+                      <button
+                        key={`contact-${contact.id}`}
+                        onClick={() => startConversationForContact(contact)}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-medium bg-indigo-500">
+                            {contact.name.charAt(0)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-gray-800 font-medium">{contact.name}</p>
+                            <p className="truncate text-xs text-gray-500">{contact.phone}</p>
+                          </div>
+                          <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />
+                        </div>
+                      </button>
+                    ))}
 
-              {canStartNewNumber && (
-                <button
-                  onClick={() => startConversationForNumber(searchQuery)}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-medium bg-emerald-500">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-gray-800 font-medium">Text {searchQuery.trim()}</p>
-                      <p className="truncate text-xs text-gray-500">Start a new conversation</p>
-                    </div>
+                    {canStartNewNumber && (
+                      <button
+                        onClick={() => startConversationForNumber(searchQuery)}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-medium bg-emerald-500">
+                            <Phone className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-gray-800 font-medium">Text {searchQuery.trim()}</p>
+                            <p className="truncate text-xs text-gray-500">Start a new conversation</p>
+                          </div>
+                        </div>
+                      </button>
+                    )}
                   </div>
-                </button>
-              )}
-            </div>
-          )}
+                )}
 
-          {!isLoadingMessages && filteredMessages.length === 0 ? (
-            searchQuery.trim() && (matchingContacts.length > 0 || canStartNewNumber) ? null : (
-              <div className="p-6 text-center">
-                <p className="text-sm text-gray-500">No conversations found</p>
-              </div>
-            )
-          ) : (
-            filteredMessages.map((msg) => {
+                {/* Show filtered conversations */}
+                {filteredMessages.length === 0 && !matchingContacts.length && !canStartNewNumber ? (
+                  <div className="p-6 text-center">
+                    <p className="text-sm text-gray-500">No conversations found</p>
+                  </div>
+                ) : (
+                  filteredMessages.map((msg) => {
               const isSelected = selectedMessage?.id === msg.id;
               const isUnread = !msg.isRead;
               const isPinned = msg.isPinned || false;
@@ -3292,6 +3294,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               </div>
               );
             })
+          )}
+          </>
           )}
           </div>
         </div>
