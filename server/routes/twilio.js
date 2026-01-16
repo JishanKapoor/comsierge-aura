@@ -753,8 +753,9 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
           contactName: contactName || "Unknown",
           direction: "outgoing",
           body: body || (outboundAttachment ? "[Image]" : ""),
-          // Delivery is async; start as pending and update via status callbacks
-          status: "pending",
+          // Twilio accepted the send (we have a SID) - show as sent immediately.
+          // Status callbacks can later promote to delivered or mark failed.
+          status: "sent",
           twilioSid: twilioMessage.sid,
           fromNumber: cleanFrom,
           toNumber: cleanTo,
@@ -1888,6 +1889,12 @@ router.post("/webhook/sms", async (req, res) => {
               
               if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
                 const transferClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+
+                const webhookBase =
+                  process.env.WEBHOOK_BASE_URL ||
+                  process.env.RENDER_EXTERNAL_URL ||
+                  process.env.API_BASE_URL ||
+                  `https://${req.get('host')}`;
                 
                 // Build transferred message with sender info (name + phone)
                 const senderName = contact?.name || From;
@@ -1897,7 +1904,10 @@ router.post("/webhook/sms", async (req, res) => {
                 const transferResult = await transferClient.messages.create({
                   body: transferredBody,
                   from: normalizedTo,
-                  to: transferTargetPhone
+                  to: transferTargetPhone,
+                  // Ensure we receive delivery/failure updates for this transfer send
+                  statusCallback: `${webhookBase}/api/twilio/webhook/status`,
+                  statusCallbackMethod: "POST",
                 });
                 
                 wasTransferred = true;
@@ -1925,7 +1935,8 @@ router.post("/webhook/sms", async (req, res) => {
                     contactName: transferDetails.contactName || "Unknown",
                     direction: "outgoing",
                     body: transferredBody,
-                    status: "pending",
+                    // Twilio accepted the transfer send - show as sent immediately.
+                    status: "sent",
                     twilioSid: transferResult.sid,
                     fromNumber: normalizedTo,
                     toNumber: recipientPhone,
