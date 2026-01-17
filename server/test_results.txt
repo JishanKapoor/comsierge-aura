@@ -1,0 +1,995 @@
+﻿
+======================================================================
+≡ƒº¬ DIALOGUE STATE MANAGER - COMPREHENSIVE TEST SUITE
+======================================================================
+Using AI-powered intent classification (LangChain/LangGraph)
+======================================================================
+
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 1: Emergency Override (Escalation Logic)
+   Test if the system can recognize when to 'break character' and destroy a blocking rule based on emergency keywords
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Grandma] "Where are you?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Where are you?"
+From: Grandma (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+node : (node:6292) [MONGOOSE] Warning: Duplicate schema index on {"expiresAt":1} found. This 
+is often due to declaring an index using both "index: true" and "schema.index()". Please 
+remove the duplicate index definition.
+At line:1 char:1
++ node scripts/test_dialogue_state_manager.js 2>&1 | Out-File -FilePath ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:6292) [MO...dex definition.:String) [], Rem 
+   oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: location_query (priority: 40)
+   Final State: BOUND
+   Action: ACTIVATE_DEFLECTION
+   Auto-Reply: I'm tied up with work right now.
+============================================================
+
+      Γ£à PASSED
+         Intent: location_query (priority: 40)
+         State: IDLE ΓåÆ BOUND
+         Action: ACTIVATE_DEFLECTION
+         Reply: "I'm tied up with work right now."
+
+   Step 2: [Grandma] "I really need you."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "I really need you."
+From: Grandma (+15551234567)
+Current State: BOUND
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: plea_urgent (priority: 85)
+   Final State: BOUND
+   Action: DEFLECT
+   Auto-Reply: I'll call you as soon as I'm free.
+============================================================
+
+      Γ£à PASSED
+         Intent: plea_urgent (priority: 85)
+         State: BOUND ΓåÆ BOUND
+         Action: DEFLECT
+         Reply: "I'll call you as soon as I'm free."
+
+   Step 3: [Grandma] "I fell down and I'm scared."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "I fell down and I'm scared."
+From: Grandma (+15551234567)
+Current State: BOUND
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: emergency_safety (priority: 95)
+   Final State: ESCALATED
+   Action: EMERGENCY_ESCALATE
+   Auto-Reply: I am alerting Jishan right now. This is urgent.
+============================================================
+
+      Γ£à PASSED
+         Intent: emergency_safety (priority: 95)
+         State: BOUND ΓåÆ ESCALATED
+         Action: EMERGENCY_ESCALATE
+         Reply: "I am alerting Jishan right now. This is urgent."
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 2: Scheduling Intent Classification
+   Test if the AI correctly classifies scheduling-related intents
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Recruiter] "Can we schedule a call tomorrow?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Can we schedule a call tomorrow?"
+From: Recruiter (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: meeting_request (priority: 60)
+   Final State: SCHEDULING_MODE
+   Action: OFFER_SLOTS
+   Auto-Reply: Jishan are free tomorrow between 2 PM and 4 PM. Do any of those work?
+============================================================
+
+      Γ£à PASSED
+         Intent: meeting_request (priority: 60)
+         State: IDLE ΓåÆ SCHEDULING_MODE
+         Action: OFFER_SLOTS
+         Reply: "Jishan are free tomorrow between 2 PM and 4 PM. Do any of those work?"
+
+   Step 2: [Recruiter] "How about 2:30 PM?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "How about 2:30 PM?"
+From: Recruiter (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: proposal_time (priority: 60)
+   Final State: SCHEDULING_MODE
+   Action: VALIDATE_SLOT
+   Auto-Reply: 2:30 PM works. Shall I lock that in for you?
+============================================================
+
+      Γ£à PASSED
+         Intent: proposal_time (priority: 60)
+         State: IDLE ΓåÆ SCHEDULING_MODE
+         Action: VALIDATE_SLOT
+         Reply: "2:30 PM works. Shall I lock that in for you?"
+
+   Step 3: [Recruiter] "Actually, make it 3:00 PM instead."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Actually, make it 3:00 PM instead."
+From: Recruiter (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: proposal_correction (priority: 60)
+   Final State: SCHEDULING_MODE
+   Action: VALIDATE_SLOT
+   Auto-Reply: 3:00 PM works. Shall I lock that in for you?
+============================================================
+
+      Γ£à PASSED
+         Intent: proposal_correction (priority: 60)
+         State: IDLE ΓåÆ SCHEDULING_MODE
+         Action: VALIDATE_SLOT
+         Reply: "3:00 PM works. Shall I lock that in for you?"
+
+   Step 4: [Recruiter] "Yes, that works. Confirmed."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Yes, that works. Confirmed."
+From: Recruiter (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: confirmation (priority: 60)
+   Final State: IDLE
+   Action: BOOK_MEETING
+   Auto-Reply: Perfect! 3:00 PM is booked. A calendar invite will be sent shortly.
+============================================================
+
+      Γ£à PASSED
+         Intent: confirmation (priority: 60)
+         State: IDLE ΓåÆ IDLE
+         Action: BOOK_MEETING
+         Reply: "Perfect! 3:00 PM is booked. A calendar invite will be sent shortly."
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 3: VIP Code Bypass (Do Not Disturb Override)
+   Test a hard-coded bypass feature for trusted contacts to break through DND mode
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Wife] "Call me."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Call me."
+From: Wife (+15551234567)
+Current State: DND_ACTIVE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: call_request (priority: 30)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: call_request (priority: 30)
+         State: DND_ACTIVE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+   Step 2: [Wife] "Banana"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Banana"
+From: Wife (+15551234567)
+Current State: DND_ACTIVE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: vip_override_code (priority: 100)
+   Final State: ESCALATED
+   Action: VIP_BYPASS
+   Auto-Reply: Connecting you now.
+============================================================
+
+      Γ£à PASSED
+         Intent: vip_override_code (priority: 100)
+         State: DND_ACTIVE ΓåÆ ESCALATED
+         Action: VIP_BYPASS
+         Reply: "Connecting you now."
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 4: Ambiguity Loop (Unknown Caller Screening)
+   Test how the system handles vague identification from unknown callers
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Unknown] "Hello?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Hello?"
+From: Unknown (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: greeting (priority: 30)
+   Final State: SCREENING_MODE
+   Action: START_SCREENING
+   Auto-Reply: This is Jishan's AI. Who is calling and is it urgent?
+============================================================
+
+      Γ£à PASSED
+         Intent: greeting (priority: 30)
+         State: IDLE ΓåÆ SCREENING_MODE
+         Action: START_SCREENING
+         Reply: "This is Jishan's AI. Who is calling and is it urgent?"
+
+   Step 2: [Unknown] "It's me."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "It's me."
+From: Unknown (+15551234567)
+Current State: SCREENING_MODE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: identification_vague (priority: 35)
+   Final State: SCREENING_MODE
+   Action: SCREENING_CHALLENGE
+   Auto-Reply: Sorry, I don't have this number saved. What is your name?
+============================================================
+
+      Γ£à PASSED
+         Intent: identification_vague (priority: 35)
+         State: SCREENING_MODE ΓåÆ SCREENING_MODE
+         Action: SCREENING_CHALLENGE
+         Reply: "Sorry, I don't have this number saved. What is your name?"
+
+   Step 3: [Unknown] "The guy from the gym."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "The guy from the gym."
+From: Unknown (+15551234567)
+Current State: SCREENING_MODE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: identification_vague (priority: 35)
+   Final State: SCREENING_MODE
+   Action: SCREENING_SOFT_FAIL
+   Auto-Reply: I can't put you through without a name. Please state your name or text directly.
+============================================================
+
+      Γ£à PASSED
+         Intent: identification_vague (priority: 35)
+         State: SCREENING_MODE ΓåÆ SCREENING_MODE
+         Action: SCREENING_SOFT_FAIL
+         Reply: "I can't put you through without a name. Please state your name or text directly."
+
+   Step 4: [Unknown] "It's Dave."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "It's Dave."
+From: Unknown (+15551234567)
+Current State: SCREENING_MODE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: identification_success (priority: 35)
+   Final State: FORWARDING
+   Action: SCREENING_SUCCESS
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: identification_success (priority: 35)
+         State: SCREENING_MODE ΓåÆ FORWARDING
+         Action: SCREENING_SUCCESS
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 5: Sensitive Data Handling (2FA & Fraud Alerts)
+   Test blocking of sensitive financial data from forwarding
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [BoA] "Your code is 8921. Do not share."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Your code is 8921. Do not share."
+From: BoA (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: 2fa_code (priority: 85)
+   Final State: IDLE
+   Action: BLOCK_FORWARD_SENSITIVE
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: 2fa_code (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: BLOCK_FORWARD_SENSITIVE
+
+   Step 2: [BoA] "Did you spend $5,000 at Apple Store?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Did you spend $5,000 at Apple Store?"
+From: BoA (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: fraud_alert (priority: 85)
+   Final State: IDLE
+   Action: HOLD_SPAM
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: fraud_alert (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: HOLD_SPAM
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 6: Edge Cases - Mixed Intent Signals
+   Test AI handling of ambiguous or mixed-signal messages
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Boss] "Need you ASAP but not urgent"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Need you ASAP but not urgent"
+From: Boss (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: plea_urgent (priority: 80)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: plea_urgent (priority: 80)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+   Step 2: [Friend] "lol call me back when u can ≡ƒÿé"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "lol call me back when u can ≡ƒÿé"
+From: Friend (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: call_request (priority: 20)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: call_request (priority: 20)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+   Step 3: [Mom] "Call me. Not emergency but important."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Call me. Not emergency but important."
+From: Mom (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: plea_urgent (priority: 80)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: plea_urgent (priority: 80)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 7: Spam and Marketing Detection
+   Test if the system correctly identifies and blocks spam
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Unknown] "Congratulations! You've won a $1000 gift card! Click here to claim."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Congratulations! You've won a $1000 gift card! Click here to claim."
+From: Unknown (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: statement (priority: 20)
+   Final State: SCREENING_MODE
+   Action: START_SCREENING
+   Auto-Reply: This is Jishan's AI. Who is calling and is it urgent?
+============================================================
+
+      Γ¥î FAILED
+         - Intent: expected one of [spam, marketing, scam], got "statement"
+         - Action: expected one of [HOLD_SPAM, BLOCK, PASS_THROUGH], got "START_SCREENING"
+         Got: Intent=statement, State=SCREENING_MODE, Action=START_SCREENING
+
+   Step 2: [Unknown] "Hi, this is a reminder about your car's extended warranty."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Hi, this is a reminder about your car's extended warranty."
+From: Unknown (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: statement (priority: 20)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ¥î FAILED
+         - Intent: expected one of [spam, marketing, telemarketing], got "statement"
+         Got: Intent=statement, State=IDLE, Action=PASS_THROUGH
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 8: Multi-language Messages
+   Test AI handling of non-English messages
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Carlos] "┬íHola! ┬┐Puedes llamarme?"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "┬íHola! ┬┐Puedes llamarme?"
+From: Carlos (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: call_request (priority: 30)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: call_request (priority: 30)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+   Step 2: [Pierre] "C'est urgent! Appelez-moi s'il vous pla├«t!"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "C'est urgent! Appelez-moi s'il vous pla├«t!"
+From: Pierre (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: plea_urgent (priority: 85)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: plea_urgent (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 9: Emergency Variations
+   Test various emergency phrasings
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Sister] "911! Dad had a heart attack!"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "911! Dad had a heart attack!"
+From: Sister (+15551234567)
+Current State: BOUND
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: emergency_medical (priority: 100)
+   Final State: ESCALATED
+   Action: EMERGENCY_ESCALATE
+   Auto-Reply: I am alerting Jishan right now. This is urgent.
+============================================================
+
+      Γ£à PASSED
+         Intent: emergency_medical (priority: 100)
+         State: BOUND ΓåÆ ESCALATED
+         Action: EMERGENCY_ESCALATE
+         Reply: "I am alerting Jishan right now. This is urgent."
+
+   Step 2: [Neighbor] "There's a fire in the building! Get out now!"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "There's a fire in the building! Get out now!"
+From: Neighbor (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: emergency_safety (priority: 100)
+   Final State: ESCALATED
+   Action: EMERGENCY_ESCALATE
+   Auto-Reply: I am alerting Jishan right now. This is urgent.
+============================================================
+
+      Γ£à PASSED
+         Intent: emergency_safety (priority: 100)
+         State: IDLE ΓåÆ ESCALATED
+         Action: EMERGENCY_ESCALATE
+         Reply: "I am alerting Jishan right now. This is urgent."
+
+   Step 3: [Kid] "Help! Someone is following me!"
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Help! Someone is following me!"
+From: Kid (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: emergency_safety (priority: 95)
+   Final State: ESCALATED
+   Action: EMERGENCY_ESCALATE
+   Auto-Reply: I am alerting Jishan right now. This is urgent.
+============================================================
+
+      Γ£à PASSED
+         Intent: emergency_safety (priority: 95)
+         State: IDLE ΓåÆ ESCALATED
+         Action: EMERGENCY_ESCALATE
+         Reply: "I am alerting Jishan right now. This is urgent."
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 10: Various OTP/Verification Formats
+   Test detection of various 2FA code formats
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Google] "G-123456 is your Google verification code."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "G-123456 is your Google verification code."
+From: Google (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: 2fa_code (priority: 85)
+   Final State: IDLE
+   Action: BLOCK_FORWARD_SENSITIVE
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: 2fa_code (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: BLOCK_FORWARD_SENSITIVE
+
+   Step 2: [Amazon] "Your Amazon OTP is 789012. Valid for 10 minutes."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Your Amazon OTP is 789012. Valid for 10 minutes."
+From: Amazon (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: 2fa_code (priority: 85)
+   Final State: IDLE
+   Action: BLOCK_FORWARD_SENSITIVE
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: 2fa_code (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: BLOCK_FORWARD_SENSITIVE
+
+   Step 3: [Uber] "Your Uber code is 4521. Never share this code."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Your Uber code is 4521. Never share this code."
+From: Uber (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: 2fa_code (priority: 85)
+   Final State: IDLE
+   Action: BLOCK_FORWARD_SENSITIVE
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: 2fa_code (priority: 85)
+         State: IDLE ΓåÆ IDLE
+         Action: BLOCK_FORWARD_SENSITIVE
+
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+≡ƒôï TEST 11: Professional/Business Messages
+   Test handling of professional communication
+ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+   Step 1: [Client] "Please review the attached proposal and let me know your thoughts."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Please review the attached proposal and let me know your thoughts."
+From: Client (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: meeting_request (priority: 60)
+   Final State: SCHEDULING_MODE
+   Action: OFFER_SLOTS
+   Auto-Reply: Jishan are free tomorrow between 2 PM and 4 PM. Do any of those work?
+============================================================
+
+      Γ¥î FAILED
+         - Intent: expected one of [work_request, information_request, plea_soft], got "meeting_request"
+         Got: Intent=meeting_request, State=SCHEDULING_MODE, Action=OFFER_SLOTS
+
+   Step 2: [HR] "Your interview is confirmed for Monday at 10 AM."
+
+============================================================
+≡ƒºá DIALOGUE STATE MANAGER
+============================================================
+Message: "Your interview is confirmed for Monday at 10 AM."
+From: HR (+15551234567)
+Current State: IDLE
+============================================================
+≡ƒôè [NODE] Classify Intent
+≡ƒÜ¿ [NODE] Check Emergency Override
+≡ƒöæ [NODE] Check VIP Bypass
+≡ƒöÆ [NODE] Check Sensitive Data
+≡ƒöì [NODE] Handle Screening
+≡ƒôà [NODE] Handle Scheduling
+≡ƒöù [NODE] Handle Bound State
+≡ƒÄ» [NODE] Determine Final Action
+
+≡ƒôñ RESULT:
+   Intent: confirmation (priority: 60)
+   Final State: IDLE
+   Action: PASS_THROUGH
+   Auto-Reply: (none)
+============================================================
+
+      Γ£à PASSED
+         Intent: confirmation (priority: 60)
+         State: IDLE ΓåÆ IDLE
+         Action: PASS_THROUGH
+
+======================================================================
+≡ƒôè TEST SUMMARY
+======================================================================
+   Total Tests: 30
+   Passed: 27 Γ£à
+   Failed: 3 Γ¥î
+   Success Rate: 90.0%
+======================================================================
+

@@ -67,30 +67,198 @@ async function translateText(text, targetLang, sourceLang = 'auto') {
 // ===============================================
 // INTENT DETECTION for Auto-Reply Rules
 // Detects the semantic intent of incoming messages
+// Priority scores determine override behavior
 // ===============================================
-function detectMessageIntent(messageBody) {
+const INTENT_PRIORITIES = {
+  emergency_medical: 99,
+  emergency_safety: 99,
+  vip_override_code: 95,
+  urgent: 80,
+  plea_desperate: 75,
+  plea_soft: 60,
+  meeting_request: 50,
+  proposal_time: 50,
+  proposal_correction: 50,
+  confirmation: 50,
+  call_request: 40,
+  location_query: 30,
+  availability_query: 30,
+  activity_query: 30,
+  identification_success: 30,
+  identification_vague: 20,
+  greeting: 10,
+  acknowledgment: 10,
+  question: 10,
+  statement: 5,
+  unknown: 0,
+};
+
+function detectMessageIntent(messageBody, options = {}) {
   if (!messageBody || typeof messageBody !== 'string') {
-    return { intent: 'unknown', confidence: 0 };
+    return { intent: 'unknown', confidence: 0, priority: 0 };
   }
   
   const body = messageBody.toLowerCase().trim();
+  const { vipCodeWord, screeningMode } = options;
   
-  // Intent patterns - order matters (more specific first)
+  // Intent patterns - order matters (more specific/higher priority first)
   const intentPatterns = [
-    // Urgency/emergency - check FIRST before greetings
+    // === EMERGENCY INTENTS (Priority 99) - Check FIRST ===
+    {
+      intent: 'emergency_medical',
+      patterns: [
+        /\b(fell|fallen)\s+(down|over)/i,
+        /\b(hurt|injured|bleeding|broken)\b/i,
+        /\bheart\s+(attack|problem)/i,
+        /can'?t\s+breathe/i,
+        /\b(hospital|ambulance|911)\b/i,
+        /\b(scared|terrified)\b.*\b(hurt|fell|pain)/i,
+        /\bpain\b.*\b(chest|heart)/i,
+        /chest\s+(hurts?|ache|pain)/i,
+        /medical\s+emergency/i,
+        /\bstroke\b/i,
+        /\bseizure\b/i,
+        /i\s+fell\s+down/i,
+        /fell.*scared/i,
+      ],
+      keywords: ['fell down', 'i fell', 'hurt myself', 'in pain', 'need help now', 'call 911']
+    },
+    {
+      intent: 'emergency_safety',
+      patterns: [
+        /someone\s+(broke|breaking)\s+in/i,
+        /\b(intruder|robber|burglar)\b/i,
+        /\bfire\b.*\b(house|building|home)/i,
+        /\baccident\b/i,
+        /\bcrash(ed)?\b/i,
+        /being\s+followed/i,
+        /\bdanger(ous)?\b/i,
+        /help\s*!+/i,
+        /call.*police/i,
+      ],
+      keywords: ['break in', 'someone here', 'car accident', 'need police']
+    },
+    // === PLEA INTENTS (Priority 60-75) ===
+    // plea_desperate: Explicit "please" + urgency words OR "desperately/begging"
+    {
+      intent: 'plea_desperate',
+      patterns: [
+        /please.*\b(help|call|answer|respond)\b/i,
+        /\bdesperately\b/i,
+        /\bbegging\b/i,
+        /it'?s\s+(very\s+)?important/i,
+        /\bplease\b.*\bplease\b/i,
+      ],
+      keywords: ['please call', 'please help', 'very important', 'desperately']
+    },
+    // plea_soft: "I need you" without explicit please (lower urgency)
+    {
+      intent: 'plea_soft',
+      patterns: [
+        /i\s+(really\s+)?need\s+(you|to\s+talk)/i,
+        /\bmiss\s+you\b/i,
+        /wish\s+you\s+were/i,
+      ],
+      keywords: ['need you', 'miss you', 'really need you']
+    },
+    // === URGENCY (Priority 80) ===
     {
       intent: 'urgent',
       patterns: [
         /\burgent\b/i,
-        /\bemergency\b/i,
         /\basap\b/i,
-        /need.*now/i,
-        /help\s*!/i,
-        /\bimportant\b/i,
+        /need.*right\s+now/i,
+        /time\s+sensitive/i,
+        /\bcritical\b/i,
+      ],
+      keywords: ['urgent', 'asap', 'right now']
+    },
+    // === SCHEDULING INTENTS (Priority 50) ===
+    {
+      intent: 'meeting_request',
+      patterns: [
+        /can\s+we\s+(chat|talk|meet|schedule)/i,
+        /\bset\s+up\s+(a\s+)?(call|meeting)/i,
+        /\bbook\s+(a\s+)?(time|slot|meeting)/i,
+        /\bschedule\s+(a\s+)?(call|meeting|chat)/i,
+        /when\s+can\s+(we|i)\s+(meet|talk|chat)/i,
+        /got\s+time\s+to\s+(talk|chat|meet)/i,
+        /\bfree\s+(for|to)\s+(a\s+)?(call|chat|meeting)/i,
+      ],
+      keywords: ['can we chat', 'schedule a call', 'set up a meeting', 'book a time']
+    },
+    {
+      intent: 'proposal_time',
+      patterns: [
+        /how\s+about\s+(\d|noon|morning|afternoon|evening)/i,
+        /what\s+about\s+(\d|noon|morning|afternoon)/i,
+        /does\s+(\d+|noon|\d+\s*[ap]m?)\s+work/i,
+        /^\d{1,2}(:\d{2})?\s*([ap]m?)?$/i,
+        /^(noon|morning|afternoon|evening)$/i,
+        /let'?s\s+(do|say)\s+(\d|noon)/i,
       ],
       keywords: []
     },
-    // Location queries
+    {
+      intent: 'proposal_correction',
+      patterns: [
+        /actually[,.]?\s*(make|let'?s|can\s+we)/i,
+        /wait[,.]?\s*(change|make)/i,
+        /on\s+second\s+thought/i,
+        /can\s+(we|you)\s+change/i,
+        /instead[,.]?\s*(of|let'?s)/i,
+        /scratch\s+that/i,
+      ],
+      keywords: ['actually make it', 'change it to', 'on second thought']
+    },
+    {
+      intent: 'confirmation',
+      patterns: [
+        /^(yes|yeah|yep|yup|sure|confirmed?|absolutely|definitely)\b/i,
+        /that\s+works/i,
+        /sounds\s+good/i,
+        /^perfect\.?$/i,
+        /lock\s+it\s+in/i,
+        /book\s+it/i,
+      ],
+      keywords: ['yes', 'confirmed', 'sounds good', 'that works']
+    },
+    // === CALL REQUEST (Priority 40) ===
+    {
+      intent: 'call_request',
+      patterns: [
+        /\bcall\s+me\b/i,
+        /\bgive\s+me\s+a\s+call\b/i,
+        /can\s+you\s+call/i,
+        /\bcall\s+(you|u)\s+back/i,
+        /\bring\s+me\b/i,
+      ],
+      keywords: ['call me', 'give me a call', 'ring me']
+    },
+    // === IDENTIFICATION INTENTS (for screening) ===
+    {
+      intent: 'identification_success',
+      patterns: [
+        /^(this\s+is|it'?s|i'?m|my\s+name\s+is)\s+[A-Z][a-z]+/i,
+        /^[A-Z][a-z]+\s+(here|speaking|calling)/i,
+        /name\s+is\s+[A-Z][a-z]+/i,
+      ],
+      keywords: []
+    },
+    {
+      intent: 'identification_vague',
+      patterns: [
+        /^it'?s\s+me\.?$/i,
+        /^me\.?$/i,
+        /you\s+know\s+(me|who)/i,
+        /the\s+(guy|girl|person|one)\s+from/i,
+        /we\s+met\s+(at|yesterday|last)/i,
+        /^your\s+friend\.?$/i,
+        /remember\s+me/i,
+      ],
+      keywords: []
+    },
+    // === LOCATION QUERIES (Priority 30) ===
     { 
       intent: 'location_query',
       patterns: [
@@ -104,7 +272,7 @@ function detectMessageIntent(messageBody) {
       ],
       keywords: ['where are you', 'where r u', 'where u at', 'location']
     },
-    // Availability/timing queries
+    // === AVAILABILITY QUERIES (Priority 30) ===
     {
       intent: 'availability_query',
       patterns: [
@@ -119,7 +287,7 @@ function detectMessageIntent(messageBody) {
       ],
       keywords: ['when will you', 'what time', 'how long', 'when coming', 'are you free', 'eta']
     },
-    // Activity queries
+    // === ACTIVITY QUERIES (Priority 30) ===
     {
       intent: 'activity_query',
       patterns: [
@@ -132,7 +300,7 @@ function detectMessageIntent(messageBody) {
       ],
       keywords: ['what are you doing', 'whatcha doing', 'what up', 'you busy']
     },
-    // Greetings - use word boundaries to avoid false matches
+    // === GREETINGS (Priority 10) ===
     {
       intent: 'greeting',
       patterns: [
@@ -140,19 +308,20 @@ function detectMessageIntent(messageBody) {
         /good\s+(morning|afternoon|evening)/i,
         /how\s+(are|r)\s+(you|u)\b/i,
         /how's\s+it\s+going/i,
-      ],
-      keywords: []  // Removed keywords to avoid false matches like "This" -> "hi"
-    },
-    // Confirmation/acknowledgment
-    {
-      intent: 'acknowledgment',
-      patterns: [
-        /^(ok|okay|k|kk|sure|alright|got\s*it|thanks|thx|ty)\b/i,
-        /^(cool|sounds\s+good|perfect|great)\b/i,
+        /^hello\?$/i,
       ],
       keywords: []
     },
-    // Questions (generic) - more specific patterns
+    // === ACKNOWLEDGMENT (Priority 10) ===
+    {
+      intent: 'acknowledgment',
+      patterns: [
+        /^(ok|okay|k|kk|alright|got\s*it|thanks|thx|ty)\b/i,
+        /^(cool|great)\b/i,
+      ],
+      keywords: []
+    },
+    // === GENERIC QUESTIONS (Priority 10) ===
     {
       intent: 'question',
       patterns: [
@@ -163,12 +332,29 @@ function detectMessageIntent(messageBody) {
     },
   ];
   
+  // Check for VIP override code word first (highest priority after emergency)
+  if (vipCodeWord && body === vipCodeWord.toLowerCase()) {
+    return { 
+      intent: 'vip_override_code', 
+      confidence: 1.0, 
+      priority: INTENT_PRIORITIES.vip_override_code,
+      isOverride: true 
+    };
+  }
+  
   // Check each intent pattern
   for (const { intent, patterns, keywords } of intentPatterns) {
     // Check regex patterns
     for (const pattern of patterns) {
       if (pattern.test(body)) {
-        return { intent, confidence: 0.9 };
+        const priority = INTENT_PRIORITIES[intent] || 0;
+        return { 
+          intent, 
+          confidence: 0.9, 
+          priority,
+          isOverride: priority >= 95,
+          isEmergency: intent.startsWith('emergency_'),
+        };
       }
     }
     
@@ -176,13 +362,25 @@ function detectMessageIntent(messageBody) {
     for (const keyword of keywords) {
       const keywordRegex = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'i');
       if (keywordRegex.test(body)) {
-        return { intent, confidence: 0.7 };
+        const priority = INTENT_PRIORITIES[intent] || 0;
+        return { 
+          intent, 
+          confidence: 0.7, 
+          priority,
+          isOverride: priority >= 95,
+          isEmergency: intent.startsWith('emergency_'),
+        };
       }
     }
   }
   
   // Default to statement
-  return { intent: 'statement', confidence: 0.5 };
+  return { intent: 'statement', confidence: 0.5, priority: INTENT_PRIORITIES.statement };
+}
+
+// Get the priority score for an intent
+function getIntentPriority(intent) {
+  return INTENT_PRIORITIES[intent] || 0;
 }
 
 // Check if an incoming message matches a rule's trigger intent

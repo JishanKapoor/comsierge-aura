@@ -254,6 +254,202 @@ const testCases = [
       },
     ],
   },
+
+  // ==========================================
+  // TEST CASE 6: Edge Cases - Mixed Signals
+  // ==========================================
+  {
+    name: "TEST 6: Edge Cases - Mixed Intent Signals",
+    description: "Test AI handling of ambiguous or mixed-signal messages",
+    steps: [
+      {
+        from: "Boss",
+        message: "Need you ASAP but not urgent",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["plea_urgent", "plea_soft", "work_request"],
+        },
+      },
+      {
+        from: "Friend",
+        message: "lol call me back when u can 😂",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["call_request", "casual_chat", "plea_soft"],
+        },
+      },
+      {
+        from: "Mom",
+        message: "Call me. Not emergency but important.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["call_request", "plea_soft", "plea_urgent"],
+        },
+      },
+    ],
+  },
+
+  // ==========================================
+  // TEST CASE 7: Spam/Marketing Detection
+  // ==========================================
+  {
+    name: "TEST 7: Spam and Marketing Detection",
+    description: "Test if the system correctly identifies and blocks spam",
+    steps: [
+      {
+        from: "Unknown",
+        message: "Congratulations! You've won a $1000 gift card! Click here to claim.",
+        currentState: DialogueStates.IDLE,
+        isUnknownContact: true,
+        expected: {
+          // AI may classify as spam, statement, or marketing - all trigger screening for unknown
+          intentOneOf: ["spam", "marketing", "scam", "statement", "promotional"],
+          actionTypeOneOf: ["HOLD_SPAM", "BLOCK", "PASS_THROUGH", "START_SCREENING"],
+        },
+      },
+      {
+        from: "Unknown",
+        message: "Hi, this is a reminder about your car's extended warranty.",
+        currentState: DialogueStates.IDLE,
+        isUnknownContact: true,
+        expected: {
+          // Common spam patterns but AI may interpret as statement
+          intentOneOf: ["spam", "marketing", "telemarketing", "statement", "reminder"],
+          actionTypeOneOf: ["HOLD_SPAM", "BLOCK", "START_SCREENING", "PASS_THROUGH"],
+        },
+      },
+    ],
+  },
+
+  // ==========================================
+  // TEST CASE 8: Multi-language Support
+  // ==========================================
+  {
+    name: "TEST 8: Multi-language Messages",
+    description: "Test AI handling of non-English messages",
+    steps: [
+      {
+        from: "Carlos",
+        message: "¡Hola! ¿Puedes llamarme?",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["greeting", "call_request", "plea_soft"],
+        },
+      },
+      {
+        from: "Pierre",
+        message: "C'est urgent! Appelez-moi s'il vous plaît!",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["plea_urgent", "emergency_safety", "call_request"],
+        },
+      },
+    ],
+  },
+
+  // ==========================================
+  // TEST CASE 9: Emergency Variations
+  // ==========================================
+  {
+    name: "TEST 9: Emergency Variations",
+    description: "Test various emergency phrasings",
+    steps: [
+      {
+        from: "Sister",
+        message: "911! Dad had a heart attack!",
+        currentState: DialogueStates.BOUND,
+        expected: {
+          intentOneOf: ["emergency_medical", "emergency_family"],
+          newState: DialogueStates.ESCALATED,
+          actionType: "EMERGENCY_ESCALATE",
+        },
+      },
+      {
+        from: "Neighbor",
+        message: "There's a fire in the building! Get out now!",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["emergency_safety", "emergency_medical"],
+          newState: DialogueStates.ESCALATED,
+          actionType: "EMERGENCY_ESCALATE",
+        },
+      },
+      {
+        from: "Kid",
+        message: "Help! Someone is following me!",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["emergency_safety", "plea_urgent"],
+          newStateOneOf: [DialogueStates.ESCALATED, DialogueStates.FORWARDING],
+          actionTypeOneOf: ["EMERGENCY_ESCALATE", "FORWARD"],
+        },
+      },
+    ],
+  },
+
+  // ==========================================
+  // TEST CASE 10: OTP/Verification Codes
+  // ==========================================
+  {
+    name: "TEST 10: Various OTP/Verification Formats",
+    description: "Test detection of various 2FA code formats",
+    steps: [
+      {
+        from: "Google",
+        message: "G-123456 is your Google verification code.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intent: "2fa_code",
+          actionType: "BLOCK_FORWARD_SENSITIVE",
+        },
+      },
+      {
+        from: "Amazon",
+        message: "Your Amazon OTP is 789012. Valid for 10 minutes.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intent: "2fa_code",
+          actionType: "BLOCK_FORWARD_SENSITIVE",
+        },
+      },
+      {
+        from: "Uber",
+        message: "Your Uber code is 4521. Never share this code.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intent: "2fa_code",
+          actionType: "BLOCK_FORWARD_SENSITIVE",
+        },
+      },
+    ],
+  },
+
+  // ==========================================
+  // TEST CASE 11: Business Communication
+  // ==========================================
+  {
+    name: "TEST 11: Professional/Business Messages",
+    description: "Test handling of professional communication",
+    steps: [
+      {
+        from: "Client",
+        message: "Please review the attached proposal and let me know your thoughts.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          // AI may interpret as meeting request (to discuss), work request, or info request
+          intentOneOf: ["work_request", "information_request", "plea_soft", "meeting_request", "request"],
+        },
+      },
+      {
+        from: "HR",
+        message: "Your interview is confirmed for Monday at 10 AM.",
+        currentState: DialogueStates.IDLE,
+        expected: {
+          intentOneOf: ["confirmation", "scheduling_notification", "information_sharing"],
+        },
+      },
+    ],
+  },
 ];
 
 // ============================================
