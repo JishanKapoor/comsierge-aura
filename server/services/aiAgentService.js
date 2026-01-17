@@ -3502,7 +3502,10 @@ const cleanupRulesTool = tool(
 const setRoutingPreferencesTool = tool(
   async ({ userId, callsMode, callTags, messagesMode, schedule, isDefault }) => {
     try {
-      console.log("Setting routing preferences:", { userId, callsMode, messagesMode, schedule, isDefault });
+      // If no schedule is provided, this IS a default routing setting
+      const effectiveIsDefault = isDefault !== false && !schedule;
+      
+      console.log("Setting routing preferences:", { userId, callsMode, messagesMode, schedule, isDefault, effectiveIsDefault });
       
       const user = await User.findById(userId);
       if (!user) return "User not found.";
@@ -3547,13 +3550,21 @@ const setRoutingPreferencesTool = tool(
       }
       
       // If this is a scheduled rule (not default), keep existing default rules
-      // If this is default, delete existing rules first
-      if (isDefault) {
-        await Rule.deleteMany({ 
+      // If this is default, delete existing default rules first (those without schedule)
+      if (effectiveIsDefault) {
+        // Delete existing default routing rules (no schedule or null schedule)
+        // Be aggressive - delete rules that could conflict
+        const deleteQuery = { 
           userId, 
           type: { $in: ["forward", "message-notify"] },
-          "conditions.schedule": { $exists: false }
-        });
+          $or: [
+            { "conditions.schedule": { $exists: false } },
+            { "conditions.schedule": null },
+            { "conditions.schedule.start": { $exists: false } }
+          ]
+        };
+        const deleted = await Rule.deleteMany(deleteQuery);
+        console.log(`Deleted ${deleted.deletedCount} existing default routing rules`);
       }
       
       // If scheduled, only delete conflicting scheduled rules
