@@ -10,6 +10,7 @@ import Contact from "../models/Contact.js";
 import CallRecord from "../models/CallRecord.js";
 import Rule from "../models/Rule.js";
 import Media from "../models/Media.js";
+import ConversationState from "../models/ConversationState.js";
 import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 import { detectPriorityContext } from "../utils/priorityContext.js";
@@ -61,6 +62,184 @@ async function translateText(text, targetLang, sourceLang = 'auto') {
     console.error('   ❌ Translation error:', error.message);
     return text;
   }
+}
+
+// ===============================================
+// INTENT DETECTION for Auto-Reply Rules
+// Detects the semantic intent of incoming messages
+// ===============================================
+function detectMessageIntent(messageBody) {
+  if (!messageBody || typeof messageBody !== 'string') {
+    return { intent: 'unknown', confidence: 0 };
+  }
+  
+  const body = messageBody.toLowerCase().trim();
+  
+  // Intent patterns - order matters (more specific first)
+  const intentPatterns = [
+    // Urgency/emergency - check FIRST before greetings
+    {
+      intent: 'urgent',
+      patterns: [
+        /\burgent\b/i,
+        /\bemergency\b/i,
+        /\basap\b/i,
+        /need.*now/i,
+        /help\s*!/i,
+        /\bimportant\b/i,
+      ],
+      keywords: []
+    },
+    // Location queries
+    { 
+      intent: 'location_query',
+      patterns: [
+        /where\s+(are|r)\s+(you|u)/i,
+        /where\s+u\s+at/i,
+        /what.*location/i,
+        /where.*now/i,
+        /what\s+place/i,
+        /which\s+city/i,
+        /are\s+(you|u)\s+(still\s+)?(at|in)/i,
+      ],
+      keywords: ['where are you', 'where r u', 'where u at', 'location']
+    },
+    // Availability/timing queries
+    {
+      intent: 'availability_query',
+      patterns: [
+        /when\s+(will|are|r)\s+(you|u)/i,
+        /what\s+time/i,
+        /how\s+long/i,
+        /when.*coming/i,
+        /when.*here/i,
+        /when.*back/i,
+        /are\s+(you|u)\s+(free|available|busy)/i,
+        /what.*eta/i,
+      ],
+      keywords: ['when will you', 'what time', 'how long', 'when coming', 'are you free', 'eta']
+    },
+    // Activity queries
+    {
+      intent: 'activity_query',
+      patterns: [
+        /what\s+(are|r)\s+(you|u)\s+doing/i,
+        /what.*up\s+to/i,
+        /\bwyd\b/i,
+        /whatcha\s+doing/i,
+        /you\s+busy/i,
+        /still\s+(at\s+)?work/i,
+      ],
+      keywords: ['what are you doing', 'whatcha doing', 'what up', 'you busy']
+    },
+    // Greetings - use word boundaries to avoid false matches
+    {
+      intent: 'greeting',
+      patterns: [
+        /^(hey|hi|hello|yo|sup|what'?s?\s*up|hola)\b/i,
+        /good\s+(morning|afternoon|evening)/i,
+        /how\s+(are|r)\s+(you|u)\b/i,
+        /how's\s+it\s+going/i,
+      ],
+      keywords: []  // Removed keywords to avoid false matches like "This" -> "hi"
+    },
+    // Confirmation/acknowledgment
+    {
+      intent: 'acknowledgment',
+      patterns: [
+        /^(ok|okay|k|kk|sure|alright|got\s*it|thanks|thx|ty)\b/i,
+        /^(cool|sounds\s+good|perfect|great)\b/i,
+      ],
+      keywords: []
+    },
+    // Questions (generic) - more specific patterns
+    {
+      intent: 'question',
+      patterns: [
+        /\?$/,
+        /^(can|could|would|will|do|does|have|has)\s+(you|i|we|they)/i,
+      ],
+      keywords: []
+    },
+  ];
+  
+  // Check each intent pattern
+  for (const { intent, patterns, keywords } of intentPatterns) {
+    // Check regex patterns
+    for (const pattern of patterns) {
+      if (pattern.test(body)) {
+        return { intent, confidence: 0.9 };
+      }
+    }
+    
+    // Check keywords (whole word match using regex)
+    for (const keyword of keywords) {
+      const keywordRegex = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'i');
+      if (keywordRegex.test(body)) {
+        return { intent, confidence: 0.7 };
+      }
+    }
+  }
+  
+  // Default to statement
+  return { intent: 'statement', confidence: 0.5 };
+}
+
+// Check if an incoming message matches a rule's trigger intent
+function matchesRuleTrigger(rule, messageBody, intentResult) {
+  const conditions = rule.conditions || {};
+  
+  // If rule has specific trigger keywords
+  if (conditions.keyword) {
+    const keywords = conditions.keyword.split(',').map(k => k.trim().toLowerCase());
+    const bodyLower = messageBody.toLowerCase();
+    if (keywords.some(kw => bodyLower.includes(kw))) {
+      return true;
+    }
+  }
+  
+  // If rule has trigger intents defined
+  if (conditions.triggerIntents && conditions.triggerIntents.length > 0) {
+    if (conditions.triggerIntents.includes(intentResult.intent)) {
+      return true;
+    }
+  }
+  
+  // If conversationScope has relatedIntents (broader matching)
+  const scope = rule.conversationScope || {};
+  if (scope.enabled && scope.relatedIntents && scope.relatedIntents.length > 0) {
+    if (scope.relatedIntents.includes(intentResult.intent)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Generate a contextually appropriate response for follow-up messages
+function getFollowUpResponse(rule, messageBody, intentResult, responseCount) {
+  const scope = rule.conversationScope || {};
+  const followUpResponses = scope.followUpResponses || {};
+  const alternativeResponses = scope.alternativeResponses || [];
+  const defaultResponse = rule.transferDetails?.autoReplyMessage || "I'll get back to you shortly.";
+  
+  // Check for intent-specific follow-up response
+  if (followUpResponses[intentResult.intent]) {
+    return followUpResponses[intentResult.intent];
+  }
+  
+  // Use alternative responses for variety (cycle through them)
+  if (alternativeResponses.length > 0) {
+    const index = responseCount % alternativeResponses.length;
+    return alternativeResponses[index];
+  }
+  
+  // Fall back to generic follow-up
+  if (followUpResponses.default) {
+    return followUpResponses.default;
+  }
+  
+  return defaultResponse;
 }
 
 const hasCloudinaryConfig =
@@ -2008,6 +2187,289 @@ router.post("/webhook/sms", async (req, res) => {
             break; // Only process first matching transfer rule
           }
           }
+        }
+        
+        // ===============================================
+        // AUTO-REPLY RULES - Finite State Dialogue Management
+        // Handles intelligent auto-replies with conversation context
+        // ===============================================
+        let autoReplySent = false;
+        
+        try {
+          // Detect intent of incoming message
+          const intentResult = detectMessageIntent(Body);
+          console.log(`   🧠 Intent detection: ${intentResult.intent} (confidence: ${intentResult.confidence})`);
+          
+          // Check for existing active conversation state with this contact
+          const activeState = await ConversationState.findActiveState(user._id, From);
+          
+          if (activeState) {
+            // ===== ACTIVE CONVERSATION STATE EXISTS =====
+            // This contact already triggered a rule, send contextual follow-up response
+            console.log(`   🔄 Active conversation state found for contact (rule: ${activeState.ruleId}, state: ${activeState.state})`);
+            
+            // Check if state has expired
+            if (activeState.expiresAt && new Date() > activeState.expiresAt) {
+              console.log(`   ⏰ Conversation state expired, deactivating`);
+              await ConversationState.deactivateForContact(user._id, From);
+            } else {
+              // Get the rule for this state
+              const stateRule = await Rule.findById(activeState.ruleId);
+              
+              if (stateRule && stateRule.active) {
+                // Generate contextual follow-up response
+                const followUpResponse = getFollowUpResponse(
+                  stateRule,
+                  Body,
+                  intentResult,
+                  activeState.responseCount
+                );
+                
+                // Send the follow-up auto-reply
+                const normalizedTo = normalizeToE164ish(To);
+                let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: To });
+                
+                if (!twilioAccount) {
+                  twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedTo });
+                }
+                
+                if (!twilioAccount) {
+                  const allAccounts = await TwilioAccount.find({});
+                  for (const acc of allAccounts) {
+                    const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+                    if (normalizedPhones.includes(normalizedTo)) {
+                      twilioAccount = acc;
+                      break;
+                    }
+                  }
+                }
+                
+                if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken && followUpResponse) {
+                  const replyClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+                  
+                  const replyResult = await replyClient.messages.create({
+                    body: followUpResponse,
+                    from: normalizedTo,
+                    to: From
+                  });
+                  
+                  console.log(`   ✅ Follow-up auto-reply sent (SID: ${replyResult.sid})`);
+                  autoReplySent = true;
+                  
+                  // Update conversation state
+                  activeState.responseCount += 1;
+                  activeState.contextMemory.push({
+                    timestamp: new Date(),
+                    incomingIntent: intentResult.intent,
+                    incomingMessage: Body?.substring(0, 200),
+                    responseSent: followUpResponse?.substring(0, 200),
+                  });
+                  // Keep only last 10 context entries
+                  if (activeState.contextMemory.length > 10) {
+                    activeState.contextMemory = activeState.contextMemory.slice(-10);
+                  }
+                  await activeState.save();
+                  
+                  // Save the auto-reply as an outgoing message
+                  await Message.create({
+                    userId: user._id,
+                    contactPhone: normalizeToE164ish(From) || From,
+                    contactName: contact?.name || From,
+                    direction: "outgoing",
+                    body: followUpResponse,
+                    status: "sent",
+                    twilioSid: replyResult.sid,
+                    fromNumber: normalizedTo,
+                    toNumber: From,
+                    metadata: {
+                      autoReply: true,
+                      followUp: true,
+                      conversationStateId: activeState._id,
+                      ruleId: activeState.ruleId,
+                      detectedIntent: intentResult.intent,
+                    },
+                  });
+                }
+              } else {
+                // Rule no longer active, deactivate state
+                console.log(`   ⚠️ Rule no longer active, deactivating conversation state`);
+                await ConversationState.deactivateForContact(user._id, From);
+              }
+            }
+          } else {
+            // ===== NO ACTIVE STATE - CHECK FOR NEW AUTO-REPLY RULE TRIGGERS =====
+            const autoReplyRules = await Rule.find({
+              userId: user._id,
+              type: "auto-reply",
+              active: true
+            });
+            
+            console.log(`   📬 Found ${autoReplyRules.length} active auto-reply rules`);
+            
+            for (const rule of autoReplyRules) {
+              // Check schedule expiry
+              if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
+                if (new Date() > new Date(rule.schedule.endTime)) {
+                  console.log(`      ⏭️ Auto-reply rule expired, skipping`);
+                  continue;
+                }
+              }
+              
+              // Check time-window schedule
+              if (rule.schedule?.mode === "time-window" && rule.schedule?.timeWindow) {
+                const tw = rule.schedule.timeWindow;
+                if (tw.startHour != null && tw.endHour != null) {
+                  const now = new Date();
+                  const currentHour = now.getHours();
+                  const currentMinute = now.getMinutes();
+                  const currentTime = currentHour * 60 + currentMinute;
+                  const startTime = tw.startHour * 60 + (tw.startMinute || 0);
+                  const endTime = tw.endHour * 60 + (tw.endMinute || 0);
+                  
+                  let inWindow = false;
+                  if (startTime <= endTime) {
+                    // Same day window (e.g., 9am to 5pm)
+                    inWindow = currentTime >= startTime && currentTime <= endTime;
+                  } else {
+                    // Overnight window (e.g., 10pm to 7am)
+                    inWindow = currentTime >= startTime || currentTime <= endTime;
+                  }
+                  
+                  // Check day of week if specified
+                  if (tw.days && tw.days.length > 0) {
+                    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+                    const today = dayNames[now.getDay()];
+                    const inDayWindow = tw.days.some(d => d.toLowerCase() === today);
+                    inWindow = inWindow && inDayWindow;
+                  }
+                  
+                  if (!inWindow) {
+                    console.log(`      ⏭️ Outside time window for auto-reply rule`);
+                    continue;
+                  }
+                }
+              }
+              
+              // Check if rule has source contact filter
+              const conditions = rule.conditions || {};
+              if (conditions.sourceContactPhone) {
+                const fromNorm = normalizeToE164ish(From);
+                const { variations: fromVars } = buildPhoneVariations(fromNorm);
+                const { variations: srcVars } = buildPhoneVariations(conditions.sourceContactPhone);
+                const srcSet = new Set(srcVars);
+                const matchesSource = fromVars.some((v) => srcSet.has(v));
+                if (!matchesSource) {
+                  console.log(`      ⏭️ Auto-reply rule scoped to ${conditions.sourceContactPhone}; sender ${From} does not match`);
+                  continue;
+                }
+              }
+              
+              // Check if this message matches the rule trigger
+              if (!matchesRuleTrigger(rule, Body, intentResult)) {
+                console.log(`      ⏭️ Message does not match rule trigger`);
+                continue;
+              }
+              
+              // Rule matches! Create conversation state and send initial auto-reply
+              console.log(`   ✅ Auto-reply rule matched: "${rule.rule}"`);
+              
+              const autoReplyMessage = rule.transferDetails?.autoReplyMessage || "I'll get back to you shortly.";
+              const scope = rule.conversationScope || {};
+              const ttlHours = scope.ttlHours || 4;
+              
+              // Create conversation state for finite state dialogue
+              if (scope.enabled) {
+                const expiresAt = new Date();
+                expiresAt.setHours(expiresAt.getHours() + ttlHours);
+                
+                await ConversationState.create({
+                  userId: user._id,
+                  contactPhone: normalizeToE164ish(From) || From,
+                  ruleId: rule._id,
+                  state: 'deflecting',
+                  triggerIntent: intentResult.intent,
+                  responseTemplate: autoReplyMessage,
+                  alternativeResponses: scope.alternativeResponses || [],
+                  responseCount: 1,
+                  expiresAt: expiresAt,
+                  contextMemory: [{
+                    timestamp: new Date(),
+                    incomingIntent: intentResult.intent,
+                    incomingMessage: Body?.substring(0, 200),
+                    responseSent: autoReplyMessage?.substring(0, 200),
+                  }],
+                  active: true,
+                });
+                
+                console.log(`   🔄 Created conversation state (TTL: ${ttlHours}h)`);
+              }
+              
+              // Send the auto-reply
+              const normalizedTo = normalizeToE164ish(To);
+              let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: To });
+              
+              if (!twilioAccount) {
+                twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedTo });
+              }
+              
+              if (!twilioAccount) {
+                const allAccounts = await TwilioAccount.find({});
+                for (const acc of allAccounts) {
+                  const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+                  if (normalizedPhones.includes(normalizedTo)) {
+                    twilioAccount = acc;
+                    break;
+                  }
+                }
+              }
+              
+              if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
+                const replyClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+                
+                const replyResult = await replyClient.messages.create({
+                  body: autoReplyMessage,
+                  from: normalizedTo,
+                  to: From
+                });
+                
+                console.log(`   ✅ Auto-reply sent (SID: ${replyResult.sid})`);
+                autoReplySent = true;
+                
+                // Save the auto-reply as an outgoing message
+                await Message.create({
+                  userId: user._id,
+                  contactPhone: normalizeToE164ish(From) || From,
+                  contactName: contact?.name || From,
+                  direction: "outgoing",
+                  body: autoReplyMessage,
+                  status: "sent",
+                  twilioSid: replyResult.sid,
+                  fromNumber: normalizedTo,
+                  toNumber: From,
+                  metadata: {
+                    autoReply: true,
+                    ruleId: rule._id,
+                    ruleName: rule.rule,
+                    detectedIntent: intentResult.intent,
+                  },
+                });
+                
+                // Update message to note it triggered an auto-reply
+                if (savedMessage) {
+                  await Message.findByIdAndUpdate(savedMessage._id, {
+                    $set: {
+                      'metadata.triggeredAutoReply': true,
+                      'metadata.autoReplyRuleId': rule._id,
+                    }
+                  });
+                }
+              }
+              
+              break; // Only process first matching auto-reply rule
+            }
+          }
+        } catch (autoReplyErr) {
+          console.error(`   ❌ Auto-reply processing error:`, autoReplyErr.message);
         }
         
         // FORWARD SMS to user's personal phone if shouldNotify is true

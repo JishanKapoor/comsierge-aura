@@ -4901,22 +4901,40 @@ RULE REQUEST: "${ruleDescription}"
 Return JSON matching this schema:
 ${RULE_PARSE_SCHEMA}
 
+ADDITIONAL FIELDS for auto-reply rules with conversation awareness:
+- "conversation_scope": {
+    "enabled": true/false,  // Enable if the rule should handle follow-up messages intelligently
+    "ttl_hours": 4,  // How long to track conversation state (default 4)
+    "related_intents": ["location_query", "availability_query", "greeting"],  // Intent types to catch
+    "alternative_responses": ["I'm away right now", "Can't talk at the moment"],  // Variety
+    "follow_up_availability": "Still not sure when I'll be back",  // For "when will you..."
+    "follow_up_location": "Still in the same place",  // For "where are you..."
+    "follow_up_default": "I'll let you know when I'm available"  // Default follow-up
+  }
+- "schedule": {
+    "mode": "time-window",  // "always", "duration", or "time-window"
+    "time_window": { "startHour": 22, "endHour": 7, "days": ["mon","tue","wed","thu","fri","sat","sun"] }
+  }
+
 PARSING GUIDELINES:
 1. If the user says "forward" or "send to" - type is "forward", extract recipient
 2. If they mention specific people (from Mom, from boss) - set from_contact
 3. If they mention keywords (about payments, account alerts, invoices) - add to keywords array
 4. If they say "except" or "but not" - add to exclusions
-5. If they mention times (after 6pm, during work hours) - set time_window
+5. If they mention times (after 6pm, during work hours) - set time_window in schedule
 6. If they say "urgent" or "important" - set priority filter
 7. If they say words like "feel", "sound", "seem", "would care" - needs_ai_analysis = true
 8. If the rule needs AI judgment - needs_ai_analysis = true
 9. If we need more info (no recipient specified) - add to missing_info
 10. For "forward intelligently" - set needs_ai_analysis = true and type = "forward"
+11. For auto-reply rules with "if... replies" or "when... asks" - enable conversation_scope
+12. Time windows like "10pm to 7am" should use schedule.time_window with startHour/endHour
 
 IMPORTANT: 
 - Set missing_info = ["recipient"] if forwarding but no recipient specified
 - Set confidence based on how clear the request is
 - Always provide a summary
+- For auto-reply rules, consider if conversation_scope should be enabled
 
 Return ONLY valid JSON.`;
 
@@ -5113,6 +5131,35 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
       const validTypes = ["transfer", "auto-reply", "block", "forward", "priority", "custom", "message-notify"];
       if (!validTypes.includes(ruleType)) ruleType = "custom";
       
+      // Build conversation scope for auto-reply rules (Finite State Dialogue Management)
+      let conversationScope = { enabled: false };
+      if (ruleType === "auto-reply") {
+        // Auto-detect if this should use conversation scoping
+        const needsScoping = ruleDescription.toLowerCase().includes("if") && 
+          (ruleDescription.toLowerCase().includes("replies") ||
+           ruleDescription.toLowerCase().includes("follow") ||
+           ruleDescription.toLowerCase().includes("ask") ||
+           ruleDescription.toLowerCase().includes("where") ||
+           ruleDescription.toLowerCase().includes("when"));
+        
+        if (needsScoping || parsed.conversation_scope) {
+          conversationScope = {
+            enabled: true,
+            ttlHours: parsed.conversation_scope?.ttl_hours || 4,
+            relatedIntents: parsed.conversation_scope?.related_intents || [
+              'location_query', 'availability_query', 'activity_query', 'greeting', 'question'
+            ],
+            alternativeResponses: parsed.conversation_scope?.alternative_responses || [],
+            followUpResponses: {
+              availability_query: parsed.conversation_scope?.follow_up_availability || null,
+              location_query: parsed.conversation_scope?.follow_up_location || null,
+              greeting: parsed.conversation_scope?.follow_up_greeting || null,
+              default: parsed.conversation_scope?.follow_up_default || parsed.action?.auto_reply_message || "I'll get back to you shortly.",
+            },
+          };
+        }
+      }
+      
       // Create the rule
       const rule = await Rule.create({
         userId,
@@ -5121,12 +5168,15 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
         active: true,
         conditions,
         actions: { exclusions },
+        conversationScope,
         transferDetails: ruleType === "transfer" || ruleType === "forward" ? transferDetails : 
                         ruleType === "auto-reply" ? { autoReplyMessage: parsed.action?.auto_reply_message } : null,
         schedule: {
-          mode: parsed.duration?.type === "temporary" ? "duration" : "always",
+          mode: parsed.duration?.type === "temporary" ? "duration" : 
+                parsed.schedule?.mode === "time-window" ? "time-window" : "always",
           durationHours: parsed.duration?.hours || null,
           endTime: parsed.duration?.end_time ? new Date(parsed.duration.end_time) : null,
+          timeWindow: parsed.schedule?.time_window || null,
         }
       });
       
@@ -5996,6 +6046,20 @@ Use create_smart_rule for complex conditional rules like:
 - "forward messages from my boss about deadlines to my assistant"
 - "if Mark calls and I don't answer, forward to John"
 - "auto-reply after 6pm that I'm unavailable"
+- "when grandma asks where I am between 10pm-7am, tell her I'm sleeping"
+
+CONVERSATION-AWARE AUTO-REPLY (Finite State Dialogue):
+When creating auto-reply rules with conditions like "if someone asks X", the rule automatically:
+1. Detects the initial trigger (e.g., grandma asking "where are you?")
+2. Creates a conversation state that lasts 4 hours (configurable TTL)
+3. Handles follow-up messages intelligently (e.g., "when will you be back?")
+4. Sends contextually appropriate responses to related questions
+5. Auto-expires after TTL to avoid stale deflections
+
+Example: "if grandma texts asking where I am, say I'm at work" creates a rule that:
+- Triggers on location_query intents from grandma
+- Also catches follow-ups like "when will you come?" with appropriate responses
+- Expires after 4 hours by default
 
 === ROUTING NUMBER = FORWARDING NUMBER ===
 When user asks about "routing number", they mean phone forwarding number. Use get_phone_info and respond:
@@ -6188,6 +6252,13 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "forward messages from boss about deadlines to my assistant" -> create_smart_rule
 - "if Mark calls and I don't answer, forward to John" -> create_smart_rule
 - "forward all messages from accountant to my email" -> create_smart_rule
+- "when grandma asks where I am between 10pm-7am, tell her I'm sleeping" -> create_smart_rule (with time window)
+
+NOTE: Auto-reply rules with conditions like "if X asks Y" automatically use Conversation-Aware Dialogue:
+- Detects trigger intent (location_query, availability_query, etc.)
+- Maintains conversation state for 4 hours (TTL)
+- Handles follow-up messages intelligently
+- Sends contextual responses to related questions
 
 === MEETINGS & CALENDAR ===
 - "do I have any meetings today" -> extract_events with timeframe="today"

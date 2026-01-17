@@ -24,7 +24,7 @@ const ruleSchema = new mongoose.Schema(
     schedule: {
       mode: {
         type: String,
-        enum: ["always", "duration", "custom"],
+        enum: ["always", "duration", "custom", "time-window"],
         default: "always",
       },
       durationHours: {
@@ -38,6 +38,33 @@ const ruleSchema = new mongoose.Schema(
       endTime: {
         type: Date,
         default: null,
+      },
+      // Time-window schedule (e.g., "10pm to 7am every day")
+      timeWindow: {
+        startHour: { type: Number, default: null }, // 0-23
+        startMinute: { type: Number, default: 0 },
+        endHour: { type: Number, default: null }, // 0-23
+        endMinute: { type: Number, default: 0 },
+        days: [{ type: String }], // ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+        timezone: { type: String, default: 'America/New_York' },
+      },
+    },
+    // Conversation scoping - for "Finite State Dialogue Management"
+    conversationScope: {
+      // Enable intelligent conversation tracking
+      enabled: { type: Boolean, default: false },
+      // TTL for conversation state (hours)
+      ttlHours: { type: Number, default: 4 },
+      // Related intents that should continue the deflection
+      relatedIntents: [{ type: String }],
+      // Alternative responses for variety
+      alternativeResponses: [{ type: String }],
+      // Follow-up response templates
+      followUpResponses: {
+        availability_query: { type: String }, // "when will you come"
+        location_query: { type: String }, // "where are you again"
+        greeting: { type: String }, // follow-up hello
+        default: { type: String }, // generic follow-up
       },
     },
     transferDetails: {
@@ -60,6 +87,11 @@ const ruleSchema = new mongoose.Schema(
         default: null,
       },
       contactPhone: {
+        type: String,
+        default: null,
+      },
+      // Auto-reply message for auto-reply rules
+      autoReplyMessage: {
         type: String,
         default: null,
       },
