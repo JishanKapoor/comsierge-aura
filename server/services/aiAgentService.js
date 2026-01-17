@@ -3566,9 +3566,22 @@ const setRoutingPreferencesTool = tool(
         });
       }
       
-      let response = scheduleObj 
-        ? `Routing set${scheduleInfo}:\n\n`
-        : `Default routing set:\n\n`;
+      let response = "";
+      
+      // Build natural response
+      const callsDesc = {
+        "all": "all calls will ring",
+        "favorites": "only favorites will ring",
+        "saved": "only saved contacts will ring",
+        "none": "calls go straight to AI"
+      };
+      
+      const messagesDesc = {
+        "all": "you'll get all message notifications",
+        "important": "you'll only get important messages",
+        "urgent": "you'll only get urgent messages",
+        "none": "message notifications are muted"
+      };
       
       // === CALL ROUTING ===
       if (callsMode) {
@@ -3652,12 +3665,21 @@ const setRoutingPreferencesTool = tool(
             : { priorityFilter: messagesMode },
           transferDetails: { mode: "messages" }
         });
-        
-        response += `Messages: ${msgRuleDesc}\n`;
       }
       
+      // Build natural conversational response
+      const parts = [];
+      if (callsMode) parts.push(callsDesc[callsMode]);
+      if (messagesMode) parts.push(messagesDesc[messagesMode]);
+      
       if (scheduleObj) {
-        response += `\nThis applies${scheduleInfo}. Outside this time, your default routing applies.`;
+        response = `Got it - ${parts.join(" and ")}${scheduleInfo}. Outside those hours your normal settings apply.`;
+      } else if (parts.length === 2) {
+        response = `Done - ${parts[0]}, and ${parts[1]}.`;
+      } else if (parts.length === 1) {
+        response = `Done - ${parts[0]}.`;
+      } else {
+        response = "Settings updated.";
       }
       
       return response;
@@ -3730,21 +3752,12 @@ const setDNDTool = tool(
       // DND requested - we need to ask what they want
       const timeInfo = startTime && endTime ? ` from ${startTime} to ${endTime}` : "";
       
-      return `CLARIFICATION_NEEDED: Setting up Do Not Disturb${timeInfo}. Please tell me:
+      return `Setting up Do Not Disturb${timeInfo}. What would you like?
 
-   **Calls**: What should happen to calls?
-   - All calls ring your phone
-   - Only favorites
-   - Only saved contacts  
-   - All calls go to AI (no ringing)
+For calls: all, favorites only, saved contacts, or none (AI handles all)?
+For messages: all, important only, urgent only, or none?
 
-   **Messages**: What should notify you?
-   - All messages
-   - Important only (no spam)
-   - Urgent only (critical)
-   - No notifications
-
-For example: "no calls, urgent messages only" or "favorites can call, no message notifications"`;
+Just tell me like "favorites for calls, important messages" or "no calls, urgent messages only".`;
     } catch (error) {
       console.error("Set DND error:", error);
       return `Error: ${error.message}`;
@@ -5450,18 +5463,19 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
         // The AI asks about calls AND messages for DND/routing setup
         const isDNDContext = (
           // Explicit DND or routing mentions
-          (txt.includes("do not disturb") || txt.includes("dnd") || txt.includes("routing")) &&
+          (txt.includes("do not disturb") || txt.includes("dnd") || txt.includes("setting up do not disturb")) &&
           // AND asks about calls/messages preferences
           ((txt.includes("call") && txt.includes("message")) || 
-           txt.includes("what should happen to calls") ||
-           txt.includes("what message notifications"))
+           txt.includes("what would you like") ||
+           txt.includes("for calls") ||
+           txt.includes("for messages"))
         ) || (
           // Or asking specifically about call routing options
           (txt.includes("all calls") || txt.includes("favorites") || txt.includes("saved contacts") || txt.includes("go to ai")) &&
-          (txt.includes("ring") || txt.includes("notification"))
+          (txt.includes("ring") || txt.includes("notification") || txt.includes("just tell me"))
         ) || (
-          // Check for raw CLARIFICATION_NEEDED prefix (in case it wasn't stripped)
-          msg.text.includes("CLARIFICATION_NEEDED:") && msg.text.includes("Do Not Disturb")
+          // Routing clarification question
+          txt.includes("which calls should ring") || txt.includes("which messages should notify")
         );
         
         if (isDNDContext) {
@@ -5526,19 +5540,19 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       let callsMode = null;
       if (/\b(all\s*call(s|ers)?|every\s*call(er)?|let\s*(all|everyone)\s*(call|ring))\b/i.test(lowerMsg)) {
         callsMode = "all";
-      } else if (/\b(favorite|favourites?)\b/i.test(lowerMsg)) {
+      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && mentionsCalls) {
+        callsMode = "favorites";
+      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && !mentionsMessages) {
+        // "favorites only" without specifying calls/messages = calls
         callsMode = "favorites";
       } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
         callsMode = "saved";
-      } else if (/\b(no\s*calls?|block\s*(all\s*)?calls?|don'?t\s*ring|calls?\s*to\s*ai)\b/i.test(lowerMsg) && !wantsNoSpam) {
-        // Only set to none if NOT talking about spam filtering
+      } else if (/\b(no\s*calls?|block\s*(all\s*)?calls?|don'?t\s*ring|calls?\s*to\s*ai|none.*calls?)\b/i.test(lowerMsg) && !wantsNoSpam) {
         callsMode = "none";
       } else if (wantsNoSpam && mentionsCalls) {
         // "no spam calls" = user wants calls filtered, not turned off
-        // We need to ask WHICH filter they want
         callsMode = null; // Will trigger clarification
       } else if (mentionsHighPriority && mentionsCalls) {
-        // "high priority calls" = favorites (closest match)
         callsMode = "favorites";
       }
       
@@ -5546,15 +5560,15 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       let messagesMode = null;
       if (/\b(all\s*messages?|every\s*message|all\s*notifications?)\b/i.test(lowerMsg)) {
         messagesMode = "all";
-      } else if (/\b(important)\b/i.test(lowerMsg) && !/\bnot\s+important\b/i.test(lowerMsg)) {
+      } else if (/\b(imp(ortant)?(\s+only)?)\b/i.test(lowerMsg) && (mentionsMessages || !mentionsCalls)) {
         messagesMode = "important";
-      } else if (/\b(urgent|critical|emergency)\b/i.test(lowerMsg)) {
+      } else if (/\b(urgent|critical|emergency)(\s+only)?\b/i.test(lowerMsg)) {
         messagesMode = "urgent";
-      } else if (/\b(high\s*priorit)\b/i.test(lowerMsg) && mentionsMessages) {
-        // "high priority messages" = important (high + medium)
+      } else if (/\b(high\s*priorit)(\s+only)?\b/i.test(lowerMsg)) {
+        // "high priority" alone or with messages = important
         messagesMode = "important";
-      } else if (/\b(no\s*messages?|no\s*notification|mute\s*all)\b/i.test(lowerMsg) && !wantsNoSpam && !mentionsHighPriority) {
-        // Only set to none if NOT talking about spam filtering or high priority
+      } else if (/\b(no\s*messages?|no\s*notification|mute\s*all|none.*messages?)\b/i.test(lowerMsg)) {
+        // "no messages" = turn off message notifications
         messagesMode = "none";
       } else if (wantsNoSpam && mentionsMessages) {
         // "no spam messages" = important (filters out spam)
@@ -5568,25 +5582,25 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       const needsMessagesClarification = mentionsMessages && !messagesMode && !wantsNoSpam;
       
       if (needsCallsClarification || needsMessagesClarification) {
-        let clarification = "I want to make sure I set this up correctly:\n\n";
+        let clarification = "Quick question - ";
         
         if (needsCallsClarification) {
-          clarification += `**Calls**: Which calls should ring your phone?\n`;
-          clarification += `• All calls - every incoming call\n`;
-          clarification += `• Favorites only - contacts marked as favorite\n`;
-          clarification += `• Saved contacts - anyone in your contacts\n`;
-          clarification += `• None - all calls go to AI\n\n`;
+          clarification += `which calls should ring your phone?\n\n`;
+          clarification += `- All calls\n`;
+          clarification += `- Favorites only\n`;
+          clarification += `- Saved contacts\n`;
+          clarification += `- None (AI handles all)\n\n`;
         }
         
         if (needsMessagesClarification) {
-          clarification += `**Messages**: Which messages should notify you?\n`;
-          clarification += `• All messages - every incoming message\n`;
-          clarification += `• Important - high + medium priority (no spam)\n`;
-          clarification += `• Urgent only - critical messages only\n`;
-          clarification += `• None - no notifications\n\n`;
+          clarification += `which messages should notify you?\n\n`;
+          clarification += `- All messages\n`;
+          clarification += `- Important only\n`;
+          clarification += `- Urgent only\n`;
+          clarification += `- None\n\n`;
         }
         
-        clarification += "Just tell me your choice, like: 'favorites for calls, important messages'";
+        clarification += "Just tell me, like 'favorites' or 'important only'.";
         return clarification;
       }
       
