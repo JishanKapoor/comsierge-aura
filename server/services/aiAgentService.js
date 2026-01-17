@@ -5417,6 +5417,12 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       console.log("Handling DND clarification response:", message);
       const lowerMsg = message.toLowerCase();
       
+      // Detect if user mentions spam filtering (not turning off)
+      const wantsNoSpam = /\bno\s+spam\b/i.test(lowerMsg);
+      const mentionsCalls = /\b(calls?|ring|phone)\b/i.test(lowerMsg);
+      const mentionsMessages = /\b(messages?|texts?|sms|notifications?)\b/i.test(lowerMsg);
+      const mentionsHighPriority = /\b(high\s*priorit|important|urgent|critical)\b/i.test(lowerMsg);
+      
       // Parse calls preference - more permissive patterns
       let callsMode = null;
       if (/\b(all\s*call(s|ers)?|every\s*call(er)?|let\s*(all|everyone)\s*(call|ring))\b/i.test(lowerMsg)) {
@@ -5425,8 +5431,16 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
         callsMode = "favorites";
       } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
         callsMode = "saved";
-      } else if (/\b(no\s*calls?|block\s*calls?|no\s*ring|don'?t\s*ring|silent|calls?\s*to\s*ai)\b/i.test(lowerMsg)) {
+      } else if (/\b(no\s*calls?|block\s*(all\s*)?calls?|don'?t\s*ring|calls?\s*to\s*ai)\b/i.test(lowerMsg) && !wantsNoSpam) {
+        // Only set to none if NOT talking about spam filtering
         callsMode = "none";
+      } else if (wantsNoSpam && mentionsCalls) {
+        // "no spam calls" = user wants calls filtered, not turned off
+        // We need to ask WHICH filter they want
+        callsMode = null; // Will trigger clarification
+      } else if (mentionsHighPriority && mentionsCalls) {
+        // "high priority calls" = favorites (closest match)
+        callsMode = "favorites";
       }
       
       // Parse messages preference - more permissive patterns
@@ -5437,29 +5451,50 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
         messagesMode = "important";
       } else if (/\b(urgent|critical|emergency)\b/i.test(lowerMsg)) {
         messagesMode = "urgent";
-      } else if (/\b(no\s*messages?|no\s*notification|none|silent|mute)\b/i.test(lowerMsg)) {
+      } else if (/\b(high\s*priorit)\b/i.test(lowerMsg) && mentionsMessages) {
+        // "high priority messages" = important (high + medium)
+        messagesMode = "important";
+      } else if (/\b(no\s*messages?|no\s*notification|mute\s*all)\b/i.test(lowerMsg) && !wantsNoSpam && !mentionsHighPriority) {
+        // Only set to none if NOT talking about spam filtering or high priority
         messagesMode = "none";
-      }
-
-      // Special case: users often say "no spam messages" meaning "only non-spam".
-      // Our UI has no "all non-spam" toggle; closest match is "Important" (high+medium, no spam).
-      // Without this, messagesMode stays null and the code below defaults it to "none".
-      const mentionsMessages = /\b(messages?|texts?|sms)\b/i.test(lowerMsg);
-      const wantsNoSpamMessages = /\bno\s+spam\b/i.test(lowerMsg) && mentionsMessages;
-      if (!messagesMode && wantsNoSpamMessages) {
+      } else if (wantsNoSpam && mentionsMessages) {
+        // "no spam messages" = important (filters out spam)
         messagesMode = "important";
       }
+
+      // If user said something ambiguous like "no spam calls" without specifying how to filter,
+      // or said "high priority" for both without being specific, ASK for clarification
+      const needsCallsClarification = (wantsNoSpam && mentionsCalls && !callsMode) || 
+                                       (mentionsHighPriority && mentionsCalls && !callsMode);
+      const needsMessagesClarification = mentionsMessages && !messagesMode && !wantsNoSpam;
       
-      // If user only specified one (calls or messages), we still need to execute
-      // Use defaults for unspecified: if they want calls, assume no messages (DND style)
-      if (callsMode && !messagesMode && !mentionsMessages) {
-        messagesMode = "none"; // DND default
-      }
-      if (messagesMode && !callsMode) {
-        callsMode = "none"; // DND default
+      if (needsCallsClarification || needsMessagesClarification) {
+        let clarification = "I want to make sure I set this up correctly:\n\n";
+        
+        if (needsCallsClarification) {
+          clarification += `**Calls**: Which calls should ring your phone?\n`;
+          clarification += `• All calls - every incoming call\n`;
+          clarification += `• Favorites only - contacts marked as favorite\n`;
+          clarification += `• Saved contacts - anyone in your contacts\n`;
+          clarification += `• None - all calls go to AI\n\n`;
+        }
+        
+        if (needsMessagesClarification) {
+          clarification += `**Messages**: Which messages should notify you?\n`;
+          clarification += `• All messages - every incoming message\n`;
+          clarification += `• Important - high + medium priority (no spam)\n`;
+          clarification += `• Urgent only - critical messages only\n`;
+          clarification += `• None - no notifications\n\n`;
+        }
+        
+        clarification += "Just tell me your choice, like: 'favorites for calls, important messages'";
+        return clarification;
       }
       
-      // Only proceed if we parsed at least one preference
+      // If user only specified one (calls or messages), DON'T default the other to none
+      // Instead, leave it unchanged (don't create a rule for it)
+      
+      // Only proceed if we parsed at least one preference clearly
       if (callsMode || messagesMode) {
         console.log("Parsed DND preferences:", { callsMode, messagesMode, schedule: pendingDNDClarification });
         
@@ -5469,10 +5504,11 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
           : null;
         
         // Execute set_routing_preferences directly
+        // Only pass modes that were explicitly set
         const result = await setRoutingPreferencesTool.invoke({
           userId,
-          callsMode: callsMode || "none",
-          messagesMode: messagesMode || "none",
+          callsMode: callsMode || undefined,
+          messagesMode: messagesMode || undefined,
           schedule,
           isDefault: !schedule, // If no schedule, this is the default routing
         });
