@@ -316,8 +316,19 @@ export const deleteConversation = async (contactPhone: string): Promise<boolean>
       method: "DELETE",
       headers: getAuthHeaders(),
     });
-    const data = await response.json();
-    return data.success;
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      console.error("Delete conversation failed:", response.status, data);
+      return false;
+    }
+
+    return Boolean(data?.success);
   } catch (error) {
     console.error("Delete conversation error:", error);
     return false;
@@ -331,8 +342,22 @@ export const deleteConversationById = async (conversationId: string): Promise<bo
       method: "DELETE",
       headers: getAuthHeaders(),
     });
-    const data = await response.json();
-    return data.success;
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    // If the conversation is already gone, treat as success.
+    if (response.status === 404) return true;
+
+    if (!response.ok) {
+      console.error("Delete conversation by id failed:", response.status, data);
+      return false;
+    }
+
+    return Boolean(data?.success);
   } catch (error) {
     console.error("Delete conversation by id error:", error);
     return false;

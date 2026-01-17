@@ -548,8 +548,10 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         if (requestId !== conversationsRequestId.current) return;
         console.error("Failed to load conversations:", error);
       } finally {
-        // Only resolve loading for the latest request
-        if (showLoading && requestId === conversationsRequestId.current) {
+        // Always clear the full-page loading state for the latest request.
+        // This prevents a race where a stale "showLoading" request is superseded by a newer
+        // background refresh request (showLoading=false), leaving isLoadingMessages stuck true.
+        if (requestId === conversationsRequestId.current) {
           setIsLoadingMessages(false);
         }
 
@@ -2727,6 +2729,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     const conversationId = selectedMessage.id;
     const contactId = selectedMessage.contactId;
     const phone = selectedMessage.contactPhone;
+
+    const isValidObjectId = (value: string) => /^[0-9a-fA-F]{24}$/.test(value);
     
     // Store for potential rollback
     const deletedMessage = selectedMessage;
@@ -2760,13 +2764,21 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
     // Delete via API
     try {
-      const success = await deleteConversationById(conversationId);
-      
-      if (!success) {
-        throw new Error("Delete failed");
+      // Some local placeholder conversations use non-ObjectId ids (e.g. "new-...", "phone:...").
+      // For those, delete by phone instead.
+      let success = false;
+      if (isValidObjectId(conversationId)) {
+        success = await deleteConversationById(conversationId);
       }
+      if (!success) {
+        success = await deleteConversation(phone);
+      }
+      if (!success) throw new Error("Delete failed");
       
       toast.success("Conversation deleted");
+
+      // Re-sync list after delete (helps ensure UI doesn't get stuck and removes any server-side variants)
+      await loadConversations({ showLoading: false, replace: true, showIndicator: true });
       
       // Remove from recently deleted after a delay (keep it longer to ensure polling doesn't bring it back)
       setTimeout(() => {
