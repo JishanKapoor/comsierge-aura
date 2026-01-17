@@ -3634,7 +3634,7 @@ const setRoutingPreferencesTool = tool(
       
       const messagesDesc = {
         "all": "you'll get all message notifications",
-        "important": "you'll only get important messages",
+        "important": "you'll only get high + medium priority messages (no spam)",
         "urgent": "you'll only get urgent messages",
         "none": "message notifications are muted"
       };
@@ -3701,7 +3701,7 @@ const setRoutingPreferencesTool = tool(
             msgRuleDesc = "All messages notify you";
             break;
           case "important":
-            msgRuleDesc = "Important messages only (high + medium priority)";
+            msgRuleDesc = "High + medium priority messages only (no spam)";
             break;
           case "urgent":
             msgRuleDesc = "Urgent messages only (critical priority)";
@@ -3727,13 +3727,19 @@ const setRoutingPreferencesTool = tool(
       const parts = [];
       if (callsMode) parts.push(callsDesc[callsMode]);
       if (messagesMode) parts.push(messagesDesc[messagesMode]);
+
+      const unchangedNote = (!callsMode && messagesMode)
+        ? " Calls unchanged."
+        : (callsMode && !messagesMode)
+          ? " Messages unchanged."
+          : "";
       
       if (scheduleObj) {
-        response = `Got it - ${parts.join(" and ")}${scheduleInfo}. Outside those hours your normal settings apply.`;
+        response = `Got it - ${parts.join(" and ")}${scheduleInfo}.${unchangedNote} Outside those hours your normal settings apply.`;
       } else if (parts.length === 2) {
         response = `Done - ${parts[0]}, and ${parts[1]}.`;
       } else if (parts.length === 1) {
-        response = `Done - ${parts[0]}.`;
+        response = `Done - ${parts[0]}.${unchangedNote}`;
       } else {
         response = "Settings updated.";
       }
@@ -3766,7 +3772,7 @@ SCHEDULE (optional time window):
 - Set schedule.startTime and schedule.endTime
 
 EXAMPLES:
-- "all calls, important messages only" -> callsMode="all", messagesMode="important"
+- "all calls, high + medium priority messages only" -> callsMode="all", messagesMode="important"
 - "favorites for calls, urgent only for messages" -> callsMode="favorites", messagesMode="urgent"
 - "from 8pm-9pm block calls, no message notifications" -> callsMode="none", messagesMode="none", schedule={startTime:"8pm", endTime:"9pm"}
 
@@ -3811,9 +3817,9 @@ const setDNDTool = tool(
       return `Setting up Do Not Disturb${timeInfo}. What would you like?
 
 For calls: all, favorites only, saved contacts, or none (AI handles all)?
-For messages: all, important only, urgent only, or none?
+For messages: all, high + medium priority only (no spam), urgent only, or none?
 
-Just tell me like "favorites for calls, important messages" or "no calls, urgent messages only".`;
+Just tell me like "favorites for calls, high + medium messages" or "no calls, urgent messages only".`;
     } catch (error) {
       console.error("Set DND error:", error);
       return `Error: ${error.message}`;
@@ -5585,30 +5591,45 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
     if (pendingDNDClarification && message.toLowerCase() !== "cancel" && message.toLowerCase() !== "nevermind") {
       console.log("Handling DND clarification response:", message);
       const lowerMsg = message.toLowerCase();
+
+      // If user explicitly says to keep a dimension unchanged, don't treat that mention
+      // as an intent to modify that dimension (prevents unnecessary clarification loops).
+      const keepCallsSame = (
+        /\b(keep|leave)\s+(my\s+)?calls?\s+(the\s+)?(same|unchanged)\b/i.test(lowerMsg) ||
+        /\b(don'?t|do\s+not)\s+change\s+(my\s+)?calls?\b/i.test(lowerMsg) ||
+        /\bcalls?\s+(unchanged|the\s+same)\b/i.test(lowerMsg)
+      );
+      const keepMessagesSame = (
+        /\b(keep|leave)\s+(my\s+)?(messages?|texts?|sms|notifications?)\s+(the\s+)?(same|unchanged)\b/i.test(lowerMsg) ||
+        /\b(don'?t|do\s+not)\s+change\s+(my\s+)?(messages?|texts?|sms|notifications?)\b/i.test(lowerMsg)
+      );
       
       // Detect if user mentions spam filtering (not turning off)
       const wantsNoSpam = /\bno\s+spam\b/i.test(lowerMsg);
       const mentionsCalls = /\b(calls?|ring|phone)\b/i.test(lowerMsg);
       const mentionsMessages = /\b(messages?|texts?|sms|notifications?)\b/i.test(lowerMsg);
       const mentionsHighPriority = /\b(high\s*priorit|important|urgent|critical)\b/i.test(lowerMsg);
+
+      const mentionsCallsForUpdate = mentionsCalls && !keepCallsSame;
+      const mentionsMessagesForUpdate = mentionsMessages && !keepMessagesSame;
       
       // Parse calls preference - more permissive patterns
       let callsMode = null;
       if (/\b(all\s*call(s|ers)?|every\s*call(er)?|let\s*(all|everyone)\s*(call|ring))\b/i.test(lowerMsg)) {
         callsMode = "all";
-      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && mentionsCalls) {
+      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && mentionsCallsForUpdate) {
         callsMode = "favorites";
-      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && !mentionsMessages) {
+      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && !mentionsMessagesForUpdate) {
         // "favorites only" without specifying calls/messages = calls
         callsMode = "favorites";
       } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
         callsMode = "saved";
       } else if (/\b(no\s*calls?|block\s*(all\s*)?calls?|don'?t\s*ring|calls?\s*to\s*ai|none.*calls?)\b/i.test(lowerMsg) && !wantsNoSpam) {
         callsMode = "none";
-      } else if (wantsNoSpam && mentionsCalls) {
+      } else if (wantsNoSpam && mentionsCallsForUpdate) {
         // "no spam calls" = user wants calls filtered, not turned off
         callsMode = null; // Will trigger clarification
-      } else if (mentionsHighPriority && mentionsCalls) {
+      } else if (mentionsHighPriority && mentionsCallsForUpdate) {
         callsMode = "favorites";
       }
       
@@ -5616,7 +5637,7 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       let messagesMode = null;
       if (/\b(all\s*messages?|every\s*message|all\s*notifications?)\b/i.test(lowerMsg)) {
         messagesMode = "all";
-      } else if (/\b(imp(ortant)?(\s+only)?)\b/i.test(lowerMsg) && (mentionsMessages || !mentionsCalls)) {
+      } else if (/\b(imp(ortant)?(\s+only)?)\b/i.test(lowerMsg) && (mentionsMessagesForUpdate || !mentionsCallsForUpdate)) {
         messagesMode = "important";
       } else if (/\b(urgent|critical|emergency)(\s+only)?\b/i.test(lowerMsg)) {
         messagesMode = "urgent";
@@ -5626,16 +5647,22 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       } else if (/\b(no\s*messages?|no\s*notification|mute\s*all|none.*messages?)\b/i.test(lowerMsg)) {
         // "no messages" = turn off message notifications
         messagesMode = "none";
-      } else if (wantsNoSpam && mentionsMessages) {
+      } else if (wantsNoSpam && mentionsMessagesForUpdate) {
         // "no spam messages" = important (filters out spam)
+        messagesMode = "important";
+      }
+
+      // If user says "no spam" without explicitly changing calls, treat it as message filtering.
+      // This matches intent like: "allow no spam (medium + high priority), keep calls the same".
+      if (!messagesMode && wantsNoSpam && !mentionsCallsForUpdate) {
         messagesMode = "important";
       }
 
       // If user said something ambiguous like "no spam calls" without specifying how to filter,
       // or said "high priority" for both without being specific, ASK for clarification
-      const needsCallsClarification = (wantsNoSpam && mentionsCalls && !callsMode) || 
-                                       (mentionsHighPriority && mentionsCalls && !callsMode);
-      const needsMessagesClarification = mentionsMessages && !messagesMode && !wantsNoSpam;
+      const needsCallsClarification = (wantsNoSpam && mentionsCallsForUpdate && !callsMode) || 
+                   (mentionsHighPriority && mentionsCallsForUpdate && !callsMode);
+      const needsMessagesClarification = mentionsMessagesForUpdate && !messagesMode && !wantsNoSpam;
       
       if (needsCallsClarification || needsMessagesClarification) {
         let clarification = "Quick question - ";
@@ -5651,12 +5678,12 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
         if (needsMessagesClarification) {
           clarification += `which messages should notify you?\n\n`;
           clarification += `- All messages\n`;
-          clarification += `- Important only\n`;
+          clarification += `- High + medium priority only (no spam)\n`;
           clarification += `- Urgent only\n`;
           clarification += `- None\n\n`;
         }
         
-        clarification += "Just tell me, like 'favorites' or 'important only'.";
+        clarification += "Just tell me, like 'favorites' or 'high + medium only'.";
         return clarification;
       }
       
@@ -5973,7 +6000,7 @@ ROUTING PREFERENCES (calls + messages combined) - MATCHES ROUTING PAGE UI:
   TIME-BASED: Add schedule={startTime:"8pm", endTime:"9pm"} for time windows
   
   Examples:
-  * "all calls, important messages" -> set_routing_preferences(callsMode="all", messagesMode="important")
+  * "all calls, high + medium priority messages" -> set_routing_preferences(callsMode="all", messagesMode="important")
   * "no calls from 8pm-9pm" -> set_routing_preferences(callsMode="none", schedule={startTime:"8pm", endTime:"9pm"})
   * "favorites only, urgent messages" -> set_routing_preferences(callsMode="favorites", messagesMode="urgent")
 
@@ -5988,7 +6015,7 @@ ROUTING FLOW EXAMPLE:
 2. AI: calls set_dnd(enabled=true, startTime="8pm", endTime="9pm") → asks clarifying question
 3. User: "no calls, but I want urgent messages"
 4. AI: calls set_routing_preferences(callsMode="none", messagesMode="urgent", schedule={startTime:"8pm", endTime:"9pm"})
-5. User: "for other times, just normal - all calls, important messages"
+5. User: "for other times, just normal - all calls, high + medium priority messages"
 6. AI: calls set_routing_preferences(callsMode="all", messagesMode="important", isDefault=true)
 
 RULES & AUTOMATION:
@@ -6041,13 +6068,13 @@ ROUTING FLOW:
 1. User says "dnd" or "do not disturb" → use set_dnd → it asks "calls, messages, or both?"
 2. User says "dnd from 8pm to 9pm" → use set_dnd with times → it asks what for calls/messages
 3. User clarifies "no calls, urgent messages only" → use set_routing_preferences with schedule
-4. User says "for other times keep it normal - all calls, important messages" → use set_routing_preferences with isDefault=true
+4. User says "for other times keep it normal - all calls, high + medium priority messages" → use set_routing_preferences with isDefault=true
 
 EXAMPLES:
 - "dnd" → set_dnd(enabled=true) → asks clarifying question
 - "dnd from 8pm to 9pm" → set_dnd(enabled=true, startTime="8pm", endTime="9pm") → asks what for calls/messages  
 - "no calls, only urgent messages" (after dnd question) → set_routing_preferences(callsMode="none", messagesMode="urgent", schedule=...)
-- "normal routing - all calls, important messages" → set_routing_preferences(callsMode="all", messagesMode="important", isDefault=true)
+- "normal routing - all calls, high + medium priority messages" → set_routing_preferences(callsMode="all", messagesMode="important", isDefault=true)
 - "only favorites can call me" → set_routing_preferences(callsMode="favorites")
 - "mute all notifications" → set_routing_preferences(callsMode="none", messagesMode="none")
 
