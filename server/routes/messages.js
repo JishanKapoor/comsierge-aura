@@ -155,12 +155,48 @@ router.get("/search", async (req, res) => {
 // @access  Private
 router.get("/conversations", async (req, res) => {
   try {
-    const { filter } = req.query; // all, unread, priority, held, blocked, transferred
+    const { filter, search } = req.query; // all, unread, priority, held, blocked, transferred; search = text to find in messages
     
     let query = { 
       userId: req.user._id,
       isArchived: { $ne: true },
     };
+    
+    // If search is provided, find conversations that have messages matching the search term
+    let searchMatchingPhones = null;
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      
+      // Search through messages to find matching conversation phones
+      const matchingMessages = await Message.distinct("contactPhone", {
+        userId: req.user._id,
+        body: searchRegex,
+      });
+      
+      // Also search conversations by contact name and phone directly
+      const conversationsMatchingNameOrPhone = await Conversation.find({
+        userId: req.user._id,
+        $or: [
+          { contactName: searchRegex },
+          { contactPhone: searchRegex },
+        ]
+      }).select("contactPhone");
+      
+      // Combine both sets of phones
+      searchMatchingPhones = new Set([
+        ...matchingMessages,
+        ...conversationsMatchingNameOrPhone.map(c => c.contactPhone),
+      ]);
+      
+      // If no matches found at all, return empty
+      if (searchMatchingPhones.size === 0) {
+        return res.json({
+          success: true,
+          count: 0,
+          data: [],
+        });
+      }
+    }
     
     // Apply filters
     if (filter === "unread") {
@@ -204,6 +240,29 @@ router.get("/conversations", async (req, res) => {
       // "all" - exclude blocked and held
       query.isBlocked = { $ne: true };
       query.isHeld = { $ne: true };
+    }
+    
+    // Apply search filter if provided - limit to conversations with matching messages
+    if (searchMatchingPhones) {
+      // Normalize the phones for matching
+      const normalizedSearchPhones = new Set();
+      for (const phone of searchMatchingPhones) {
+        if (!phone) continue;
+        normalizedSearchPhones.add(phone);
+        const digits = phone.replace(/\D/g, '');
+        if (digits) {
+          normalizedSearchPhones.add(digits);
+          if (digits.length === 10) {
+            normalizedSearchPhones.add(`+1${digits}`);
+            normalizedSearchPhones.add(`1${digits}`);
+          }
+          if (digits.length === 11 && digits.startsWith('1')) {
+            normalizedSearchPhones.add(`+${digits}`);
+            normalizedSearchPhones.add(digits.slice(1));
+          }
+        }
+      }
+      query.contactPhone = { $in: Array.from(normalizedSearchPhones) };
     }
 
     let conversations = await Conversation.find(query).sort({ 

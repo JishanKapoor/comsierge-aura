@@ -713,6 +713,10 @@ const pinConversationTool = tool(
         return convoDigits === normalizedPhone;
       });
       
+      if (matchingConvos.length === 0) {
+        return `No conversation found with ${name || phone}. You need to have a conversation with them first before you can pin it.`;
+      }
+      
       for (const convo of matchingConvos) {
         convo.isPinned = pin;
         await convo.save();
@@ -1400,21 +1404,29 @@ const manageContactDetailsTool = tool(
   },
   {
     name: "manage_contact_details",
-    description: `Manage contact details like labels/tags, notes, email, company, and favorite status. Use for:
+    description: `Manage contact details like labels/tags, notes, email, company, and favorite status. Use THIS tool when user says:
 - "add label family to Dad" -> action=add, field=tags, value=family
+- "give him a new label as colleague" -> action=add, field=tags, value=colleague  
+- "label her as work" -> action=add, field=tags, value=work
 - "remove work label from John" -> action=remove, field=tags, value=work
 - "add note 'birthday Jan 15' to Mom" -> action=add, field=notes, value=birthday Jan 15
 - "set email john@email.com for John" -> action=set, field=email, value=john@email.com
-- "mark Dad as favorite" -> action=set, field=favorite
+- "mark Dad as favorite" -> action=set, field=favorite (NO value needed)
+- "add him as favorite" -> action=set, field=favorite (NO value needed)
+- "add her as fav" -> action=set, field=favorite (NO value needed)
+- "make him a favorite" -> action=set, field=favorite (NO value needed)
+- "remove from favorites" -> action=remove, field=favorite (NO value needed)
 - "what labels does Dad have" -> action=get, field=tags
-- "show Dad's notes" -> action=get, field=notes`,
+- "show Dad's notes" -> action=get, field=notes
+
+IMPORTANT: For favorite status, use action=set with field=favorite. No value parameter needed.`,
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
       contactName: z.string().optional().describe("Name of contact"),
       contactPhone: z.string().optional().describe("Phone number of contact"),
       action: z.enum(["add", "remove", "set", "clear", "get", "list"]).describe("Action to perform"),
       field: z.enum(["tags", "labels", "label", "notes", "note", "email", "company", "work", "favorite", "starred"]).describe("Field to manage"),
-      value: z.string().optional().describe("Value for the action (not needed for get/clear/remove-favorite)"),
+      value: z.string().optional().describe("Value for the action (not needed for favorite set/remove)"),
     }),
   }
 );
@@ -5704,6 +5716,12 @@ CHOOSING THE RIGHT TOOL - EXAMPLES:
 - "mark as read" -> mark_conversation_read with markRead=true
 - "put this on hold" -> hold_conversation with hold=true
 - "delete this conversation" -> delete_conversation
+- "add him as favorite" -> manage_contact_details with action=set, field=favorite
+- "add her as fav" -> manage_contact_details with action=set, field=favorite
+- "make him a favorite" -> manage_contact_details with action=set, field=favorite
+- "add label work to him" -> manage_contact_details with action=add, field=tags, value=work
+- "give him a label family" -> manage_contact_details with action=add, field=tags, value=family
+- "label her as colleague" -> manage_contact_details with action=add, field=tags, value=colleague
 - "block unknown numbers" -> create_spam_filter with filterType="unknown_numbers"
 - "triage my messages" -> get_message_triage
 - "what's important in my inbox" -> get_message_triage
@@ -5764,7 +5782,7 @@ User ID: ${userId}`;
     const response = await fullAgentLLM.invoke(messages);
     
     console.log("Full Agent Response:", response.content);
-    console.log("Tool calls:", response.tool_calls);
+    console.log("Tool calls requested:", response.tool_calls?.map(tc => tc.name) || "none");
 
     // Execute tool calls
     if (response.tool_calls && response.tool_calls.length > 0) {
@@ -5811,6 +5829,7 @@ User ID: ${userId}`;
           "block_contact",
           "unblock_contact",
           "create_transfer_rule",
+          "manage_contact_details",
         ]);
 
         if (needsConversationContextTools.has(toolCall.name)) {
@@ -5850,16 +5869,21 @@ User ID: ${userId}`;
       }
       
       // Humanize the response - make it conversational
+      // STRICTLY only report what the tools actually did
       const toolOutput = results.join("\n\n");
       const humanizePrompt = `You are Aura, a friendly AI assistant. The user asked: "${message}"
 
-Tool output:
+These are the ONLY tool outputs (what was ACTUALLY done):
 ${toolOutput}
 
-Respond conversationally in 1-2 sentences. Be direct and natural. NO emojis. NO markdown. Just plain friendly text.
-If the output already contains good info, rephrase it naturally. Example:
-- Instead of "Your Comsierge Number: +123" say "Your Comsierge number is +123"
-- Instead of "Forwarding to: +456" say "and calls forward to +456"`;
+IMPORTANT RULES:
+1. ONLY mention actions that appear in the tool outputs above
+2. If the user asked for multiple things but the tool outputs only show some of them, ONLY report what's actually shown
+3. Do NOT say "I've done X, Y, Z" unless X, Y, and Z ALL appear in the tool outputs
+4. If something the user asked for is NOT in the tool outputs, say "I couldn't complete [that action]" or leave it out
+5. If a tool output contains an error, report that error
+
+Respond conversationally in 1-2 sentences. Be direct and natural. NO emojis. NO markdown. Just plain friendly text.`;
 
       try {
         const humanized = await llm.invoke([new HumanMessage(humanizePrompt)]);

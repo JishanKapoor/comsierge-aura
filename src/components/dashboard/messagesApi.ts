@@ -166,9 +166,14 @@ export const searchMessages = async (params: SearchParams): Promise<SearchResult
   };
 };
 
-// Fetch all conversations with optional filter
-export const fetchConversations = async (filter: FilterType = "all"): Promise<Conversation[]> => {
-  const response = await fetch(`${API_BASE_URL}/api/messages/conversations?filter=${filter}&_t=${Date.now()}`, {
+// Fetch all conversations with optional filter and search
+export const fetchConversations = async (filter: FilterType = "all", search?: string): Promise<Conversation[]> => {
+  const params = new URLSearchParams({ filter, _t: Date.now().toString() });
+  if (search && search.trim()) {
+    params.append('search', search.trim());
+  }
+  
+  const response = await fetch(`${API_BASE_URL}/api/messages/conversations?${params.toString()}`, {
     headers: getAuthHeaders(),
   });
 

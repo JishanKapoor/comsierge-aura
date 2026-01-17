@@ -358,6 +358,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const [contacts, setContacts] = useState<Contact[]>([]);
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [mobilePane, setMobilePane] = useState<"list" | "chat">("list");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
@@ -386,6 +387,14 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Track recently deleted phone numbers to prevent them from reappearing during polling
   const recentlyDeletedPhones = useRef<Set<string>>(new Set());
+
+  // Debounce search query for API calls (300ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Fetch user's Twilio number on mount
   useEffect(() => {
@@ -429,10 +438,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
 
   // Reusable function to load conversations from API
   const loadConversations = useCallback(
-    async (opts?: { showLoading?: boolean; replace?: boolean; showIndicator?: boolean }) => {
+    async (opts?: { showLoading?: boolean; replace?: boolean; showIndicator?: boolean; search?: string }) => {
       const showLoading = Boolean(opts?.showLoading);
       const replace = Boolean(opts?.replace);
       const showIndicator = Boolean(opts?.showIndicator);
+      const search = opts?.search;
 
       const requestId = ++conversationsRequestId.current;
       if (showLoading) {
@@ -456,7 +466,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       }
 
       try {
-        const conversations = await fetchConversations(activeFilter as ApiFilterType);
+        const conversations = await fetchConversations(activeFilter as ApiFilterType, search);
 
         // Ignore stale responses (older filter / older request)
         if (requestId !== conversationsRequestId.current) return;
@@ -573,6 +583,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const hasInitiallyLoaded = useRef(false);
   const previousFilter = useRef<FilterType>(activeFilter);
   const isFilterTransition = useRef(false);
+  const previousSearchQuery = useRef<string>("");
 
   // Fetch conversations from MongoDB API on filter change
   useEffect(() => {
@@ -587,18 +598,35 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
 
     const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
-    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading, showIndicator: isFilterChange });
+    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading, showIndicator: isFilterChange, search: debouncedSearchQuery || undefined });
     hasInitiallyLoaded.current = true;
     isFilterTransition.current = false;
-  }, [activeFilter, loadConversations]);
+  }, [activeFilter, loadConversations, debouncedSearchQuery]);
+
+  // Trigger search when debounced search query changes
+  useEffect(() => {
+    if (previousSearchQuery.current === debouncedSearchQuery) return;
+    previousSearchQuery.current = debouncedSearchQuery;
+    
+    // Skip initial empty search
+    if (!hasInitiallyLoaded.current) return;
+    
+    // Show loading indicator for searches
+    loadConversations({ 
+      showLoading: false, 
+      replace: true, 
+      showIndicator: true, 
+      search: debouncedSearchQuery || undefined 
+    });
+  }, [debouncedSearchQuery, loadConversations]);
 
   // Poll for new messages every 5 seconds
   useEffect(() => {
     const pollInterval = setInterval(() => {
-      loadConversations({ showLoading: false, replace: false, showIndicator: false }); // Silently refresh
+      loadConversations({ showLoading: false, replace: false, showIndicator: false, search: debouncedSearchQuery || undefined }); // Silently refresh
     }, 5000);
     return () => clearInterval(pollInterval);
-  }, [loadConversations]);
+  }, [loadConversations, debouncedSearchQuery]);
 
   // Listen for contact changes (create/update/delete) and refresh
   useEffect(() => {
@@ -1233,8 +1261,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           setThreadsByContactId((prev) => {
             if (prev[selectedMessage.contactId]) return prev;
             
-            // Don't show seed message for new conversations
-            if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation") {
+            // Don't show seed message for new conversations or empty content
+            if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation" || !selectedMessage.content) {
                 return { ...prev, [selectedMessage.contactId]: [] };
             }
 
@@ -1242,7 +1270,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
               {
                 id: `${selectedMessage.contactId}-seed-incoming`,
                 role: 'incoming',
-                content: selectedMessage.content || 'No messages yet',
+                content: selectedMessage.content,
                 timestamp: selectedMessage.timestamp,
               },
             ];
@@ -1255,8 +1283,8 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
         setThreadsByContactId((prev) => {
           if (prev[selectedMessage.contactId]) return prev;
           
-          // Don't show seed message for new conversations
-          if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation") {
+          // Don't show seed message for new conversations or empty content
+          if (selectedMessage.id.startsWith("new-") || selectedMessage.content === "New conversation" || !selectedMessage.content) {
               return { ...prev, [selectedMessage.contactId]: [] };
           }
 
@@ -1264,7 +1292,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
             {
               id: `${selectedMessage.contactId}-seed-incoming`,
               role: 'incoming',
-              content: selectedMessage.content || 'No messages yet',
+              content: selectedMessage.content,
               timestamp: selectedMessage.timestamp,
             },
           ];
