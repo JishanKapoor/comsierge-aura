@@ -709,10 +709,16 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                       const isDragging = draggedRuleId === rule.id;
 
                       const destination = isRoutingGroup
-                        ? (rule.conditions?.destination as string | undefined) || "your forwarding number"
-                        : (rule.conditions?.destinationLabel as string | undefined)?.trim() ||
+                        ? (rule.conditions?.destination as string | undefined) || 
                           (user?.forwardingNumber as string | undefined)?.trim() ||
-                          "your forwarding number";
+                          "your forwarding number"
+                        : // For forward and message-notify rules, always use user's current forwardingNumber
+                          // (the stored destinationLabel may be outdated)
+                          (rule.type === "forward" || rule.type === "message-notify")
+                            ? (user?.forwardingNumber as string | undefined)?.trim() || "your forwarding number"
+                            : (rule.conditions?.destinationLabel as string | undefined)?.trim() ||
+                              (user?.forwardingNumber as string | undefined)?.trim() ||
+                              "your forwarding number";
 
                       return (
                         <div
