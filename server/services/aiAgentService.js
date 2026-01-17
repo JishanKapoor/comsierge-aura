@@ -525,6 +525,25 @@ const blockContactTool = tool(
         return `Could not find contact "${sourceContact}". Please specify the phone number.`;
       }
       
+      // Check for existing block rule for this contact to prevent duplicates
+      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      const existingBlockRules = await Rule.find({
+        userId,
+        type: "block",
+        active: true
+      });
+      
+      // Check if already blocked by phone number
+      for (const existingRule of existingBlockRules) {
+        const existingPhone = existingRule.transferDetails?.sourcePhone;
+        if (existingPhone) {
+          const existingDigits = existingPhone.replace(/\D/g, '').slice(-10);
+          if (existingDigits === normalizedPhone) {
+            return `${contactName} is already blocked.`;
+          }
+        }
+      }
+      
       // Create a block rule
       await Rule.create({
         userId,
@@ -534,8 +553,7 @@ const blockContactTool = tool(
         transferDetails: { sourceContact: contactName, sourcePhone: phone }
       });
 
-      // Set isBlocked on the Contact
-      const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+      // Set isBlocked on the Contact (reuse normalizedPhone from above)
       const allContacts = await Contact.find({ userId });
       for (const c of allContacts) {
         const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
@@ -2090,19 +2108,50 @@ const searchMessagesByDateTool = tool(
 
 // Tool: Get All Rules
 const getRulesTool = tool(
-  async ({ userId, includeInactive }) => {
+  async ({ userId, includeInactive, includeDefaults }) => {
     try {
-      console.log("Getting rules for user:", userId, "includeInactive:", includeInactive);
+      console.log("Getting rules for user:", userId, "includeInactive:", includeInactive, "includeDefaults:", includeDefaults);
+      
+      // Helper to check if rule is a system default
+      const isDefaultRule = (rule) => {
+        const ruleText = rule.rule?.toLowerCase() || "";
+        // Check for default markers
+        if (ruleText.includes("(default)")) return true;
+        // Check for common default rule patterns
+        if (ruleText === "all calls ring your phone" || ruleText === "all calls ring your phone (default)") return true;
+        if (ruleText.includes("urgent messages only") || ruleText.includes("critical priority")) return true;
+        if (ruleText === "all messages notify you" || ruleText === "all messages notify you (default)") return true;
+        // Check if it's a system routing preference (forward type with mode condition but no specific contact)
+        if (rule.type === "forward" && rule.conditions?.mode && !rule.conditions?.sourceContactPhone) return true;
+        if (rule.type === "message-notify" && !rule.conditions?.sourceContactPhone) return true;
+        return false;
+      };
+      
+      // Helper to deduplicate rules by their description (keeping newest)
+      const deduplicateRules = (rules) => {
+        const seen = new Map();
+        const result = [];
+        // Rules are sorted by createdAt desc, so first occurrence is newest
+        for (const rule of rules) {
+          const key = rule.rule?.toLowerCase().trim();
+          if (!seen.has(key)) {
+            seen.set(key, true);
+            result.push(rule);
+          }
+        }
+        return result;
+      };
       
       if (includeInactive) {
         // Get inactive rules only
-        const inactiveRules = await Rule.find({ userId, active: false });
+        const inactiveRules = await Rule.find({ userId, active: false }).sort({ createdAt: -1 });
+        const uniqueRules = deduplicateRules(inactiveRules);
         
-        if (inactiveRules.length === 0) {
+        if (uniqueRules.length === 0) {
           return "You have no inactive (disabled) rules.";
         }
         
-        const ruleList = inactiveRules.map((r, i) => {
+        const ruleList = uniqueRules.map((r, i) => {
           let details = `${i + 1}. [${r.type.toUpperCase()}] ${r.rule}`;
           if (r.transferDetails?.contactName) {
             details += ` (to: ${r.transferDetails.contactName})`;
@@ -2114,10 +2163,18 @@ const getRulesTool = tool(
       }
       
       // Default: active rules
-      const rules = await Rule.find({ userId, active: true });
+      let rules = await Rule.find({ userId, active: true }).sort({ createdAt: -1 });
+      
+      // Filter out default/system rules unless explicitly requested
+      if (!includeDefaults) {
+        rules = rules.filter(r => !isDefaultRule(r));
+      }
+      
+      // Deduplicate rules
+      rules = deduplicateRules(rules);
       
       if (rules.length === 0) {
-        return "You have no active rules set up.";
+        return "You have no custom active rules set up. (System defaults like call/message routing are managed separately in your settings.)";
       }
       
       const ruleList = rules.map((r, i) => {
@@ -2136,10 +2193,11 @@ const getRulesTool = tool(
   },
   {
     name: "get_rules",
-    description: "List rules for the user. Set includeInactive=true for inactive/disabled rules. Use when user asks 'what rules do I have', 'show my rules', 'inactive rules', 'disabled rules'.",
+    description: "List rules for the user. Set includeInactive=true for inactive/disabled rules. Use when user asks 'what rules do I have', 'show my rules', 'inactive rules', 'disabled rules'. By default, system routing defaults are hidden.",
     schema: z.object({
       userId: z.string().describe("User ID - REQUIRED"),
       includeInactive: z.boolean().optional().describe("Set to true to show inactive/disabled rules instead of active ones"),
+      includeDefaults: z.boolean().optional().describe("Set to true to also show system default routing rules (usually hidden)"),
     }),
   }
 );
@@ -4229,6 +4287,18 @@ const createSpamFilterTool = tool(
           break;
         default:
           return "Unknown filter type. Try: 'block car warranty spam', 'block prize scams', or 'block unknown numbers'";
+      }
+      
+      // Check for existing spam filter with same description to prevent duplicates
+      const existingRule = await Rule.findOne({
+        userId,
+        type: "block",
+        rule: ruleDescription,
+        active: true
+      });
+      
+      if (existingRule) {
+        return `Spam filter already exists: "${ruleDescription}"`;
       }
       
       await Rule.create({
