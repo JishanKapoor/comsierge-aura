@@ -2983,20 +2983,27 @@ const getPhoneInfoTool = tool(
     try {
       const user = await User.findById(userId);
       
-      let info = [];
-      if (user?.phoneNumber) {
-        info.push(`Your Comsierge Number: ${user.phoneNumber}`);
-      }
-      if (user?.forwardingNumber) {
-        info.push(`Forwarding to: ${user.forwardingNumber}`);
-      }
-      
-      const rulesCount = await Rule.countDocuments({ userId, active: true });
-      info.push(`Active Rules: ${rulesCount}`);
-      
+      const info = [];
+      const comsiergeNumber = user?.phoneNumber || null;
+      const routingNumber = user?.forwardingNumber || null;
+
+      if (comsiergeNumber) info.push(`Comsierge number: ${comsiergeNumber}`);
+      info.push(`Routing/forwarding number: ${routingNumber || "(not set)"}`);
+
+      // Keep counts, but make them explicit so the UI-vs-backend mismatch doesn't look like a bug.
+      // UI “Active Rules” pages often show only routing/transfer rules, while backend includes all rule types.
+      const activeAllRules = await Rule.countDocuments({ userId, active: true });
+      const activeRoutingRules = await Rule.countDocuments({
+        userId,
+        active: true,
+        type: { $in: ["forward", "message-notify"] },
+      });
       const contactsCount = await Contact.countDocuments({ userId });
+
+      info.push(`Active rules (all types): ${activeAllRules}`);
+      info.push(`Active routing rules (calls/messages): ${activeRoutingRules}`);
       info.push(`Contacts: ${contactsCount}`);
-      
+
       return info.join("\n");
     } catch (error) {
       return `Error: ${error.message}`;
@@ -3181,6 +3188,34 @@ const updateForwardingNumberTool = tool(
         { forwardingNumber: normalized },
         { new: true }
       );
+
+      // Keep routing rules consistent with the user's forwarding number.
+      // This is critical for consistency across:
+      // - Routing page (User.forwardingNumber)
+      // - Active Rules tab (Rule.conditions.destinationLabel)
+      // - AI chat / SMS commands (rules created/updated via tools)
+      try {
+        await Rule.updateMany(
+          { userId: updatedUser._id, type: "forward" },
+          {
+            $set: {
+              "conditions.destinationLabel": normalized,
+              "transferDetails.contactPhone": normalized,
+            },
+          }
+        );
+        await Rule.updateMany(
+          { userId: updatedUser._id, type: "message-notify" },
+          {
+            $set: {
+              "conditions.destinationLabel": normalized,
+            },
+          }
+        );
+        console.log(`📋 Synced routing rules to forwarding number: ${normalized}`);
+      } catch (ruleErr) {
+        console.error("Failed to sync routing rules after forwarding update:", ruleErr);
+      }
       
       // Send welcome SMS if this is a new or changed number
       if (isNewNumber && updatedUser.phoneNumber) {
@@ -3188,7 +3223,7 @@ const updateForwardingNumberTool = tool(
         await sendWelcomeSMS(updatedUser, normalized);
       }
       
-      return `Done! Your forwarding number has been updated to ${normalized}. All incoming calls and messages to your Comsierge number will now forward there.`;
+      return `Done - your routing/forwarding number is now ${normalized}.`;
     } catch (error) {
       console.error("Update forwarding number error:", error);
       return `Error updating forwarding number: ${error.message}`;

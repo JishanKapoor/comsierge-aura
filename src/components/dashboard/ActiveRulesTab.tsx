@@ -385,10 +385,12 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const routingMessageRule = rules.find((r) => r.type === "message-notify");
   const routingActive = Boolean(routingForwardRule?.active || routingMessageRule?.active);
 
+  // Source of truth for "Forward To" is the user profile forwarding number.
+  // Rules may lag behind (or contain stale destinationLabel), especially after changes made via AI/SMS.
   const routingDestination =
+    (user?.forwardingNumber as string | undefined)?.trim() ||
     (routingForwardRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
     (routingMessageRule?.conditions?.destinationLabel as string | undefined)?.trim() ||
-    (user?.forwardingNumber as string | undefined)?.trim() ||
     "your forwarding number";
 
   const displayRules: ActiveRule[] = (() => {
