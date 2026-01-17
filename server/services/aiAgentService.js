@@ -3607,7 +3607,7 @@ const setRoutingPreferencesTool = tool(
       // === CALL ROUTING ===
       if (callsMode) {
         let callRuleDesc;
-        let callConditions = { mode: callsMode };
+        let callConditions = { mode: callsMode, destinationLabel: forwardingNumber || "" };
         
         switch (callsMode) {
           case "all":
@@ -3649,7 +3649,7 @@ const setRoutingPreferencesTool = tool(
             type: "forward",
             rule: callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
             active: true,
-            conditions: scheduleObj ? { mode: "none", schedule: scheduleObj } : { mode: "none" },
+            conditions: scheduleObj ? { mode: "none", schedule: scheduleObj, destinationLabel: forwardingNumber || "" } : { mode: "none", destinationLabel: forwardingNumber || "" },
             transferDetails: { mode: "calls" }
           });
         }
@@ -3682,8 +3682,8 @@ const setRoutingPreferencesTool = tool(
           rule: msgRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
           active: true,
           conditions: scheduleObj 
-            ? { priorityFilter: messagesMode, schedule: scheduleObj }
-            : { priorityFilter: messagesMode },
+            ? { priorityFilter: messagesMode, schedule: scheduleObj, destinationLabel: forwardingNumber || "" }
+            : { priorityFilter: messagesMode, destinationLabel: forwardingNumber || "" },
           transferDetails: { mode: "messages" }
         });
       }

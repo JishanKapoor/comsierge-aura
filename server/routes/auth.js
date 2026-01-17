@@ -7,6 +7,7 @@ import User from "../models/User.js";
 import TwilioAccount from "../models/TwilioAccount.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
+import Rule from "../models/Rule.js";
 
 const router = express.Router();
 
@@ -722,6 +723,32 @@ router.put("/me/forwarding", async (req, res) => {
     user.forwardingNumber = forwardingNumber || null;
     await user.save();
 
+    // Update existing routing rules to use the new forwarding number
+    if (forwardingNumber) {
+      try {
+        await Rule.updateMany(
+          { userId: user._id, type: "forward" },
+          { 
+            $set: { 
+              "conditions.destinationLabel": forwardingNumber,
+              "transferDetails.contactPhone": forwardingNumber
+            }
+          }
+        );
+        await Rule.updateMany(
+          { userId: user._id, type: "message-notify" },
+          { 
+            $set: { 
+              "conditions.destinationLabel": forwardingNumber
+            }
+          }
+        );
+        console.log(`📋 Updated routing rules for user ${user._id} to new forwarding number: ${forwardingNumber}`);
+      } catch (ruleErr) {
+        console.error("Failed to update routing rules:", ruleErr);
+      }
+    }
+
     // Send welcome SMS if number changed and user has a Comsierge number
     if (isNewNumber && user.phoneNumber) {
       console.log(`📱 Forwarding number changed from ${oldForwardingNumber || 'none'} to ${forwardingNumber} - sending welcome SMS`);
@@ -917,6 +944,34 @@ router.put("/users/:id/forwarding", async (req, res) => {
     
     user.forwardingNumber = forwardingNumber || null;
     await user.save();
+    
+    // Update existing routing rules to use the new forwarding number
+    if (forwardingNumber) {
+      try {
+        // Update forward rules with the new destination
+        await Rule.updateMany(
+          { userId: user._id, type: "forward" },
+          { 
+            $set: { 
+              "conditions.destinationLabel": forwardingNumber,
+              "transferDetails.contactPhone": forwardingNumber
+            }
+          }
+        );
+        // Update message-notify rules with the new destination
+        await Rule.updateMany(
+          { userId: user._id, type: "message-notify" },
+          { 
+            $set: { 
+              "conditions.destinationLabel": forwardingNumber
+            }
+          }
+        );
+        console.log(`📋 Updated routing rules for user ${user._id} to new forwarding number: ${forwardingNumber}`);
+      } catch (ruleErr) {
+        console.error("Failed to update routing rules:", ruleErr);
+      }
+    }
     
     // Send welcome SMS if number changed and user has a Comsierge number
     if (isNewNumber && user.phoneNumber) {
