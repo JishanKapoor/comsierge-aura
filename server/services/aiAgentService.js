@@ -2503,9 +2503,9 @@ export async function chatWithAI(userId, message, history = []) {
 
 // Tool: Make a phone call
 const makeCallTool = tool(
-  async ({ userId, contactName, contactPhone }) => {
+  async ({ userId, contactName, contactPhone, viaSms }) => {
     try {
-      console.log("📞 Make call request:", { userId, contactName, contactPhone });
+      console.log("📞 Make call request:", { userId, contactName, contactPhone, viaSms });
       
       // Resolve contact phone using AI
       let phone = contactPhone;
@@ -2551,13 +2551,110 @@ const makeCallTool = tool(
         return "I need either a contact name or phone number to make a call.";
       }
       
-      // Get user to find their assigned phone number
+      // Get user to find their assigned phone number and forwarding number
       const user = await User.findById(userId);
       if (!user?.phoneNumber) {
         return "You don't have a phone number set up yet. Go to Settings to configure your Comsierge number.";
       }
       
-      // Return confirmation with call details - frontend will handle the actual call
+      // Normalize phone numbers for comparison
+      const normalizePhone = (p) => (p || "").replace(/[^\d+]/g, "").replace(/^\+?1?/, "+1");
+      const normalizedTargetPhone = normalizePhone(phone);
+      const normalizedComsiergePhone = normalizePhone(user.phoneNumber);
+      
+      // Prevent calling your own Comsierge number
+      if (normalizedTargetPhone === normalizedComsiergePhone) {
+        return "You can't call your own Comsierge number. Did you mean to call someone else?";
+      }
+      
+      // If via SMS, actually initiate the call (Call via My Phone flow)
+      if (viaSms) {
+        // Need forwarding number to call the user
+        if (!user.forwardingNumber) {
+          return "You need to set up your personal phone number first. Go to Settings to add your forwarding number.";
+        }
+        
+        try {
+          // Find the TwilioAccount for this user's number
+          const TwilioAccount = (await import("../models/TwilioAccount.js")).default;
+          const CallRecord = (await import("../models/CallRecord.js")).default;
+          const Contact = (await import("../models/Contact.js")).default;
+          const twilio = (await import("twilio")).default;
+          
+          const normalizedComsierge = user.phoneNumber.replace(/[^\d+]/g, "");
+          let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: user.phoneNumber });
+          
+          if (!twilioAccount) {
+            twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedComsierge });
+          }
+          
+          if (!twilioAccount) {
+            const allAccounts = await TwilioAccount.find({});
+            for (const acc of allAccounts) {
+              const normalizedPhones = (acc.phoneNumbers || []).map(p => p.replace(/[^\d+]/g, ""));
+              if (normalizedPhones.includes(normalizedComsierge)) {
+                twilioAccount = acc;
+                break;
+              }
+            }
+          }
+          
+          if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
+            return "Could not find Twilio credentials. Please contact support.";
+          }
+          
+          const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+          const webhookBase = process.env.WEBHOOK_BASE_URL || "https://comsierge-iwe0.onrender.com";
+          
+          console.log(`📞 SMS-initiated Click-to-Call:`);
+          console.log(`   User's Phone: ${user.forwardingNumber}`);
+          console.log(`   Target: ${phone}`);
+          console.log(`   From (Comsierge): ${user.phoneNumber}`);
+          
+          // Create the call - calls user first, then connects to target when they press 1
+          const call = await client.calls.create({
+            url: `${webhookBase}/api/twilio/webhook/connect?to=${encodeURIComponent(phone)}`,
+            from: normalizedComsierge,
+            to: user.forwardingNumber,
+            timeout: 30,
+            statusCallback: `${webhookBase}/api/twilio/webhook/status`,
+            statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+            statusCallbackMethod: 'POST',
+          });
+          
+          // Create call record
+          try {
+            const normalizedTo = phone.replace(/[^\d+]/g, "");
+            let contact = await Contact.findOne({ userId: user._id, phone: normalizedTo });
+            if (!contact) {
+              const altTo = normalizedTo.startsWith("+") ? normalizedTo.substring(1) : "+" + normalizedTo;
+              contact = await Contact.findOne({ userId: user._id, phone: altTo });
+            }
+            
+            await CallRecord.create({
+              userId: user._id,
+              contactPhone: phone,
+              contactName: contact?.name || resolvedName || null,
+              direction: "outgoing",
+              type: "outgoing",
+              status: "initiated",
+              twilioCallSid: call.sid,
+              startedAt: new Date(),
+              reason: "sms_initiated_call"
+            });
+            console.log(`   ✅ Created call record, CallSid: ${call.sid}`);
+          } catch (recordErr) {
+            console.error(`   ❌ Failed to create call record:`, recordErr.message);
+          }
+          
+          return `Calling your phone now. When you answer, press 1 to connect to ${resolvedName || phone}.`;
+        } catch (callError) {
+          console.error("SMS call initiation error:", callError);
+          return `Failed to initiate call: ${callError.message}`;
+        }
+      }
+      
+      // Non-SMS mode: Return confirmation with call details - frontend will handle the actual call
       return JSON.stringify({
         action: "call",
         confirm: true,
@@ -2578,6 +2675,7 @@ const makeCallTool = tool(
       userId: z.string().describe("User ID"),
       contactName: z.string().optional().describe("Name of contact to call"),
       contactPhone: z.string().optional().describe("Phone number to call"),
+      viaSms: z.boolean().optional().describe("If true, initiate call directly (SMS context)"),
     }),
   }
 );
@@ -5302,9 +5400,10 @@ const fullAgentLLM = new ChatOpenAI({
  * Full-powered Rules Agent Chat
  * Can make calls, send messages, create rules, search everything
  */
-export async function rulesAgentChat(userId, message, chatHistory = []) {
+export async function rulesAgentChat(userId, message, chatHistory = [], options = {}) {
   try {
-    console.log("Rules Agent Chat:", { userId, message });
+    const { viaSms = false } = options;
+    console.log("Rules Agent Chat:", { userId, message, viaSms });
 
     const trimmedMessage = (message || "").trim();
     const lowerMessage = trimmedMessage.toLowerCase();
@@ -6062,6 +6161,11 @@ User ID: ${userId}`;
         
         // Auto-inject userId
         let args = { ...toolCall.args, userId };
+        
+        // For make_call tool, inject viaSms flag if in SMS context
+        if (toolCall.name === "make_call" && viaSms) {
+          args.viaSms = true;
+        }
 
         // If the user says "this conversation" / uses pronouns, some tool calls may omit contact info.
         // We defensively fill from the most recent referenced contact in chat history.

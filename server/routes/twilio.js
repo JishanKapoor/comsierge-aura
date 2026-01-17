@@ -2059,7 +2059,8 @@ router.post("/webhook/sms", async (req, res) => {
             console.log(`   🤖 Chat history length: ${chatHistory.length} messages`);
             
             // Call the AI agent with cleaned message (without @Comsierge tag)
-            const aiResponse = await rulesAgentChat(user._id.toString(), cleanedBody || "", chatHistory);
+            // Pass viaSms=true so tools like make_call can initiate calls directly
+            const aiResponse = await rulesAgentChat(user._id.toString(), cleanedBody || "", chatHistory, { viaSms: true });
             
             console.log(`   🤖 AI response: "${String(aiResponse || "").substring(0, 100)}..."`);
             
