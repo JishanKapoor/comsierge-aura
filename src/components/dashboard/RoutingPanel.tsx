@@ -165,7 +165,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       const inputDigits = normalizeUsPhoneDigits(value);
       const comsiergeDigits = normalizeUsPhoneDigits(phoneNumber || "");
       if (inputDigits && comsiergeDigits && inputDigits === comsiergeDigits) {
-        setForwardingNumberError("Cannot forward to your Comsierge number (creates a loop)");
+        setForwardingNumberError("Cannot forward to your Comsierge number");
       } else {
         setForwardingNumberError("");
       }
@@ -174,13 +174,13 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     }
   };
 
-  // Update forwarding number when user data loads
+  // Update forwarding number when user data loads (only on initial load)
   useEffect(() => {
-    if (user?.forwardingNumber && !forwardingNumber) {
+    if (user?.forwardingNumber && savedForwardingNumber.current === "") {
       setForwardingNumber(user.forwardingNumber);
       savedForwardingNumber.current = user.forwardingNumber;
     }
-  }, [user?.forwardingNumber, forwardingNumber]);
+  }, [user?.forwardingNumber]);
 
   useEffect(() => {
     return () => {
