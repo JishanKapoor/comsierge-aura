@@ -283,6 +283,8 @@ async function resolveContactWithAI(userId, nameOrPhone) {
   
   if (allContacts.length === 0) return null;
   
+  const inputLower = nameOrPhone.toLowerCase().trim();
+  
   // If it looks like a phone number (mostly digits), try direct match first
   const digits = nameOrPhone.replace(/\D/g, '');
   if (digits.length >= 7) {
@@ -292,25 +294,102 @@ async function resolveContactWithAI(userId, nameOrPhone) {
     if (phoneMatch) return phoneMatch;
   }
   
-  // Use AI to find the best match
+  // Try exact name match first (case-insensitive)
+  const exactMatch = allContacts.find(c => c.name.toLowerCase() === inputLower);
+  if (exactMatch) {
+    console.log(`[resolveContact] Exact match found: "${exactMatch.name}"`);
+    return exactMatch;
+  }
+  
+  // Try "starts with" match (e.g. "jake" matches "Jake 2", "Jake Smith")
+  const startsWithMatch = allContacts.find(c => 
+    c.name.toLowerCase().startsWith(inputLower) || 
+    inputLower.startsWith(c.name.toLowerCase())
+  );
+  if (startsWithMatch) {
+    console.log(`[resolveContact] Starts-with match found: "${startsWithMatch.name}" for input "${nameOrPhone}"`);
+    return startsWithMatch;
+  }
+  
+  // Try "contains" match (e.g. "jake" in "Uncle Jake")
+  const containsMatch = allContacts.find(c => 
+    c.name.toLowerCase().includes(inputLower) || 
+    inputLower.includes(c.name.toLowerCase().split(' ')[0]) // First name match
+  );
+  if (containsMatch) {
+    console.log(`[resolveContact] Contains match found: "${containsMatch.name}" for input "${nameOrPhone}"`);
+    return containsMatch;
+  }
+  
+  // Fuzzy match for typos - calculate Levenshtein-like similarity
+  const similarity = (a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    if (aLower === bLower) return 1;
+    if (aLower.includes(bLower) || bLower.includes(aLower)) return 0.9;
+    
+    // Simple character overlap score
+    const aChars = new Set(aLower.split(''));
+    const bChars = new Set(bLower.split(''));
+    const intersection = [...aChars].filter(c => bChars.has(c)).length;
+    const union = new Set([...aChars, ...bChars]).size;
+    const jaccardScore = intersection / union;
+    
+    // Check if first few chars match (common typo pattern)
+    const prefixLen = Math.min(3, aLower.length, bLower.length);
+    const prefixMatch = aLower.slice(0, prefixLen) === bLower.slice(0, prefixLen) ? 0.3 : 0;
+    
+    return jaccardScore + prefixMatch;
+  };
+  
+  // Find best fuzzy match
+  let bestMatch = null;
+  let bestScore = 0.5; // Minimum threshold
+  
+  for (const contact of allContacts) {
+    // Compare against contact name and first name
+    const firstName = contact.name.split(' ')[0];
+    const nameScore = similarity(inputLower, contact.name);
+    const firstNameScore = similarity(inputLower, firstName);
+    const score = Math.max(nameScore, firstNameScore);
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = contact;
+    }
+  }
+  
+  if (bestMatch && bestScore >= 0.6) {
+    console.log(`[resolveContact] Fuzzy match found: "${bestMatch.name}" (score: ${bestScore.toFixed(2)}) for input "${nameOrPhone}"`);
+    return bestMatch;
+  }
+  
+  // Fall back to AI for harder matches (nicknames, relationships like "mom", "boss")
   const contactList = allContacts.map(c => `${c.name} (${c.phone})`).join('\n');
   
   const matchResponse = await llm.invoke([
     new SystemMessage(`You are matching a user's input to their contact list.
 Find the contact that best matches the input. Return ONLY the exact name from the list, nothing else.
 If no good match exists, return "NO_MATCH".
-Be flexible with nicknames, typos, partial names (e.g. "jk" matches "JK F", "mom" matches "Mom", "john" matches "John Smith").`),
+
+IMPORTANT MATCHING RULES:
+- Handle typos generously: "jaek" → "Jake", "jermey" → "Jeremy", "jhon" → "John"
+- Handle partial names: "jake" should match "Jake 2" or "Jake Smith"
+- Handle nicknames: "jk" → "JK", "mom" → "Mom" or "Mother", "bro" → could be "Brother" or someone's name
+- Handle numbered contacts: "jake" should prefer "Jake" but also match "Jake 2" if no exact "Jake" exists
+- If multiple similar matches exist, prefer the simpler name (e.g., "Jake" over "Jake 2")`),
     new HumanMessage(`Input: "${nameOrPhone}"
 
 Contact list:
 ${contactList}
 
-Best matching contact name:`)
+Return the EXACT name from the list that best matches, or NO_MATCH:`)
   ]);
   
   const matchedName = matchResponse.content.trim();
+  console.log(`[resolveContact] AI match result: "${matchedName}" for input "${nameOrPhone}"`);
   
-  if (matchedName === "NO_MATCH") return null;
+  if (matchedName === "NO_MATCH" || !matchedName) return null;
   
   // Find the contact with that name
   return allContacts.find(c => c.name === matchedName) || 
@@ -350,12 +429,16 @@ const createTransferRuleTool = tool(
       let resolvedSourcePhone = sourcePhone;
       let resolvedSourceName = sourceContact;
       
-      if (!sourcePhone && sourceContact) {
+      if (sourceContact) {
         const srcContact = await resolveContactWithAI(userId, sourceContact);
         if (srcContact) {
           resolvedSourcePhone = srcContact.phone;
-          resolvedSourceName = srcContact.name;
+          resolvedSourceName = srcContact.name; // Use exact name from DB
           console.log(`Found source contact: ${resolvedSourceName} - ${resolvedSourcePhone}`);
+        } else {
+          // Source contact not found - FAIL rather than create bad rule
+          console.log(`Source contact "${sourceContact}" not found in database`);
+          return `I couldn't find a contact named "${sourceContact}" in your contacts. Did you mean someone else? Check the spelling or make sure they're saved as a contact.`;
         }
       }
       
