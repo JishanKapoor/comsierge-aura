@@ -964,16 +964,17 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   // We do local filtering only for instant feedback while typing (using searchQuery).
   // But to avoid mismatch when backend results come in, we also filter by debouncedSearchQuery
   // to ensure the displayed list stays consistent with what backend returned.
+  // NOTE: Search only by contact name and phone - NOT message content
   const filteredMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
       // If there's no search at all, show everything
       if (!debouncedSearchQuery) return true;
       // Use debouncedSearchQuery for filtering to stay in sync with backend results
+      // Only search by contact name and phone, NOT message content
       const q = debouncedSearchQuery.toLowerCase();
       return (
         msg.contactName.toLowerCase().includes(q) ||
-        msg.contactPhone.toLowerCase().includes(q) ||
-        msg.content.toLowerCase().includes(q)
+        msg.contactPhone.toLowerCase().includes(q)
       );
     });
 

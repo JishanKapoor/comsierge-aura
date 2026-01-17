@@ -174,8 +174,9 @@ router.get("/conversations", async (req, res) => {
       
       console.log(`[Search] Query: "${raw}", Regex: ${searchRegex}`);
 
-      const [matchingMessagePhones, matchingContacts, conversationsMatchingNameOrPhone] = await Promise.all([
-        Message.distinct("contactPhone", { userId: req.user._id, body: searchRegex }),
+      // Search only by contact name and phone - NOT message content
+      // This ensures searching "jeremy" only finds Jeremy, not anyone who mentioned Jeremy
+      const [matchingContacts, conversationsMatchingNameOrPhone] = await Promise.all([
         Contact.find({
           userId: req.user._id,
           $or: [{ name: searchRegex }, { phone: searchRegex }],
@@ -186,7 +187,7 @@ router.get("/conversations", async (req, res) => {
         }).select("contactPhone contactId contactName"),
       ]);
       
-      console.log(`[Search] Found ${matchingMessagePhones?.length || 0} message phones, ${matchingContacts?.length || 0} contacts, ${conversationsMatchingNameOrPhone?.length || 0} convos`);
+      console.log(`[Search] Found ${matchingContacts?.length || 0} contacts, ${conversationsMatchingNameOrPhone?.length || 0} convos`);
       if (matchingContacts?.length > 0) {
         console.log(`[Search] Matching contacts:`, matchingContacts.map(c => ({ name: c.name, phone: c.phone })));
       }
@@ -201,7 +202,6 @@ router.get("/conversations", async (req, res) => {
         }
       };
 
-      (matchingMessagePhones || []).forEach(addPhoneCandidates);
       (conversationsMatchingNameOrPhone || []).forEach((c) => addPhoneCandidates(c.contactPhone));
       (matchingContacts || []).forEach((c) => addPhoneCandidates(c.phone));
 

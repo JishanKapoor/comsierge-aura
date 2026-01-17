@@ -6,10 +6,20 @@ export function isClearChatCommand(text: string): boolean {
   const t = (text || "").trim().toLowerCase();
   if (!t) return false;
 
+  // If the user specifies a contact name (e.g., "delete chat of jeremy", "delete jeremy's chat"),
+  // this is NOT a clear-AI-chat command - it's a request to delete a specific conversation
+  // Check for patterns like "chat of X", "chat with X", "chat from X", "X's chat", "conversation with X"
+  const hasContactTarget = /\b(chat|convo|conversation|thread|messages?)\s+(of|with|from|for)\s+\w+/i.test(t) ||
+                           /\b\w+'s\s+(chat|convo|conversation|thread|messages?)\b/i.test(t) ||
+                           /\b(delete|remove|clear)\s+\w+('s)?\s*(chat|convo|conversation)?\s*$/i.test(t);
+  if (hasContactTarget) {
+    return false;
+  }
+
   // Intent-based detection: does the user want to clear/delete/reset the chat/conversation/history?
   // Action words
   const actionWords = /\b(clear|delete|remove|reset|wipe|erase|clean|empty|flush|nuke|start\s*over|fresh\s*start)\b/;
-  // Target words
+  // Target words - "this" refers to the AI chat itself
   const targetWords = /\b(chat|chats|convo|conversation|conversations|history|messages|thread|threads|this|everything|all)\b/;
   
   // If both an action word and target word are present, it's likely a clear intent
