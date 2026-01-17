@@ -3608,7 +3608,7 @@ IMPORTANT: If user says DND or routing request WITHOUT specifying calls/messages
         startTime: z.string().describe("Start time like '8pm', '20:00'"),
         endTime: z.string().describe("End time like '9pm', '21:00'"),
         days: z.array(z.string()).optional().describe("Days of week")
-      }).optional().describe("Time window for this rule"),
+      }).nullable().optional().describe("Time window for this rule - omit or set to null for always-on"),
       isDefault: z.boolean().optional().describe("True if setting default routing (no schedule)")
     }),
   }
@@ -4891,7 +4891,7 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
         priority: priorityValue,
         hasAttachment: parsed.filters?.has_attachment || false,
         sentiment: parsed.filters?.sentiment || null,
-        schedule: parsed.conditions?.time_window || null,
+        schedule: parsed.conditions?.time_window || undefined, // Use undefined, not null
         triggerCondition: parsed.conditions?.only_when || "always",
         delayMinutes: parsed.conditions?.delay_minutes || 0,
         unreadOnly: parsed.conditions?.unread_only || false,
