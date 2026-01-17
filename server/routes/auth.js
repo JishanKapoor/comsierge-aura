@@ -2,8 +2,11 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import twilio from "twilio";
 import User from "../models/User.js";
 import TwilioAccount from "../models/TwilioAccount.js";
+import Message from "../models/Message.js";
+import Conversation from "../models/Conversation.js";
 
 const router = express.Router();
 
@@ -24,6 +27,120 @@ const transporter = nodemailer.createTransport({
     pass: SMTP_PASSWORD,
   },
 });
+
+// Helper: Normalize phone to E.164-ish format
+const normalizeToE164ish = (value) => {
+  if (!value) return "";
+  const cleaned = String(value).replace(/[^\d+]/g, "");
+  if (cleaned.startsWith("+")) return cleaned;
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return cleaned;
+};
+
+/**
+ * Send Comsierge welcome SMS when forwarding number is set/changed.
+ */
+async function sendWelcomeSMS(user, toPhoneNumber) {
+  try {
+    if (!user?.phoneNumber) {
+      console.log("   ⚠️ Cannot send welcome SMS - user has no Comsierge number assigned");
+      return false;
+    }
+    
+    const userName = user.name || "there";
+    const welcomeMessage = `Comsierge Activated — Your AI Phone Number Is Now Live
+
+Hi ${userName}, your Comsierge number is fully active.
+
+From now on, your calls and texts are intelligently filtered, summarized, and routed — no app or Wi-Fi needed.
+
+Here's what I handle for you:
+• Filter calls and screen messages
+• Apply your rules (like forwarding bank texts or blocking spam)
+• Translate and summarize, and respond as needed
+• Initiate calls from your Comsierge number
+
+I help prevent spam and keep you updated on your upcoming schedule.
+
+You stay in control. Your phone, your way.
+
+Let me know if you want to call someone, set up new rules, or silence distractions.
+
+I've got it covered.
+— Comsierge
+Your AI Chief of Staff for Communication`;
+    
+    // Find TwilioAccount for user's Comsierge number
+    const normalizedComsierge = normalizeToE164ish(user.phoneNumber);
+    let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: user.phoneNumber });
+    
+    if (!twilioAccount) {
+      twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedComsierge });
+    }
+    
+    if (!twilioAccount) {
+      // Search all accounts
+      const allAccounts = await TwilioAccount.find({});
+      for (const acc of allAccounts) {
+        const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+        if (normalizedPhones.includes(normalizedComsierge)) {
+          twilioAccount = acc;
+          break;
+        }
+      }
+    }
+    
+    if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
+      console.log("   ⚠️ Cannot send welcome SMS - no TwilioAccount found for Comsierge number");
+      return false;
+    }
+    
+    const client = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+    
+    console.log(`   📤 Sending welcome SMS from ${normalizedComsierge} to ${toPhoneNumber}`);
+    
+    const result = await client.messages.create({
+      body: welcomeMessage,
+      from: normalizedComsierge,
+      to: toPhoneNumber
+    });
+    
+    console.log(`   ✅ Welcome SMS sent successfully (SID: ${result.sid})`);
+    
+    // Save welcome message to DB
+    await Message.create({
+      userId: user._id,
+      contactPhone: toPhoneNumber,
+      contactName: user.name || "You",
+      direction: "outgoing",
+      body: welcomeMessage,
+      status: "sent",
+      twilioSid: result.sid,
+      fromNumber: normalizedComsierge,
+      toNumber: toPhoneNumber,
+    });
+    
+    // Update or create conversation
+    await Conversation.findOneAndUpdate(
+      { userId: user._id, contactPhone: toPhoneNumber },
+      {
+        $set: {
+          contactName: user.name || "You",
+          lastMessage: welcomeMessage.substring(0, 100) + "...",
+          lastMessageAt: new Date(),
+        }
+      },
+      { upsert: true, new: true }
+    );
+    
+    return true;
+  } catch (error) {
+    console.error("   ❌ Failed to send welcome SMS:", error.message);
+    return false;
+  }
+}
 
 // Generate 6-digit OTP
 const generateOTP = () => {
@@ -595,8 +712,21 @@ router.put("/me/forwarding", async (req, res) => {
       if (!isValid) return res.status(400).json({ success: false, message: "Please enter a valid US phone number" });
     }
 
+    // Detect if forwarding number is actually changing
+    const oldForwardingNumber = user.forwardingNumber;
+    const normalizeNumber = (num) => num ? normalizeToE164ish(num) : null;
+    const oldNormalized = normalizeNumber(oldForwardingNumber);
+    const newNormalized = forwardingNumber ? normalizeNumber(forwardingNumber) : null;
+    const isNewNumber = newNormalized && newNormalized !== oldNormalized;
+
     user.forwardingNumber = forwardingNumber || null;
     await user.save();
+
+    // Send welcome SMS if number changed and user has a Comsierge number
+    if (isNewNumber && user.phoneNumber) {
+      console.log(`📱 Forwarding number changed from ${oldForwardingNumber || 'none'} to ${forwardingNumber} - sending welcome SMS`);
+      sendWelcomeSMS(user, newNormalized).catch(err => console.error("Welcome SMS error:", err));
+    }
 
     res.json({
       success: true,
@@ -778,8 +908,22 @@ router.put("/users/:id/forwarding", async (req, res) => {
     }
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    // Detect if forwarding number is actually changing
+    const oldForwardingNumber = user.forwardingNumber;
+    const oldNormalized = oldForwardingNumber ? normalizeToE164ish(oldForwardingNumber) : null;
+    const newNormalized = forwardingNumber ? normalizeToE164ish(forwardingNumber) : null;
+    const isNewNumber = newNormalized && newNormalized !== oldNormalized;
+    
     user.forwardingNumber = forwardingNumber || null;
     await user.save();
+    
+    // Send welcome SMS if number changed and user has a Comsierge number
+    if (isNewNumber && user.phoneNumber) {
+      console.log(`📱 [Admin] Forwarding number changed from ${oldForwardingNumber || 'none'} to ${forwardingNumber} - sending welcome SMS`);
+      sendWelcomeSMS(user, newNormalized).catch(err => console.error("Welcome SMS error:", err));
+    }
+    
     res.json({ success: true, message: "Forwarding number saved", data: { user: { id: user._id, forwardingNumber: user.forwardingNumber } } });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server error" });

@@ -13,6 +13,7 @@ import Media from "../models/Media.js";
 import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 import { detectPriorityContext } from "../utils/priorityContext.js";
+import { rulesAgentChat } from "../services/aiAgentService.js";
 
 const router = express.Router();
 
@@ -2021,7 +2022,105 @@ router.post("/webhook/sms", async (req, res) => {
         if (wasTransferred) {
           console.log(`   ℹ️ Message was transferred - skipping regular forwarding`);
         } else if (isSenderPersonalNumber) {
-          console.log(`   ❌ Skipping SMS forward - sender (${From}) is user's personal number`);
+          // =====================================================
+          // USER TEXTED FROM PERSONAL NUMBER → AI CHAT VIA SMS
+          // This enables offline AI interaction - user can text their Comsierge number
+          // from their personal phone and the AI will respond via SMS.
+          // =====================================================
+          console.log(`   🤖 SMS from user's personal number (${From}) - routing to AI agent`);
+          
+          try {
+            // Get recent chat history for context (last 10 messages in this conversation)
+            const recentMessages = await Message.find({
+              userId: user._id,
+              contactPhone: normalizedForwardingNumber,
+              direction: { $in: ["incoming", "outgoing"] }
+            })
+              .sort({ createdAt: -1 })
+              .limit(10);
+            
+            // Convert to chat history format expected by rulesAgentChat
+            const chatHistory = recentMessages
+              .reverse()
+              .map((m) => ({
+                role: m.direction === "incoming" ? "user" : "assistant",
+                text: m.body || ""
+              }));
+            
+            console.log(`   🤖 Calling AI agent with message: "${Body?.substring(0, 50)}..."`);
+            console.log(`   🤖 Chat history length: ${chatHistory.length} messages`);
+            
+            // Call the AI agent
+            const aiResponse = await rulesAgentChat(user._id.toString(), Body || "", chatHistory);
+            
+            console.log(`   🤖 AI response: "${String(aiResponse || "").substring(0, 100)}..."`);
+            
+            if (aiResponse && typeof aiResponse === "string" && aiResponse.trim()) {
+              // Find TwilioAccount to send the response
+              const normalizedTo = normalizeToE164ish(To);
+              let twilioAccount = await TwilioAccount.findOne({ phoneNumbers: To });
+              
+              if (!twilioAccount) {
+                twilioAccount = await TwilioAccount.findOne({ phoneNumbers: normalizedTo });
+              }
+              
+              if (!twilioAccount) {
+                const allAccounts = await TwilioAccount.find({});
+                for (const acc of allAccounts) {
+                  const normalizedPhones = (acc.phoneNumbers || []).map(p => normalizeToE164ish(p));
+                  if (normalizedPhones.includes(normalizedTo)) {
+                    twilioAccount = acc;
+                    break;
+                  }
+                }
+              }
+              
+              if (twilioAccount && twilioAccount.accountSid && twilioAccount.authToken) {
+                const aiClient = twilio(twilioAccount.accountSid, twilioAccount.authToken);
+                
+                // Send AI response back to user's personal number
+                const aiSmsResult = await aiClient.messages.create({
+                  body: aiResponse,
+                  from: normalizedTo,
+                  to: normalizedFrom
+                });
+                
+                console.log(`   ✅ AI response SMS sent (SID: ${aiSmsResult.sid})`);
+                
+                // Save the AI response as an outgoing message
+                await Message.create({
+                  userId: user._id,
+                  contactPhone: normalizedForwardingNumber,
+                  contactName: user.name || "You",
+                  direction: "outgoing",
+                  body: aiResponse,
+                  status: "sent",
+                  twilioSid: aiSmsResult.sid,
+                  fromNumber: normalizedTo,
+                  toNumber: normalizedFrom,
+                });
+                
+                // Update conversation
+                await Conversation.findOneAndUpdate(
+                  { userId: user._id, contactPhone: normalizedForwardingNumber },
+                  {
+                    $set: {
+                      contactName: user.name || "You",
+                      lastMessage: aiResponse.substring(0, 100) + "...",
+                      lastMessageAt: new Date(),
+                    }
+                  },
+                  { upsert: true, new: true }
+                );
+              } else {
+                console.log(`   ⚠️ Cannot send AI response - no TwilioAccount found`);
+              }
+            } else {
+              console.log(`   ⚠️ AI returned empty response`);
+            }
+          } catch (aiError) {
+            console.error(`   ❌ AI chat via SMS error:`, aiError.message);
+          }
         } else if (shouldNotify && user.forwardingNumber) {
           console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);
           try {
