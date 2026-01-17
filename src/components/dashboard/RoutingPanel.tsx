@@ -160,6 +160,15 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     // Allow empty or valid phone numbers
     if (value.trim() && !isValidUsPhoneNumber(value)) {
       setForwardingNumberError("Enter a valid US phone number");
+    } else if (value.trim()) {
+      // Check if forwarding number matches Comsierge number (would create a loop)
+      const inputDigits = normalizeUsPhoneDigits(value);
+      const comsiergeDigits = normalizeUsPhoneDigits(phoneNumber || "");
+      if (inputDigits && comsiergeDigits && inputDigits === comsiergeDigits) {
+        setForwardingNumberError("Cannot forward to your Comsierge number (creates a loop)");
+      } else {
+        setForwardingNumberError("");
+      }
     } else {
       setForwardingNumberError("");
     }

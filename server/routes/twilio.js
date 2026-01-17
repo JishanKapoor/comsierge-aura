@@ -2024,10 +2024,18 @@ router.post("/webhook/sms", async (req, res) => {
         } else if (isSenderPersonalNumber) {
           // =====================================================
           // USER TEXTED FROM PERSONAL NUMBER → AI CHAT VIA SMS
-          // This enables offline AI interaction - user can text their Comsierge number
-          // from their personal phone and the AI will respond via SMS.
+          // Only activates when message contains @Comsierge or @comsierge
+          // This enables offline AI interaction without accidental triggers.
           // =====================================================
-          console.log(`   🤖 SMS from user's personal number (${From}) - routing to AI agent`);
+          const bodyLower = (Body || "").toLowerCase();
+          const hasComsiergeTag = bodyLower.includes("@comsierge");
+          
+          if (!hasComsiergeTag) {
+            console.log(`   📱 SMS from personal number but no @Comsierge mention - skipping AI`);
+          } else {
+            // Strip the @Comsierge tag from the message before sending to AI
+            const cleanedBody = (Body || "").replace(/@comsierge/gi, "").trim();
+            console.log(`   🤖 SMS from user's personal number with @Comsierge - routing to AI agent`);
           
           try {
             // Get recent chat history for context (last 10 messages in this conversation)
@@ -2047,11 +2055,11 @@ router.post("/webhook/sms", async (req, res) => {
                 text: m.body || ""
               }));
             
-            console.log(`   🤖 Calling AI agent with message: "${Body?.substring(0, 50)}..."`);
+            console.log(`   🤖 Calling AI agent with message: "${cleanedBody?.substring(0, 50)}..."`);
             console.log(`   🤖 Chat history length: ${chatHistory.length} messages`);
             
-            // Call the AI agent
-            const aiResponse = await rulesAgentChat(user._id.toString(), Body || "", chatHistory);
+            // Call the AI agent with cleaned message (without @Comsierge tag)
+            const aiResponse = await rulesAgentChat(user._id.toString(), cleanedBody || "", chatHistory);
             
             console.log(`   🤖 AI response: "${String(aiResponse || "").substring(0, 100)}..."`);
             
@@ -2121,6 +2129,7 @@ router.post("/webhook/sms", async (req, res) => {
           } catch (aiError) {
             console.error(`   ❌ AI chat via SMS error:`, aiError.message);
           }
+          } // end hasComsiergeTag
         } else if (shouldNotify && user.forwardingNumber) {
           console.log(`   Forwarding SMS to personal number: ${user.forwardingNumber}`);
           try {

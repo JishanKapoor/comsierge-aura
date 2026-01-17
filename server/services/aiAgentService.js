@@ -4782,6 +4782,42 @@ const createSmartRuleTool = tool(
     try {
       console.log("Creating smart rule:", { userId, ruleDescription, clarificationResponse });
       
+      // Get user to check forwarding number is valid
+      const user = await User.findById(userId);
+      if (!user) {
+        return "User not found.";
+      }
+      
+      // Helper to normalize phone numbers for comparison
+      const normalizeForCompare = (phone) => {
+        if (!phone) return "";
+        return phone.replace(/\D/g, "").slice(-10);
+      };
+      
+      // Check if forwarding number is the same as Comsierge number (invalid)
+      const comsiergeDigits = normalizeForCompare(user.phoneNumber);
+      const forwardingDigits = normalizeForCompare(user.forwardingNumber);
+      const forwardingIsInvalid = !user.forwardingNumber || 
+        (comsiergeDigits && forwardingDigits && comsiergeDigits === forwardingDigits);
+      
+      // Check if this rule involves forwarding/routing
+      const lowerDesc = ruleDescription.toLowerCase();
+      const needsForwarding = lowerDesc.includes("forward") || 
+        lowerDesc.includes("route") || 
+        lowerDesc.includes("send to") ||
+        lowerDesc.includes("notify me") ||
+        lowerDesc.includes("alert me") ||
+        (lowerDesc.includes("real number") || lowerDesc.includes("personal number"));
+      
+      // If forwarding is needed but not properly configured, ask for it first
+      if (needsForwarding && forwardingIsInvalid) {
+        return `Before I can set up forwarding rules, I need your personal phone number (the number where you want calls and messages forwarded to).
+
+Your Comsierge number is ${user.phoneNumber || "not set"}, but I don't have a valid forwarding destination.
+
+Please tell me: "My personal number is [your phone number]" or "Forward to [phone number]"`;
+      }
+      
       // Parse the rule using advanced AI
       const parsed = await parseAdvancedRule(ruleDescription);
       console.log("Parsed rule:", JSON.stringify(parsed, null, 2));
