@@ -2561,10 +2561,16 @@ const makeCallTool = tool(
       const normalizePhone = (p) => (p || "").replace(/[^\d+]/g, "").replace(/^\+?1?/, "+1");
       const normalizedTargetPhone = normalizePhone(phone);
       const normalizedComsiergePhone = normalizePhone(user.phoneNumber);
+      const normalizedForwardingPhone = user.forwardingNumber ? normalizePhone(user.forwardingNumber) : null;
       
       // Prevent calling your own Comsierge number
       if (normalizedTargetPhone === normalizedComsiergePhone) {
         return "You can't call your own Comsierge number. Did you mean to call someone else?";
+      }
+      
+      // Prevent calling your own personal/forwarding number
+      if (normalizedForwardingPhone && normalizedTargetPhone === normalizedForwardingPhone) {
+        return "Can't make a phone call to your personal number.";
       }
       
       // If via SMS, actually initiate the call (Call via My Phone flow)
