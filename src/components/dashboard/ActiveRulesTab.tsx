@@ -61,14 +61,12 @@ const RULE_TYPE_META: Record<RuleType, { label: string; icon: typeof Zap; color:
 };
 
 const AI_EXAMPLES = [
-  "Reply to work messages only on weekdays before 7pm",
-  "Forward messages from boss to my second number",
-  "Block spam with gambling keywords",
-  "Notify me loudly if Dad texts urgent",
-  "After 8pm, auto-reply to clients with a polite message",
-  "If message contains invoice or payment, mark high priority",
-  "Block unknown numbers during sleep hours",
-  "Mute group messages, only notify direct ones",
+  "Route all calls to my phone, important messages only",
+  "No calls, no message notifications after 10pm",
+  "Favorites can call, urgent messages only",
+  "Transfer calls from Mom to my second number",
+  "Transfer all messages from Jeremy to +1 437-239-2448",
+  "From 8pm to 9pm: calls go to AI, no message notifications",
 ];
 
 const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRulesTabProps) => {
@@ -394,8 +392,9 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     "your forwarding number";
 
   const displayRules: ActiveRule[] = (() => {
-    const nonRouting = rules.filter((r) => r.type !== "forward" && r.type !== "message-notify");
-    if (!routingForwardRule && !routingMessageRule) return nonRouting;
+    // This tab is focused on routing + transfer only.
+    // Hide other rule types (block/auto-reply/priority/custom) from the Rules list.
+    const transferOnly = rules.filter((r) => r.type === "transfer");
 
     const createdAt = (routingForwardRule?.createdAt || routingMessageRule?.createdAt || "").toString();
     const routingGroup: ActiveRule = {
@@ -423,7 +422,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       },
     };
 
-    return [routingGroup, ...nonRouting];
+    return [routingGroup, ...transferOnly];
   })();
 
   const activeRulesCount = displayRules.filter((r) => r.active).length;
