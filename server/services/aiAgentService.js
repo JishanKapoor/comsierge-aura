@@ -5440,10 +5440,19 @@ export async function rulesAgentChat(userId, message, chatHistory = []) {
       } else if (/\b(no\s*messages?|no\s*notification|none|silent|mute)\b/i.test(lowerMsg)) {
         messagesMode = "none";
       }
+
+      // Special case: users often say "no spam messages" meaning "only non-spam".
+      // Our UI has no "all non-spam" toggle; closest match is "Important" (high+medium, no spam).
+      // Without this, messagesMode stays null and the code below defaults it to "none".
+      const mentionsMessages = /\b(messages?|texts?|sms)\b/i.test(lowerMsg);
+      const wantsNoSpamMessages = /\bno\s+spam\b/i.test(lowerMsg) && mentionsMessages;
+      if (!messagesMode && wantsNoSpamMessages) {
+        messagesMode = "important";
+      }
       
       // If user only specified one (calls or messages), we still need to execute
       // Use defaults for unspecified: if they want calls, assume no messages (DND style)
-      if (callsMode && !messagesMode) {
+      if (callsMode && !messagesMode && !mentionsMessages) {
         messagesMode = "none"; // DND default
       }
       if (messagesMode && !callsMode) {
