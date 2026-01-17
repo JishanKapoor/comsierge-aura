@@ -171,18 +171,28 @@ router.get("/conversations", async (req, res) => {
       const raw = String(search).trim();
       const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const searchRegex = new RegExp(escaped, "i");
+      
+      console.log(`[Search] Query: "${raw}", Regex: ${searchRegex}`);
 
       const [matchingMessagePhones, matchingContacts, conversationsMatchingNameOrPhone] = await Promise.all([
         Message.distinct("contactPhone", { userId: req.user._id, body: searchRegex }),
         Contact.find({
           userId: req.user._id,
           $or: [{ name: searchRegex }, { phone: searchRegex }],
-        }).select("_id phone"),
+        }).select("_id phone name"),
         Conversation.find({
           userId: req.user._id,
           $or: [{ contactName: searchRegex }, { contactPhone: searchRegex }],
-        }).select("contactPhone contactId"),
+        }).select("contactPhone contactId contactName"),
       ]);
+      
+      console.log(`[Search] Found ${matchingMessagePhones?.length || 0} message phones, ${matchingContacts?.length || 0} contacts, ${conversationsMatchingNameOrPhone?.length || 0} convos`);
+      if (matchingContacts?.length > 0) {
+        console.log(`[Search] Matching contacts:`, matchingContacts.map(c => ({ name: c.name, phone: c.phone })));
+      }
+      if (conversationsMatchingNameOrPhone?.length > 0) {
+        console.log(`[Search] Matching convos:`, conversationsMatchingNameOrPhone.map(c => ({ name: c.contactName, phone: c.contactPhone })));
+      }
 
       const phoneCandidates = new Set();
       const addPhoneCandidates = (phone) => {
@@ -196,6 +206,8 @@ router.get("/conversations", async (req, res) => {
       (matchingContacts || []).forEach((c) => addPhoneCandidates(c.phone));
 
       const contactIds = (matchingContacts || []).map((c) => c._id).filter(Boolean);
+      
+      console.log(`[Search] Phone candidates: ${phoneCandidates.size}, Contact IDs: ${contactIds.length}`);
 
       const or = [];
       if (phoneCandidates.size > 0) {
@@ -206,6 +218,7 @@ router.get("/conversations", async (req, res) => {
       }
 
       if (or.length === 0) {
+        console.log(`[Search] No matches found, returning empty`);
         return res.json({ success: true, count: 0, data: [] });
       }
 

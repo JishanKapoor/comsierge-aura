@@ -960,11 +960,16 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isMobile]);
   
-  // API already filters by activeFilter, we just do local search filtering here
+  // API handles search filtering via debouncedSearchQuery.
+  // We do local filtering only for instant feedback while typing (using searchQuery).
+  // But to avoid mismatch when backend results come in, we also filter by debouncedSearchQuery
+  // to ensure the displayed list stays consistent with what backend returned.
   const filteredMessages = useMemo(() => {
     const filtered = messages.filter((msg) => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
+      // If there's no search at all, show everything
+      if (!debouncedSearchQuery) return true;
+      // Use debouncedSearchQuery for filtering to stay in sync with backend results
+      const q = debouncedSearchQuery.toLowerCase();
       return (
         msg.contactName.toLowerCase().includes(q) ||
         msg.contactPhone.toLowerCase().includes(q) ||
@@ -978,7 +983,7 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       const bPinned = b.isPinned ? 1 : 0;
       return bPinned - aPinned;
     });
-  }, [messages, searchQuery]);
+  }, [messages, debouncedSearchQuery]);
 
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     filteredMessages[0]?.id ?? null
@@ -1135,8 +1140,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const selectedMessage = useMemo(() => {
     // Only return a selected message if explicitly selected by ID - don't auto-select first
     if (!selectedMessageId) return null;
-    return filteredMessages.find((m) => m.id === selectedMessageId) ?? null;
-  }, [filteredMessages, selectedMessageId]);
+    // First try to find in filtered list
+    const inFiltered = filteredMessages.find((m) => m.id === selectedMessageId);
+    if (inFiltered) return inFiltered;
+    // If not in filtered (e.g. during search transition), try the full messages list
+    // This prevents the chat from closing during search changes
+    return messages.find((m) => m.id === selectedMessageId) ?? null;
+  }, [filteredMessages, messages, selectedMessageId]);
 
   const selectedSavedContact = useMemo(() => {
     if (!selectedMessage) return null;
@@ -2785,14 +2795,23 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     // Delete via API
     try {
       // Some local placeholder conversations use non-ObjectId ids (e.g. "new-...", "phone:...").
-      // For those, delete by phone instead.
+      // For those, delete by phone instead. If the conversation was never saved to DB (local-only),
+      // both API calls may fail - that's OK, we still want to remove it from the UI.
       let success = false;
-      if (isValidObjectId(conversationId)) {
+      const isLocalOnly = String(conversationId).startsWith("new-") || String(conversationId).startsWith("phone:");
+      
+      if (!isLocalOnly && isValidObjectId(conversationId)) {
         success = await deleteConversationById(conversationId);
       }
-      if (!success) {
+      if (!success && !isLocalOnly) {
         success = await deleteConversation(phone);
       }
+      
+      // For local-only conversations, consider it a success since we already removed it from state
+      if (isLocalOnly) {
+        success = true;
+      }
+      
       if (!success) throw new Error("Delete failed");
       
       toast.success("Conversation deleted");
