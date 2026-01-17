@@ -3549,32 +3549,42 @@ const setRoutingPreferencesTool = tool(
         }
       }
       
-      // If this is a scheduled rule (not default), keep existing default rules
-      // If this is default, delete existing default rules first (those without schedule)
+      // If this is a default rule, only delete rules for what's being changed
+      // This preserves context - if user only mentions calls, keep their message settings
       if (effectiveIsDefault) {
-        // Delete existing default routing rules (no schedule or null schedule)
-        // Be aggressive - delete rules that could conflict
-        const deleteQuery = { 
-          userId, 
-          type: { $in: ["forward", "message-notify"] },
-          $or: [
-            { "conditions.schedule": { $exists: false } },
-            { "conditions.schedule": null },
-            { "conditions.schedule.start": { $exists: false } }
-          ]
-        };
-        const deleted = await Rule.deleteMany(deleteQuery);
-        console.log(`Deleted ${deleted.deletedCount} existing default routing rules`);
+        const typesToDelete = [];
+        if (callsMode) typesToDelete.push("forward");
+        if (messagesMode) typesToDelete.push("message-notify");
+        
+        if (typesToDelete.length > 0) {
+          const deleteQuery = { 
+            userId, 
+            type: { $in: typesToDelete },
+            $or: [
+              { "conditions.schedule": { $exists: false } },
+              { "conditions.schedule": null },
+              { "conditions.schedule.start": { $exists: false } }
+            ]
+          };
+          const deleted = await Rule.deleteMany(deleteQuery);
+          console.log(`Deleted ${deleted.deletedCount} existing ${typesToDelete.join("/")} rules`);
+        }
       }
       
-      // If scheduled, only delete conflicting scheduled rules
+      // If scheduled, only delete conflicting scheduled rules for the types being set
       if (scheduleObj) {
-        await Rule.deleteMany({
-          userId,
-          type: { $in: ["forward", "message-notify"] },
-          "conditions.schedule.start": scheduleObj.start,
-          "conditions.schedule.end": scheduleObj.end
-        });
+        const typesToDelete = [];
+        if (callsMode) typesToDelete.push("forward");
+        if (messagesMode) typesToDelete.push("message-notify");
+        
+        if (typesToDelete.length > 0) {
+          await Rule.deleteMany({
+            userId,
+            type: { $in: typesToDelete },
+            "conditions.schedule.start": scheduleObj.start,
+            "conditions.schedule.end": scheduleObj.end
+          });
+        }
       }
       
       let response = "";
