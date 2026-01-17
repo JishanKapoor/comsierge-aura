@@ -540,18 +540,36 @@ const createAutoReplyTool = tool(
   async ({ userId, sourceContact, sourcePhone, replyMessage }) => {
     try {
       console.log("Creating auto-reply:", { userId, sourceContact, replyMessage });
+      
+      // Resolve contact - MUST exist to create auto-reply
+      let resolvedPhone = sourcePhone;
+      let resolvedName = sourceContact;
+      
+      if (sourceContact) {
+        const resolved = await resolveContactWithAI(userId, sourceContact);
+        if (resolved) {
+          resolvedPhone = resolved.phone;
+          resolvedName = resolved.name; // Use exact name from DB
+          console.log(`Found contact for auto-reply: ${resolvedName} - ${resolvedPhone}`);
+        } else {
+          // Contact not found - FAIL
+          console.log(`Auto-reply contact "${sourceContact}" not found in database`);
+          return `I couldn't find "${sourceContact}" in your contacts. Please save them as a contact first, or tell me their phone number.`;
+        }
+      }
+      
       await Rule.create({
         userId,
-        rule: `Auto-reply to ${sourceContact}: "${replyMessage}"`,
+        rule: `Auto-reply to ${resolvedName}: "${replyMessage}"`,
         type: "auto-reply",
         active: true,
         transferDetails: {
-          sourceContact,
-          sourcePhone,
+          sourceContact: resolvedName,
+          sourcePhone: resolvedPhone,
           autoReplyMessage: replyMessage,
         }
       });
-      return `Done. Auto-reply set for ${sourceContact}. They'll receive: "${replyMessage}"`;
+      return `Done. Auto-reply set for ${resolvedName}. They'll receive: "${replyMessage}"`;
     } catch (error) {
       console.error("Auto-reply error:", error);
       return `Error: ${error.message}`;
@@ -5211,7 +5229,7 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
         }
       }
       
-      // Resolve source contact if specified
+      // Resolve source contact if specified - MUST exist
       let sourcePhone = null;
       let sourceName = parsed.filters?.from_contact;
       if (sourceName) {
@@ -5219,6 +5237,11 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
         if (source) {
           sourcePhone = source.phone;
           sourceName = source.name;
+          console.log(`Found source contact: ${sourceName} - ${sourcePhone}`);
+        } else {
+          // Source contact not found - FAIL
+          console.log(`Source contact "${sourceName}" not found in database`);
+          return `I couldn't find "${sourceName}" in your contacts. Please save them as a contact first with their phone number, then try again.`;
         }
       }
       
