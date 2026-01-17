@@ -530,29 +530,26 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
           }
         }
 
-        if (replace) {
-          // Atomic update (used for initial load and filter changes) to avoid flicker
-          setMessages(dedupedMsgs);
-        } else {
-          setMessages((prev) => {
-            // Preserve any local "new" conversations that haven't been saved to DB yet
-            const localNewConversations = prev
-              .filter((m) => m.id.startsWith("new-"))
-              // If API has the conversation now, don't show the local placeholder too
-              .filter((m) => !phonesInApi.has(normalizePhone(m.contactPhone)));
+        setMessages((prev) => {
+          // Preserve any local "new" conversations that haven't been saved to DB yet.
+          // This prevents the chat pane from closing when search/filter refreshes replace the list.
+          const localNewConversations = (prev || [])
+            .filter((m) => String(m.id).startsWith("new-"))
+            // If API has the conversation now, don't show the local placeholder too
+            .filter((m) => !phonesInApi.has(normalizePhone(m.contactPhone)));
 
-            const localDeduped: Message[] = [];
-            const localPhones = new Set<string>();
-            for (const m of localNewConversations) {
-              const key = normalizePhone(m.contactPhone);
-              if (!key || localPhones.has(key)) continue;
-              localPhones.add(key);
-              localDeduped.push(m);
-            }
+          const localDeduped: Message[] = [];
+          const localPhones = new Set<string>();
+          for (const m of localNewConversations) {
+            const key = normalizePhone(m.contactPhone);
+            if (!key || localPhones.has(key)) continue;
+            localPhones.add(key);
+            localDeduped.push(m);
+          }
 
-            return [...localDeduped, ...dedupedMsgs];
-          });
-        }
+          // On replace, we still keep local placeholders; on non-replace we also keep them.
+          return [...localDeduped, ...dedupedMsgs];
+        });
       } catch (error) {
         // Ignore stale errors; otherwise keep last known state.
         if (requestId !== conversationsRequestId.current) return;
@@ -585,10 +582,13 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
   const isFilterTransition = useRef(false);
   const previousSearchQuery = useRef<string>("");
 
-  // Fetch conversations from MongoDB API on filter change
+  // Fetch conversations from MongoDB API on filter/search change
   useEffect(() => {
     const isFilterChange = hasInitiallyLoaded.current && previousFilter.current !== activeFilter;
     previousFilter.current = activeFilter;
+
+    const isSearchChange = hasInitiallyLoaded.current && previousSearchQuery.current !== debouncedSearchQuery;
+    previousSearchQuery.current = debouncedSearchQuery;
 
     if (isFilterChange) {
       setSelectedMessageId(null);
@@ -598,27 +598,19 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
     }
 
     const shouldShowLoading = !hasInitiallyLoaded.current || isFilterChange;
-    loadConversations({ showLoading: shouldShowLoading, replace: shouldShowLoading, showIndicator: isFilterChange, search: debouncedSearchQuery || undefined });
+    const shouldReplace = shouldShowLoading || isSearchChange;
+    const shouldShowIndicator = isFilterChange || isSearchChange;
+
+    loadConversations({
+      showLoading: shouldShowLoading,
+      replace: shouldReplace,
+      showIndicator: shouldShowIndicator,
+      search: debouncedSearchQuery || undefined,
+    });
+
     hasInitiallyLoaded.current = true;
     isFilterTransition.current = false;
-  }, [activeFilter, loadConversations, debouncedSearchQuery]);
-
-  // Trigger search when debounced search query changes
-  useEffect(() => {
-    if (previousSearchQuery.current === debouncedSearchQuery) return;
-    previousSearchQuery.current = debouncedSearchQuery;
-    
-    // Skip initial empty search
-    if (!hasInitiallyLoaded.current) return;
-    
-    // Show loading indicator for searches
-    loadConversations({ 
-      showLoading: false, 
-      replace: true, 
-      showIndicator: true, 
-      search: debouncedSearchQuery || undefined 
-    });
-  }, [debouncedSearchQuery, loadConversations]);
+  }, [activeFilter, debouncedSearchQuery, loadConversations]);
 
   // Poll for new messages every 5 seconds
   useEffect(() => {

@@ -714,7 +714,47 @@ const pinConversationTool = tool(
       });
       
       if (matchingConvos.length === 0) {
-        return `No conversation found with ${name || phone}. You need to have a conversation with them first before you can pin it.`;
+        // If we can resolve the phone (e.g. from saved contacts), we can create a conversation stub and pin it.
+        const digits = (phone || '').replace(/\D/g, '').slice(-10);
+        const canonicalPhone = digits && digits.length === 10 ? `+1${digits}` : phone;
+
+        try {
+          await Conversation.findOneAndUpdate(
+            { userId, contactPhone: canonicalPhone },
+            {
+              $set: {
+                isPinned: pin,
+                contactName: name || null,
+                contactPhone: canonicalPhone,
+              },
+              $setOnInsert: {
+                userId,
+                unreadCount: 0,
+                lastMessage: null,
+                lastMessageAt: new Date(),
+              },
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+
+          const action = pin ? "pinned" : "unpinned";
+          return `Done. Conversation with ${name || canonicalPhone} is now ${action}.`;
+        } catch (e) {
+          // Fallback: if the canonical format conflicts with existing formatting variants,
+          // do a digits-based search and update if found.
+          const all = await Conversation.find({ userId });
+          const fallback = all.find((c) => (c.contactPhone || '').replace(/\D/g, '').slice(-10) === digits);
+          if (fallback) {
+            fallback.isPinned = pin;
+            if (name && !fallback.contactName) fallback.contactName = name;
+            await fallback.save();
+
+            const action = pin ? "pinned" : "unpinned";
+            return `Done. Conversation with ${name || fallback.contactPhone} is now ${action}.`;
+          }
+
+          return `Error: ${e?.message || "Failed to pin conversation"}`;
+        }
       }
       
       for (const convo of matchingConvos) {
