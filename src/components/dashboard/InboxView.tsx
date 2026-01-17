@@ -1008,7 +1008,11 @@ const InboxView = ({ selectedContactPhone, onClearSelection }: InboxViewProps) =
       .filter((c) => {
         if (phonesInFilteredConversations.has(normalizePhone(c.phone))) return false;
         const nameMatch = c.name.toLowerCase().includes(qLower);
-        const phoneMatch = c.phone.toLowerCase().includes(qLower) || normalizePhone(c.phone).includes(qPhone);
+        // IMPORTANT: normalizePhone("jeremy") => ""; and "123".includes("") is true.
+        // Only do normalized-phone matching when qPhone has digits.
+        const phoneMatch =
+          c.phone.toLowerCase().includes(qLower) ||
+          (qPhone ? normalizePhone(c.phone).includes(qPhone) : false);
         return nameMatch || phoneMatch;
       })
       .slice(0, 6);
