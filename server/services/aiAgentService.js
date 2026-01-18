@@ -6839,8 +6839,9 @@ Respond conversationally in 1-2 sentences. Be direct and natural. NO emojis. NO 
 // 3) Summarize conversation (including calls)
 // 4) Text another person
 // 5) Ask about followups/meetings
-// 6) Rules cannot be changed via SMS (dashboard only)
-// 7) Anything else → "Currently in prototype mode"
+// 6) DND / routing settings
+// 7) Rules (complex) cannot be changed via SMS (dashboard only)
+// 8) Anything else → "Currently in prototype mode"
 
 const smsAgentTools = [
   // 1. Make calls
@@ -6856,6 +6857,9 @@ const smsAgentTools = [
   executeSendMessageTool,
   // 5. Followups/meetings
   extractEventsTool,
+  // 6. DND & Routing
+  setDNDTool,
+  setRoutingPreferencesTool,
   // Helper tools for contact resolution
   searchContactsTool,
   listContactsTool,
@@ -6870,6 +6874,8 @@ const smsAgentToolMap = {
   send_message: sendMessageTool,
   execute_send_message: executeSendMessageTool,
   extract_events: extractEventsTool,
+  set_dnd: setDNDTool,
+  set_routing_preferences: setRoutingPreferencesTool,
   search_contacts: searchContactsTool,
   list_contacts: listContactsTool,
 };
@@ -6893,20 +6899,20 @@ export async function smsAgentChat(userId, message, chatHistory = []) {
     const lowerMessage = trimmedMessage.toLowerCase();
 
     // =====================================================
-    // RULE REQUESTS → REDIRECT TO DASHBOARD
+    // COMPLEX RULE REQUESTS → REDIRECT TO DASHBOARD
+    // (DND and routing ARE allowed via SMS)
     // =====================================================
-    const ruleKeywords = [
+    const complexRuleKeywords = [
       "rule", "auto reply", "auto-reply", "autoreply",
-      "forward", "transfer", "block", "spam", "routing",
-      "dnd", "do not disturb", "if ", "when ",
-      "priority", "filter", "mute"
+      "forward", "transfer", "block", "spam",
+      "priority", "filter"
     ];
-    const isRuleRequest = ruleKeywords.some(kw => lowerMessage.includes(kw));
+    const isComplexRuleRequest = complexRuleKeywords.some(kw => lowerMessage.includes(kw));
     
     // Also detect conditional statements like "if grandma texts..."
     const isConditionalRule = /\b(if|when|whenever)\s+.{2,50}\s+(text|message|call|send|receive)/i.test(lowerMessage);
     
-    if (isRuleRequest || isConditionalRule) {
+    if (isComplexRuleRequest || isConditionalRule) {
       return "Rules and automation settings can only be managed from the Comsierge dashboard. Open the app to create or modify rules.";
     }
 
@@ -6943,11 +6949,11 @@ AVAILABLE FEATURES (use these tools):
 6. send_message - Text someone. Example: "text Jeremy and tell him there's a meeting today", "send message to mom saying I'll be late"
 7. execute_send_message - Confirm and send a prepared message (after user says "yes")
 8. extract_events - Check for meetings/appointments. Example: "do I have any meetings today", "any appointments this week"
+9. set_dnd - Enable/disable Do Not Disturb. Example: "turn on dnd", "dnd from 10pm to 7am", "disable dnd"
+10. set_routing_preferences - Set which calls ring and which messages notify. Example: "only favorites can call", "urgent messages only"
 
 UNSUPPORTED FEATURES (DO NOT attempt these, just say the prototype message):
 - Creating rules (auto-reply, forwarding, blocking, etc.)
-- Changing routing settings
-- DND / do not disturb
 - Contact management (add/edit/delete contacts)
 - Spam filtering
 - Translation settings
@@ -6959,6 +6965,11 @@ RESPONSE RULES:
 3. If the user just says hi or general chat → Be friendly and briefly mention what you can do
 4. Be concise - this is SMS, keep responses short
 5. NO emojis. NO markdown. Plain text only.
+
+DND/ROUTING FLOW:
+- "dnd" or "do not disturb" → use set_dnd, ask clarifying questions about calls/messages
+- "only favorites can call me" → use set_routing_preferences with callsMode="favorites"
+- "urgent messages only" → use set_routing_preferences with messagesMode="urgent"
 
 CONFIRMATION FLOW FOR SENDING MESSAGES:
 1. User says "text Jeremy hey" -> use send_message -> shows preview
