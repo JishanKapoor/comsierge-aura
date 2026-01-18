@@ -2233,7 +2233,14 @@ router.post("/webhook/sms", async (req, res) => {
           // Check schedule expiry
           if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
             if (new Date() > new Date(rule.schedule.endTime)) {
-              console.log(`      ⏭️ Transfer rule expired, skipping`);
+              console.log(`      ⏭️ Transfer rule expired, disabling and skipping`);
+              // Actually disable the expired rule
+              try {
+                await Rule.findByIdAndUpdate(rule._id, { active: false });
+                console.log(`      ✅ Disabled expired rule: ${rule._id}`);
+              } catch (e) {
+                console.error(`      ❌ Failed to disable expired rule: ${e.message}`);
+              }
               continue;
             }
           }
@@ -2508,7 +2515,14 @@ router.post("/webhook/sms", async (req, res) => {
               // Check schedule expiry
               if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
                 if (new Date() > new Date(rule.schedule.endTime)) {
-                  console.log(`      ⏭️ Auto-reply rule expired, skipping`);
+                  console.log(`      ⏭️ Auto-reply rule expired, disabling and skipping`);
+                  // Actually disable the expired rule
+                  try {
+                    await Rule.findByIdAndUpdate(rule._id, { active: false });
+                    console.log(`      ✅ Disabled expired auto-reply rule: ${rule._id}`);
+                  } catch (e) {
+                    console.error(`      ❌ Failed to disable expired rule: ${e.message}`);
+                  }
                   continue;
                 }
               }
@@ -3256,7 +3270,14 @@ router.post("/webhook/voice", async (req, res) => {
           // Check schedule
           if (rule.schedule?.mode === "duration" && rule.schedule?.endTime) {
             if (new Date() > new Date(rule.schedule.endTime)) {
-              console.log(`      ⏭️ Transfer rule expired, skipping`);
+              console.log(`      ⏭️ Transfer rule expired, disabling and skipping`);
+              // Actually disable the expired rule
+              try {
+                await Rule.findByIdAndUpdate(rule._id, { active: false });
+                console.log(`      ✅ Disabled expired rule: ${rule._id}`);
+              } catch (e) {
+                console.error(`      ❌ Failed to disable expired rule: ${e.message}`);
+              }
               continue;
             }
           }

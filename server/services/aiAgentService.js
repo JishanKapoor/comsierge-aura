@@ -5337,6 +5337,14 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
       }
       
       // Create the rule
+      // Calculate endTime if durationHours is set (for auto-disable)
+      let calculatedEndTime = null;
+      const durationHours = parsed.duration?.hours || null;
+      if (durationHours && durationHours > 0) {
+        calculatedEndTime = new Date(Date.now() + durationHours * 60 * 60 * 1000);
+        console.log(`Rule will auto-disable at: ${calculatedEndTime.toISOString()} (in ${durationHours} hours)`);
+      }
+      
       const rule = await Rule.create({
         userId,
         rule: parsed.summary || ruleDescription,
@@ -5348,10 +5356,10 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
         transferDetails: ruleType === "transfer" || ruleType === "forward" ? transferDetails : 
                         ruleType === "auto-reply" ? { autoReplyMessage: parsed.action?.auto_reply_message } : null,
         schedule: {
-          mode: parsed.duration?.type === "temporary" ? "duration" : 
+          mode: durationHours ? "duration" : 
                 parsed.schedule?.mode === "time-window" ? "time-window" : "always",
-          durationHours: parsed.duration?.hours || null,
-          endTime: parsed.duration?.end_time ? new Date(parsed.duration.end_time) : null,
+          durationHours: durationHours,
+          endTime: calculatedEndTime,
           timeWindow: parsed.schedule?.time_window || null,
         }
       });

@@ -42,6 +42,17 @@ interface RoutingPanelProps {
 
 const STORAGE_KEY = "comsierge.routing.settings";
 
+type PersistedRoutingSettings = {
+  forwardCalls?: boolean;
+  forwardMessages?: boolean;
+  callFilter?: CallFilter;
+  selectedCallTags?: string[];
+  messageFilter?: MessageFilter;
+  selectedMessageTags?: string[];
+  translateEnabled?: boolean;
+  receiveLanguage?: string;
+};
+
 // Same tags as ContactsTab
 const DEFAULT_TAGS = ["Family", "Work", "Friend", "VIP", "Business", "School", "Gym", "Medical"];
 
@@ -49,6 +60,15 @@ const safeParseJson = <T,>(value: string | null): T | null => {
   if (!value) return null;
   try {
     return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
+const readPersistedRouting = (): PersistedRoutingSettings | null => {
+  try {
+    if (typeof window === "undefined") return null;
+    return safeParseJson<PersistedRoutingSettings>(localStorage.getItem(STORAGE_KEY));
   } catch {
     return null;
   }
@@ -72,20 +92,22 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const isMountedRef = useRef(true);
   
   // What to forward
-  const [forwardCalls, setForwardCalls] = useState(true);
-  const [forwardMessages, setForwardMessages] = useState(true);
+  const persistedOnLoad = useRef<PersistedRoutingSettings | null>(readPersistedRouting());
+
+  const [forwardCalls, setForwardCalls] = useState(() => persistedOnLoad.current?.forwardCalls ?? true);
+  const [forwardMessages, setForwardMessages] = useState(() => persistedOnLoad.current?.forwardMessages ?? true);
   
   // Call filters
-  const [callFilter, setCallFilter] = useState<CallFilter>("all");
-  const [selectedCallTags, setSelectedCallTags] = useState<string[]>([]);
+  const [callFilter, setCallFilter] = useState<CallFilter>(() => persistedOnLoad.current?.callFilter ?? "all");
+  const [selectedCallTags, setSelectedCallTags] = useState<string[]>(() => persistedOnLoad.current?.selectedCallTags ?? []);
   
   // Message filters
-  const [messageFilter, setMessageFilter] = useState<MessageFilter>("all");
-  const [selectedMessageTags, setSelectedMessageTags] = useState<string[]>([]);
+  const [messageFilter, setMessageFilter] = useState<MessageFilter>(() => persistedOnLoad.current?.messageFilter ?? "all");
+  const [selectedMessageTags, setSelectedMessageTags] = useState<string[]>(() => persistedOnLoad.current?.selectedMessageTags ?? []);
   
   // Translation settings
-  const [translateEnabled, setTranslateEnabled] = useState(false);
-  const [receiveLanguage, setReceiveLanguage] = useState<string>("es");
+  const [translateEnabled, setTranslateEnabled] = useState(() => persistedOnLoad.current?.translateEnabled ?? false);
+  const [receiveLanguage, setReceiveLanguage] = useState<string>(() => persistedOnLoad.current?.receiveLanguage ?? "es");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
   type RoutingSnapshot = {
@@ -379,40 +401,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   };
 
   useEffect(() => {
-    // First try to load from localStorage for instant UI
-    const saved = safeParseJson<{
-      forwardCalls?: boolean;
-      forwardMessages?: boolean;
-      callFilter?: CallFilter;
-      selectedCallTags?: string[];
-      messageFilter?: MessageFilter;
-      selectedMessageTags?: string[];
-      translateEnabled?: boolean;
-      receiveLanguage?: string;
-    }>(localStorage.getItem(STORAGE_KEY));
-
-    if (saved) {
-      if (typeof saved.forwardCalls === "boolean") setForwardCalls(saved.forwardCalls);
-      if (typeof saved.forwardMessages === "boolean") setForwardMessages(saved.forwardMessages);
-      if (saved.callFilter) setCallFilter(saved.callFilter);
-      if (Array.isArray(saved.selectedCallTags)) setSelectedCallTags(saved.selectedCallTags);
-      if (saved.messageFilter) setMessageFilter(saved.messageFilter);
-      if (Array.isArray(saved.selectedMessageTags)) setSelectedMessageTags(saved.selectedMessageTags);
-      if (typeof saved.translateEnabled === "boolean") setTranslateEnabled(saved.translateEnabled);
-      if (saved.receiveLanguage) setReceiveLanguage(saved.receiveLanguage);
-      lastSyncedRef.current = getSnapshot({
-        forwardCalls: saved.forwardCalls ?? forwardCalls,
-        forwardMessages: saved.forwardMessages ?? forwardMessages,
-        callFilter: saved.callFilter ?? callFilter,
-        selectedCallTags: saved.selectedCallTags ?? selectedCallTags,
-        messageFilter: saved.messageFilter ?? messageFilter,
-        selectedMessageTags: saved.selectedMessageTags ?? selectedMessageTags,
-        translateEnabled: saved.translateEnabled ?? translateEnabled,
-        receiveLanguage: saved.receiveLanguage ?? receiveLanguage,
-      });
-    }
-
-    // Then load from backend to ensure we're in sync
+    // We hydrate state synchronously in useState initializers (prevents UI flicker).
+    // After first paint, fetch backend source-of-truth and reconcile.
+    lastSyncedRef.current = getSnapshot();
     loadRoutingFromBackend({ force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

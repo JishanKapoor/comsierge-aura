@@ -55,21 +55,76 @@ async function runLiveTests() {
   
   const token = await login();
   
-  // Test cases - the exact user issue
+  // Comprehensive test cases for live server
   const tests = [
-    "if i receive a message from my grandmother and she talks about where i am say in a meeting with jeremy",
-    "auto reply to uncle bob with 'I will call you back'",
+    // Message sending
+    { msg: "send a message to jake saying hey", expect: "Jake 2|ready to send" },
+    { msg: "send a message to jaek saying hello", expect: "couldn't find|Jake 2|ready" }, // typo should resolve to Jake 2
+    
+    // Rules display
+    { msg: "show my rules", expect: "rule|auto-repl|forward|block|transfer" },
+    { msg: "what are my active rules", expect: "rule|auto-repl|forward|block|transfer" },
+    
+    // Contact validation (should fail for non-existent contacts)
+    { msg: "block grandma", expect: "couldn't find|could not find|which|phone number" },
+    { msg: "auto reply to uncle bob with 'busy'", expect: "couldn't find|could not find|save them" },
+    { msg: "forward calls from fake person to jeremy", expect: "couldn't find|could not find|check" },
+    
+    // Contact operations with REAL contacts
+    { msg: "block jake 2", expect: "blocked|block|Jake 2" },
+    { msg: "unblock jake 2", expect: "unblocked|unblock|Jake 2" },
+    
+    // Transfer rules with real contacts
+    { msg: "forward messages from jake to jeremy", expect: "forward|Jake 2|jeremy|transfer" },
+    
+    // Routing preferences
+    { msg: "favorites only for calls", expect: "favorite|done" },
+    { msg: "all messages", expect: "all message|done|notification" },
+    
+    // Spam filter
+    { msg: "block spam messages", expect: "spam|block|which|call|message" },
+    
+    // Search/list contacts
+    { msg: "show my contacts", expect: "contact|Jake|jeremy" },
+    { msg: "who are my favorites", expect: "favorite|Jake" },
+    
+    // Delete rules  
+    { msg: "delete all my rules", expect: "delete|remove|sure|confirm" },
   ];
+  
+  let passed = 0;
+  let failed = 0;
   
   for (const test of tests) {
     console.log('\n' + '─'.repeat(70));
-    await testAIChat(token, test);
+    const result = await testAIChat(token, test.msg);
+    
+    // Check if response matches expected pattern
+    const patterns = test.expect.split('|');
+    const responseText = (result.response || '').toLowerCase();
+    const matches = patterns.some(p => responseText.includes(p.toLowerCase()));
+    
+    if (matches) {
+      console.log(`   ✅ PASS - Contains expected: "${test.expect}"`);
+      passed++;
+    } else {
+      console.log(`   ❌ FAIL - Expected "${test.expect}" but got: "${result.response?.substring(0, 100)}..."`);
+      failed++;
+    }
+    
     // Small delay between requests
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
   }
   
   console.log('\n' + '═'.repeat(70));
-  console.log('✅ Live tests complete');
+  console.log(`📊 LIVE TEST RESULTS: ${passed} passed, ${failed} failed out of ${passed + failed} tests`);
+  console.log('═'.repeat(70));
+  
+  if (failed > 0) {
+    console.log('⚠️  Some tests failed - review above for details');
+  } else {
+    console.log('✅ All live tests passed!');
+  }
 }
 
 runLiveTests().catch(err => {
