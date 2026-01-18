@@ -3862,13 +3862,25 @@ const setRoutingPreferencesTool = tool(
         if (messagesMode) typesToDelete.push("message-notify");
         
         if (typesToDelete.length > 0) {
+          // Delete non-scheduled rules (default routing rules)
+          // Check both schedule locations: top-level 'schedule' and 'conditions.schedule'
+          // Default rules created by GET /api/rules have schedule: { mode: "always" } at top level
+          // Rules created by AI may have conditions.schedule instead
           const deleteQuery = { 
             userId, 
             type: { $in: typesToDelete },
-            $or: [
-              { "conditions.schedule": { $exists: false } },
-              { "conditions.schedule": null },
-              { "conditions.schedule.start": { $exists: false } }
+            // Match rules that don't have time-based scheduling (either location)
+            $and: [
+              { $or: [
+                { "conditions.schedule": { $exists: false } },
+                { "conditions.schedule": null },
+                { "conditions.schedule.start": { $exists: false } }
+              ]},
+              { $or: [
+                { "schedule.mode": "always" },
+                { "schedule": { $exists: false } },
+                { "schedule": null }
+              ]}
             ]
           };
           const deleted = await Rule.deleteMany(deleteQuery);
