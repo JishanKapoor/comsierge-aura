@@ -394,9 +394,11 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     "your forwarding number";
 
   const displayRules: ActiveRule[] = (() => {
-    // This tab is focused on routing + transfer only.
-    // Hide other rule types (block/auto-reply/priority/custom) from the Rules list.
-    const transferOnly = rules.filter((r) => r.type === "transfer");
+    // Show all user-created rules (transfer, auto-reply, block, priority, custom)
+    // Only exclude the routing rules (forward/message-notify) as they're shown in the routing group
+    const userRules = rules.filter((r) => 
+      r.type !== "forward" && r.type !== "message-notify"
+    );
 
     const createdAt = (routingForwardRule?.createdAt || routingMessageRule?.createdAt || "").toString();
     const routingGroup: ActiveRule = {
@@ -424,7 +426,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       },
     };
 
-    return [routingGroup, ...transferOnly];
+    return [routingGroup, ...userRules];
   })();
 
   const activeRulesCount = displayRules.filter((r) => r.active).length;
