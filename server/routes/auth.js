@@ -639,8 +639,45 @@ router.put("/me/phone", async (req, res) => {
       return res.status(400).json({ success: false, message: "Phone number already assigned to another user" });
     }
 
+    // Check if this is a fresh assignment (user didn't have a phone before)
+    const isFirstTimeAssignment = !user.phoneNumber;
+
     user.phoneNumber = phoneNumber;
     await user.save();
+
+    // Create default routing rule for new users
+    if (isFirstTimeAssignment) {
+      try {
+        // Check if user already has any routing rules (in case they had rules from before)
+        const existingRules = await Rule.findOne({ userId: user._id, type: "forward" });
+        
+        if (!existingRules) {
+          // Create default rule: Forward all calls + medium/high priority messages
+          await Rule.create({
+            userId: user._id,
+            rule: "Forward all calls and important messages to my phone",
+            type: "forward",
+            active: true,
+            schedule: { mode: "always" },
+            transferDetails: {
+              mode: "both",
+              priority: "all",
+              priorityFilter: "medium,high",
+              contactPhone: user.forwardingNumber || null,
+            },
+            conditions: {
+              callsEnabled: true,
+              messagesEnabled: true,
+              messagePriority: ["medium", "high"],
+            },
+          });
+          console.log(`✅ Created default routing rule for new user ${user._id}`);
+        }
+      } catch (ruleError) {
+        console.error("Error creating default rule:", ruleError);
+        // Don't fail the phone assignment if rule creation fails
+      }
+    }
 
     res.json({
       success: true,
