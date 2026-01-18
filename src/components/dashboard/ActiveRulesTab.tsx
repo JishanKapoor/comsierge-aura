@@ -99,6 +99,20 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
   const [showCallModeDialog, setShowCallModeDialog] = useState(false);
   const [pendingCall, setPendingCall] = useState<{ number: string; name?: string } | null>(null);
 
+  // Reminders state
+  interface Reminder {
+    id: string;
+    type: string;
+    title: string;
+    description?: string;
+    scheduledAt: string;
+    contactName?: string;
+    contactPhone?: string;
+    isCompleted: boolean;
+  }
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [remindersLoading, setRemindersLoading] = useState(true);
+
   const clearLocalAuraChat = useCallback(
     (opts?: { silent?: boolean }) => {
       setChat([]);
@@ -212,6 +226,33 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       setRules(externalRules);
     }
   }, [externalRules]);
+
+  // Fetch upcoming reminders
+  const loadReminders = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reminders?userId=${user.id}&upcoming=true`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("comsierge_token")}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setReminders(data);
+      }
+    } catch (error) {
+      console.error("Failed to load reminders:", error);
+    } finally {
+      setRemindersLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadReminders();
+    // Refresh reminders every 30 seconds
+    const interval = setInterval(loadReminders, 30000);
+    return () => clearInterval(interval);
+  }, [loadReminders]);
 
   // Notify parent when rules change
   useEffect(() => {
@@ -1046,6 +1087,88 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Upcoming Reminders Section */}
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span className="text-sm font-medium text-gray-700">Upcoming Reminders</span>
+                    <span className="text-xs text-gray-400">{reminders.length}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  {remindersLoading ? (
+                    <div className="p-4">
+                      <div className="space-y-3">
+                        {[...Array(2)].map((_, i) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+                              <div className="h-3 w-24 bg-gray-200 rounded animate-pulse" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : reminders.length > 0 ? (
+                    <div className="divide-y divide-gray-100">
+                      {reminders.map((reminder) => {
+                        const scheduledDate = new Date(reminder.scheduledAt);
+                        const isToday = scheduledDate.toDateString() === new Date().toDateString();
+                        const isTomorrow = scheduledDate.toDateString() === new Date(Date.now() + 86400000).toDateString();
+                        const timeStr = scheduledDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                        const dateStr = isToday ? "Today" : isTomorrow ? "Tomorrow" : scheduledDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+                        
+                        const typeIcon = reminder.type === "call" ? Phone : Bell;
+                        const TypeIcon = typeIcon;
+                        
+                        return (
+                          <div key={reminder.id} className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
+                            <div className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                              reminder.type === "call" ? "bg-green-100" : "bg-amber-100"
+                            )}>
+                              <TypeIcon className={cn(
+                                "w-4 h-4",
+                                reminder.type === "call" ? "text-green-600" : "text-amber-600"
+                              )} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{reminder.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-xs text-gray-500">{dateStr} at {timeStr}</span>
+                                {reminder.contactName && (
+                                  <span className="text-xs text-gray-400">• {reminder.contactName}</span>
+                                )}
+                              </div>
+                              {reminder.description && (
+                                <p className="text-xs text-gray-400 mt-1 truncate">{reminder.description}</p>
+                              )}
+                            </div>
+                            <span className={cn(
+                              "text-[10px] px-2 py-0.5 rounded-full shrink-0",
+                              reminder.type === "call" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                            )}>
+                              {reminder.type === "call" ? "Call" : "SMS"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center">
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-2">
+                        <Clock className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-500">No upcoming reminders</p>
+                      <p className="text-xs text-gray-400 mt-1">Ask AI to set a reminder for you</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

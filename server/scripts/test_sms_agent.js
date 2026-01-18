@@ -1,6 +1,5 @@
 /**
- * Test SMS Agent - Prototype Features
- * Tests the 7 core scenarios
+ * Test SMS Agent - Call via SMS
  */
 
 import mongoose from 'mongoose';
@@ -24,24 +23,19 @@ async function runTests() {
   }
   
   const userId = user._id.toString();
-  console.log(`\nTesting SMS Agent for user: ${user.email}\n`);
+  console.log(`\nTesting SMS Agent for user: ${user.email}`);
+  console.log(`User phoneNumber (Comsierge): ${user.phoneNumber}`);
+  console.log(`User forwardingNumber (Personal): ${user.forwardingNumber}`);
   console.log('='.repeat(60));
   
-  // Test ONLY the reminder
-  console.log('\nTesting REMINDER:');
-  console.log('Message: "remind me to call jeremy in 30 minutes"');
+  // Test call via SMS
+  console.log('\nTesting: "call 4372392448"');
   
   try {
-    const result = await smsAgentChat(userId, 'remind me to call jeremy in 30 minutes', []);
+    const result = await smsAgentChat(userId, 'call 4372392448', []);
     console.log('Result:', result);
-    
-    if (result && !result.toLowerCase().includes('error')) {
-      console.log('✅ PASS');
-    } else {
-      console.log('❌ FAIL');
-    }
   } catch (error) {
-    console.log('❌ FAIL - Error:', error.message);
+    console.log('❌ Error:', error.message);
     console.log(error.stack);
   }
   

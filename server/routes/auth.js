@@ -8,6 +8,7 @@ import TwilioAccount from "../models/TwilioAccount.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import Rule from "../models/Rule.js";
+import { cleanupUserData } from "../utils/cleanupUserData.js";
 
 const router = express.Router();
 
@@ -672,12 +673,18 @@ router.delete("/me/phone", async (req, res) => {
       return res.status(401).json({ success: false, message: "User not found" });
     }
 
+    // Clean up all user data when phone is unassigned
+    if (user.phoneNumber) {
+      console.log(`🧹 User ${user._id} unassigning phone ${user.phoneNumber}. Cleaning up all data...`);
+      await cleanupUserData(user._id);
+    }
+
     user.phoneNumber = null;
     await user.save();
 
     res.json({
       success: true,
-      message: "Phone number unassigned",
+      message: "Phone number unassigned (all data cleared)",
       data: {
         user: {
           id: user._id,

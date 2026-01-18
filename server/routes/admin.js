@@ -3,6 +3,7 @@ import twilio from "twilio";
 import TwilioAccount from "../models/TwilioAccount.js";
 import User from "../models/User.js";
 import { authMiddleware, adminMiddleware } from "./auth.js";
+import { cleanupUserData } from "../utils/cleanupUserData.js";
 
 const router = express.Router();
 
@@ -159,6 +160,13 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
       });
     }
 
+    // Find all users who have these phone numbers and clean up their data
+    const affectedUsers = await User.find({ phoneNumber: { $in: account.phoneNumbers } });
+    for (const user of affectedUsers) {
+      console.log(`🧹 Cleaning data for user ${user._id} (phone: ${user.phoneNumber})`);
+      await cleanupUserData(user._id);
+    }
+
     // Unassign phone numbers from users
     await User.updateMany(
       { phoneNumber: { $in: account.phoneNumbers } },
@@ -167,7 +175,7 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
 
     res.json({
       success: true,
-      message: "Twilio account removed",
+      message: "Twilio account removed and all user data cleaned up",
     });
   } catch (error) {
     console.error("Delete Twilio account error:", error);
@@ -194,6 +202,13 @@ router.delete("/twilio-accounts/by-sid/:accountSid", authMiddleware, adminMiddle
       });
     }
 
+    // Find all users who have these phone numbers and clean up their data
+    const affectedUsers = await User.find({ phoneNumber: { $in: account.phoneNumbers } });
+    for (const user of affectedUsers) {
+      console.log(`🧹 Cleaning data for user ${user._id} (phone: ${user.phoneNumber})`);
+      await cleanupUserData(user._id);
+    }
+
     await User.updateMany(
       { phoneNumber: { $in: account.phoneNumbers } },
       { phoneNumber: null }
@@ -201,7 +216,7 @@ router.delete("/twilio-accounts/by-sid/:accountSid", authMiddleware, adminMiddle
 
     res.json({
       success: true,
-      message: "Twilio account removed",
+      message: "Twilio account removed and all user data cleaned up",
     });
   } catch (error) {
     console.error("Delete Twilio account by SID error:", error);
@@ -242,6 +257,13 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
     const removedPhones = account.phoneNumbers.filter((p) => normalizeToE164ish(p) === targetNorm);
     account.phoneNumbers = account.phoneNumbers.filter((p) => normalizeToE164ish(p) !== targetNorm);
     await account.save();
+
+    // Find all users who have this phone and clean up their data
+    const affectedUsers = await User.find({ phoneNumber: { $in: [decodedPhone, targetNorm, ...removedPhones] } });
+    for (const user of affectedUsers) {
+      console.log(`🧹 Cleaning data for user ${user._id} (phone: ${user.phoneNumber})`);
+      await cleanupUserData(user._id);
+    }
 
     // Unassign from any user who has this phone
     await User.updateMany({ phoneNumber: { $in: [decodedPhone, targetNorm, ...removedPhones] } }, { phoneNumber: null });
@@ -369,12 +391,22 @@ router.put("/users/:id/assign-phone", authMiddleware, adminMiddleware, async (re
       );
     }
 
+    // If phone is being removed or changed, clean up all user data
+    const oldPhone = user.phoneNumber;
+    const isUnassigning = !phoneNumber && oldPhone;
+    const isChangingPhone = phoneNumber && oldPhone && phoneNumber !== oldPhone;
+    
+    if (isUnassigning || isChangingPhone) {
+      console.log(`🧹 Phone ${isUnassigning ? 'unassigned' : 'changed'} for user ${userId}. Cleaning up all data...`);
+      await cleanupUserData(userId);
+    }
+
     user.phoneNumber = phoneNumber || null;
     await user.save();
 
     res.json({
       success: true,
-      message: phoneNumber ? "Phone number assigned" : "Phone number unassigned",
+      message: phoneNumber ? "Phone number assigned" : "Phone number unassigned (all data cleared)",
       data: user,
     });
   } catch (error) {
