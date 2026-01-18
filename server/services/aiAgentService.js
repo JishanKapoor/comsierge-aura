@@ -3749,6 +3749,57 @@ const deleteAllRulesTool = tool(
   }
 );
 
+// Tool: Disable (not delete) all rules for a user
+// Used when user says: "disable my rules", "turn off my rules", "pause all rules"
+const disableAllRulesTool = tool(
+  async ({ userId, includeRouting = true }) => {
+    try {
+      console.log("Disabling rules:", { userId, includeRouting });
+
+      const query = { userId, active: true };
+      if (!includeRouting) {
+        query.type = { $nin: ["forward", "message-notify"] };
+      }
+
+      const rules = await Rule.find(query);
+      if (rules.length === 0) {
+        return "You have no active rules to disable.";
+      }
+
+      const countsByType = rules.reduce((acc, r) => {
+        const t = r.type || "custom";
+        acc[t] = (acc[t] || 0) + 1;
+        return acc;
+      }, {});
+
+      // Disable (not delete) - set active: false
+      await Rule.updateMany({ _id: { $in: rules.map((r) => r._id) } }, { $set: { active: false } });
+
+      const summary = Object.entries(countsByType)
+        .sort((a, b) => b[1] - a[1])
+        .map(([t, n]) => `${n} ${t}`)
+        .join(", ");
+
+      return `Disabled ${rules.length} rule(s): ${summary}. You can re-enable them anytime.`;
+    } catch (error) {
+      console.error("Disable all rules error:", error);
+      return `Error disabling rules: ${error.message}`;
+    }
+  },
+  {
+    name: "disable_all_rules",
+    description:
+      "Disable (turn off) all active rules WITHOUT deleting them. Use when user says 'turn off my rules', 'disable my rules', 'pause all rules'. Do NOT use delete_all_rules unless user explicitly says 'delete'.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      includeRouting: z
+        .boolean()
+        .optional()
+        .describe("If true (default), include routing rules (forward + message-notify)"),
+    }),
+  }
+);
+
 // Tool: Set Routing Preferences (comprehensive call + message routing)
 // This handles complex requests like "no calls and messages from 6pm-8pm", "only important messages, contacts only for calls"
 // Tool: Set Routing Preferences (Personal Routing)
@@ -5710,6 +5761,7 @@ const fullAgentTools = [
   setRoutingPreferencesTool,
   cleanupRulesTool,
   deleteAllRulesTool,
+  disableAllRulesTool,
   // AI Calls
   makeAICallTool,
   listAICallsTool,
@@ -5778,6 +5830,7 @@ const fullAgentToolMap = {
   set_routing_preferences: setRoutingPreferencesTool,
   cleanup_rules: cleanupRulesTool,
   delete_all_rules: deleteAllRulesTool,
+  disable_all_rules: disableAllRulesTool,
   make_ai_call: makeAICallTool,
   list_ai_calls: listAICallsTool,
   cancel_ai_call: cancelAICallTool,

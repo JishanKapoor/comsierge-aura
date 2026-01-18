@@ -430,7 +430,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     return [routingGroup, ...nonRoutingRules];
   })();
 
-  const activeRulesCount = displayRules.filter((r) => r.active).length;
+  // Count real active rules (exclude virtual routing group unless it has underlying rules)
+  const activeRulesCount = (() => {
+    const hasRoutingRules = Boolean(routingForwardRule || routingMessageRule);
+    const nonRoutingActiveCount = displayRules.filter((r) => r.id !== "__routing__" && r.active).length;
+    const routingActiveCount = hasRoutingRules && routingActive ? 1 : 0;
+    return nonRoutingActiveCount + routingActiveCount;
+  })();
 
   const setRoutingPartActive = async (part: "calls" | "messages", nextActive: boolean) => {
     suppressRulesReloadUntilRef.current = Date.now() + 800;
