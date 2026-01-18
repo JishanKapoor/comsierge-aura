@@ -176,7 +176,7 @@ async function executeReminder(reminder) {
     // Send SMS (for 'message' or 'personal' type)
     console.log(`📱 Texting ${toNumber} for reminder: ${reminder.title}`);
     
-    let message = `🔔 Reminder: ${reminder.title}`;
+    let message = `Reminder: ${reminder.title}`;
     if (reminder.description) {
       message += `\n${reminder.description}`;
     }
