@@ -5583,6 +5583,11 @@ const fullAgentTools = [
   sendMessageTool,
   executeSendMessageTool,
   confirmActionTool,
+  // Reminders & Scheduling
+  createReminderTool,
+  listRemindersTool,
+  completeReminderTool,
+  scheduleMessageTool,
   // Contacts
   listContactsTool,
   listLabelsTool,
@@ -5650,6 +5655,12 @@ const fullAgentToolMap = {
   send_message: sendMessageTool,
   execute_send_message: executeSendMessageTool,
   confirm_action: confirmActionTool,
+  // Reminders & Scheduling
+  create_reminder: createReminderTool,
+  list_reminders: listRemindersTool,
+  complete_reminder: completeReminderTool,
+  schedule_message: scheduleMessageTool,
+  // Contacts
   list_contacts: listContactsTool,
   list_labels: listLabelsTool,
   search_contacts: searchContactsTool,
