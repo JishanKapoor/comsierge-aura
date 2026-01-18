@@ -3695,6 +3695,60 @@ const cleanupRulesTool = tool(
   }
 );
 
+// Tool: Delete all rules (or all active rules) for a user
+// Used when user says: "delete my active rules", "delete all rules", "clear all rules"
+const deleteAllRulesTool = tool(
+  async ({ userId, onlyActive = true, includeRouting = true }) => {
+    try {
+      console.log("Deleting rules:", { userId, onlyActive, includeRouting });
+
+      const query = { userId };
+      if (onlyActive) {
+        query.active = true;
+      }
+      if (!includeRouting) {
+        query.type = { $nin: ["forward", "message-notify"] };
+      }
+
+      const rules = await Rule.find(query);
+      if (rules.length === 0) {
+        return onlyActive ? "You have no active rules to delete." : "You have no rules to delete.";
+      }
+
+      const countsByType = rules.reduce((acc, r) => {
+        const t = r.type || "custom";
+        acc[t] = (acc[t] || 0) + 1;
+        return acc;
+      }, {});
+
+      const deleted = await Rule.deleteMany({ _id: { $in: rules.map((r) => r._id) } });
+
+      const summary = Object.entries(countsByType)
+        .sort((a, b) => b[1] - a[1])
+        .map(([t, n]) => `${n} ${t}`)
+        .join(", ");
+
+      return `Deleted ${deleted.deletedCount} rule(s): ${summary}.`;
+    } catch (error) {
+      console.error("Delete all rules error:", error);
+      return `Error deleting rules: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_all_rules",
+    description:
+      "Permanently delete all rules (or all active rules). Use ONLY when user explicitly confirms deletion. Typical phrases: 'delete my active rules', 'delete all rules', 'clear all rules'.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+      onlyActive: z.boolean().optional().describe("If true (default), delete only active rules"),
+      includeRouting: z
+        .boolean()
+        .optional()
+        .describe("If true (default), include routing rules (forward + message-notify)"),
+    }),
+  }
+);
+
 // Tool: Set Routing Preferences (comprehensive call + message routing)
 // This handles complex requests like "no calls and messages from 6pm-8pm", "only important messages, contacts only for calls"
 // Tool: Set Routing Preferences (Personal Routing)
@@ -5655,6 +5709,7 @@ const fullAgentTools = [
   setCallFilterTool,
   setRoutingPreferencesTool,
   cleanupRulesTool,
+  deleteAllRulesTool,
   // AI Calls
   makeAICallTool,
   listAICallsTool,
@@ -5722,6 +5777,7 @@ const fullAgentToolMap = {
   set_call_filter: setCallFilterTool,
   set_routing_preferences: setRoutingPreferencesTool,
   cleanup_rules: cleanupRulesTool,
+  delete_all_rules: deleteAllRulesTool,
   make_ai_call: makeAICallTool,
   list_ai_calls: listAICallsTool,
   cancel_ai_call: cancelAICallTool,
