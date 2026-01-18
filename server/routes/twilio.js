@@ -3005,17 +3005,19 @@ router.post("/webhook/voice", async (req, res) => {
       let callerId = req.body.customCallerId || req.body.CustomCallerId;
       console.log(`   customCallerId from request: ${callerId || "not provided"}`);
       
+      // Extract email/identity from client:xxx format
+      const identity = From.replace("client:", "");
+      let currentUser = null;
+      
       if (!callerId) {
-        // Extract email/identity from client:xxx format
-        const identity = From.replace("client:", "");
         console.log(`   Looking up callerId for identity: ${identity}`);
         
         // Try to find user by email (the identity is usually the email)
         try {
-          const user = await User.findOne({ email: identity });
-          console.log(`   User lookup result: ${user ? `found (phone: ${user.phoneNumber})` : "not found"}`);
-          if (user?.phoneNumber) {
-            callerId = user.phoneNumber;
+          currentUser = await User.findOne({ email: identity });
+          console.log(`   User lookup result: ${currentUser ? `found (phone: ${currentUser.phoneNumber})` : "not found"}`);
+          if (currentUser?.phoneNumber) {
+            callerId = currentUser.phoneNumber;
             console.log(`   ✅ Found user's phone: ${callerId}`);
           }
         } catch (e) {
@@ -3044,7 +3046,7 @@ router.post("/webhook/voice", async (req, res) => {
       
       if (!callerId) {
         console.error("   ❌ No callerId available for outgoing call - check Twilio accounts in DB");
-        response.say("We're sorry, an application error has occurred. Goodbye.");
+        response.say({ voice: "alice" }, "Sorry, we couldn't find a phone number to make this call. Please check your settings and try again.");
         response.hangup();
         res.type("text/xml");
         return res.send(response.toString());
@@ -3059,22 +3061,20 @@ router.post("/webhook/voice", async (req, res) => {
       
       // Create call record for outgoing browser call
       try {
-        const identity = From.replace("client:", "");
-        const user = await User.findOne({ email: identity });
-        
-        if (user) {
+        // Use the user we already looked up above
+        if (currentUser) {
           // Look up contact name
           let contactName = null;
           const normalizedTo = To.replace(/[^\d+]/g, "");
-          let contact = await Contact.findOne({ userId: user._id, phone: normalizedTo });
+          let contact = await Contact.findOne({ userId: currentUser._id, phone: normalizedTo });
           if (!contact) {
             const altTo = normalizedTo.startsWith("+") ? normalizedTo.substring(1) : "+" + normalizedTo;
-            contact = await Contact.findOne({ userId: user._id, phone: altTo });
+            contact = await Contact.findOne({ userId: currentUser._id, phone: altTo });
           }
           contactName = contact?.name || null;
           
           await CallRecord.create({
-            userId: user._id,
+            userId: currentUser._id,
             contactPhone: To,
             contactName: contactName,
             direction: "outgoing",
@@ -3083,7 +3083,7 @@ router.post("/webhook/voice", async (req, res) => {
             twilioCallSid: CallSid,
             startedAt: new Date()
           });
-          console.log(`   ✅ Created outgoing call record for user ${user.email}, CallSid: ${CallSid}`);
+          console.log(`   ✅ Created outgoing call record for user ${currentUser.email}, CallSid: ${CallSid}`);
         } else {
           console.log(`   ⚠️ Could not create call record - user not found for identity: ${identity}`);
         }
