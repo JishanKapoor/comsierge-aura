@@ -911,9 +911,15 @@ router.delete("/users/:id", async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    
+    // Clean up all user data before deleting the user
+    console.log(`🧹 Deleting user ${user._id}. Cleaning up all data...`);
+    await cleanupUserData(user._id);
+    
     await User.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: "User deleted successfully", data: { id: req.params.id } });
+    res.json({ success: true, message: "User and all data deleted successfully", data: { id: req.params.id } });
   } catch (error) {
+    console.error("Delete user error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -923,10 +929,24 @@ router.put("/users/:id/phone", async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
-    user.phoneNumber = req.body.phoneNumber;
+    
+    const oldPhone = user.phoneNumber;
+    const newPhone = req.body.phoneNumber;
+    
+    // If phone is being removed or changed, clean up all user data
+    const isUnassigning = !newPhone && oldPhone;
+    const isChangingPhone = newPhone && oldPhone && newPhone !== oldPhone;
+    
+    if (isUnassigning || isChangingPhone) {
+      console.log(`🧹 Phone ${isUnassigning ? 'unassigned' : 'changed'} for user ${user._id}. Cleaning up all data...`);
+      await cleanupUserData(user._id);
+    }
+    
+    user.phoneNumber = newPhone || null;
     await user.save();
-    res.json({ success: true, message: "Phone number updated", data: { user: { id: user._id, phoneNumber: user.phoneNumber } } });
+    res.json({ success: true, message: newPhone ? "Phone number updated" : "Phone number unassigned (all data cleared)", data: { user: { id: user._id, phoneNumber: user.phoneNumber } } });
   } catch (error) {
+    console.error("Update user phone error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
