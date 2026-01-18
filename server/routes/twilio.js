@@ -14,7 +14,7 @@ import ConversationState from "../models/ConversationState.js";
 import { authMiddleware } from "./auth.js";
 import { analyzeIncomingMessage, classifyMessageAsSpam } from "../services/aiService.js";
 import { detectPriorityContext } from "../utils/priorityContext.js";
-import { rulesAgentChat } from "../services/aiAgentService.js";
+import { rulesAgentChat, smsAgentChat } from "../services/aiAgentService.js";
 
 const router = express.Router();
 
@@ -2721,7 +2721,7 @@ router.post("/webhook/sms", async (req, res) => {
               .sort({ createdAt: -1 })
               .limit(10);
             
-            // Convert to chat history format expected by rulesAgentChat
+            // Convert to chat history format expected by smsAgentChat
             const chatHistory = recentMessages
               .reverse()
               .map((m) => ({
@@ -2729,12 +2729,13 @@ router.post("/webhook/sms", async (req, res) => {
                 text: m.body || ""
               }));
             
-            console.log(`   🤖 Calling AI agent with message: "${cleanedBody?.substring(0, 50)}..."`);
+            console.log(`   🤖 Calling SMS agent (prototype) with message: "${cleanedBody?.substring(0, 50)}..."`);
             console.log(`   🤖 Chat history length: ${chatHistory.length} messages`);
             
-            // Call the AI agent with cleaned message (without @Comsierge tag)
-            // Pass viaSms=true so tools like make_call can initiate calls directly
-            const aiResponse = await rulesAgentChat(user._id.toString(), cleanedBody || "", chatHistory, { viaSms: true });
+            // Call the simplified SMS agent (prototype mode - limited features)
+            // Supports: call, reminders, summarize, text someone, meetings/followups
+            // Rules and other complex features redirect to dashboard
+            const aiResponse = await smsAgentChat(user._id.toString(), cleanedBody || "", chatHistory);
             
             console.log(`   🤖 AI response: "${String(aiResponse || "").substring(0, 100)}..."`);
             

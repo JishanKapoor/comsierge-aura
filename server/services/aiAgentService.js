@@ -6831,3 +6831,212 @@ Respond conversationally in 1-2 sentences. Be direct and natural. NO emojis. NO 
     return `I encountered an error: ${error.message}. Please try again.`;
   }
 }
+
+// ==================== SIMPLIFIED SMS AGENT (PROTOTYPE) ====================
+// Limited features for @comsierge SMS interaction:
+// 1) Make call
+// 2) Set reminders
+// 3) Summarize conversation (including calls)
+// 4) Text another person
+// 5) Ask about followups/meetings
+// 6) Rules cannot be changed via SMS (dashboard only)
+// 7) Anything else → "Currently in prototype mode"
+
+const smsAgentTools = [
+  // 1. Make calls
+  makeCallTool,
+  // 2. Reminders
+  createReminderTool,
+  listRemindersTool,
+  completeReminderTool,
+  // 3. Summarize conversation
+  summarizeConversationTool,
+  // 4. Text another person
+  sendMessageTool,
+  executeSendMessageTool,
+  // 5. Followups/meetings
+  extractEventsTool,
+  // Helper tools for contact resolution
+  searchContactsTool,
+  listContactsTool,
+];
+
+const smsAgentToolMap = {
+  make_call: makeCallTool,
+  create_reminder: createReminderTool,
+  list_reminders: listRemindersTool,
+  complete_reminder: completeReminderTool,
+  summarize_conversation: summarizeConversationTool,
+  send_message: sendMessageTool,
+  execute_send_message: executeSendMessageTool,
+  extract_events: extractEventsTool,
+  search_contacts: searchContactsTool,
+  list_contacts: listContactsTool,
+};
+
+const smsAgentLLM = new ChatOpenAI({
+  modelName: "gpt-5.2",
+  temperature: 0.3,
+  openAIApiKey: process.env.OPENAI_API_KEY,
+}).bindTools(smsAgentTools);
+
+/**
+ * Simplified SMS Agent for @comsierge mentions
+ * Limited to: call, reminders, summarize, text someone, followups/meetings
+ * Rules and other complex features → "prototype mode" message
+ */
+export async function smsAgentChat(userId, message, chatHistory = []) {
+  try {
+    console.log("SMS Agent Chat (Prototype):", { userId, message });
+
+    const trimmedMessage = (message || "").trim();
+    const lowerMessage = trimmedMessage.toLowerCase();
+
+    // =====================================================
+    // RULE REQUESTS → REDIRECT TO DASHBOARD
+    // =====================================================
+    const ruleKeywords = [
+      "rule", "auto reply", "auto-reply", "autoreply",
+      "forward", "transfer", "block", "spam", "routing",
+      "dnd", "do not disturb", "if ", "when ",
+      "priority", "filter", "mute"
+    ];
+    const isRuleRequest = ruleKeywords.some(kw => lowerMessage.includes(kw));
+    
+    // Also detect conditional statements like "if grandma texts..."
+    const isConditionalRule = /\b(if|when|whenever)\s+.{2,50}\s+(text|message|call|send|receive)/i.test(lowerMessage);
+    
+    if (isRuleRequest || isConditionalRule) {
+      return "Rules and automation settings can only be managed from the Comsierge dashboard. Open the app to create or modify rules.";
+    }
+
+    // =====================================================
+    // FAST-PATHS FOR SUPPORTED FEATURES
+    // =====================================================
+
+    // Fast-path: meeting/appointment questions -> extract_events
+    const looksLikeMeetingQuestion = /(do i have|any|what).{0,40}\b(meeting|meetings|appointment|appointments|interview|deadline|due|followup|follow-up|follow up)\b/i;
+    if (looksLikeMeetingQuestion.test(trimmedMessage)) {
+      const timeframeMatch = trimmedMessage.match(/\b(today|yesterday|this week|last week|this month|tomorrow)\b/i);
+      const timeframe = timeframeMatch?.[0] || "this week";
+      const result = await extractEventsTool.invoke({ userId, timeframe });
+      return result;
+    }
+
+    // Fast-path: "show my reminders" / "list reminders"
+    if (/\b(show|list|my|what)\b.{0,15}\breminder/i.test(lowerMessage)) {
+      const result = await listRemindersTool.invoke({ userId });
+      return result;
+    }
+
+    // =====================================================
+    // SYSTEM PROMPT FOR SMS PROTOTYPE
+    // =====================================================
+    const systemPrompt = `You are Comsierge, a helpful AI assistant accessible via SMS. You are currently in PROTOTYPE MODE with limited features.
+
+AVAILABLE FEATURES (use these tools):
+1. make_call - Call someone. Example: "call Jeremy", "call mom"
+2. create_reminder - Set reminders. Example: "remind me to call back in 30 minutes", "remind me tomorrow at 2pm about meeting"
+3. list_reminders - Show existing reminders
+4. complete_reminder - Mark a reminder as done
+5. summarize_conversation - Summarize a conversation. Example: "summarize my chat with Jeremy", "what did Mark say"
+6. send_message - Text someone. Example: "text Jeremy and tell him there's a meeting today", "send message to mom saying I'll be late"
+7. execute_send_message - Confirm and send a prepared message (after user says "yes")
+8. extract_events - Check for meetings/appointments. Example: "do I have any meetings today", "any appointments this week"
+
+UNSUPPORTED FEATURES (DO NOT attempt these, just say the prototype message):
+- Creating rules (auto-reply, forwarding, blocking, etc.)
+- Changing routing settings
+- DND / do not disturb
+- Contact management (add/edit/delete contacts)
+- Spam filtering
+- Translation settings
+- ANY automation or conditional logic ("if X then Y")
+
+RESPONSE RULES:
+1. If the user asks for a supported feature → USE THE APPROPRIATE TOOL
+2. If the user asks for an unsupported feature → Say: "I'm currently in prototype mode. This feature will be available soon! For now, you can use the Comsierge dashboard for advanced settings."
+3. If the user just says hi or general chat → Be friendly and briefly mention what you can do
+4. Be concise - this is SMS, keep responses short
+5. NO emojis. NO markdown. Plain text only.
+
+CONFIRMATION FLOW FOR SENDING MESSAGES:
+1. User says "text Jeremy hey" -> use send_message -> shows preview
+2. User says "yes" or "send it" -> use execute_send_message to actually send
+
+User ID: ${userId}`;
+
+    // =====================================================
+    // INVOKE LLM WITH TOOLS
+    // =====================================================
+    const messages = [
+      new SystemMessage(systemPrompt),
+      ...chatHistory.map((h) => (h.role === "user" ? new HumanMessage(h.text) : new AIMessage(h.text))),
+      new HumanMessage(message),
+    ];
+
+    const response = await smsAgentLLM.invoke(messages);
+    
+    console.log("SMS Agent Response:", response.content);
+    console.log("Tool calls requested:", response.tool_calls?.map(tc => tc.name) || "none");
+
+    // Execute tool calls
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      const results = [];
+      
+      for (const toolCall of response.tool_calls) {
+        console.log(`SMS Agent executing tool: ${toolCall.name}`, toolCall.args);
+        
+        // Auto-inject userId and viaSms for SMS context
+        const args = { ...toolCall.args, userId };
+        
+        // For make_call, always set viaSms=true in SMS context
+        if (toolCall.name === "make_call") {
+          args.viaSms = true;
+        }
+        
+        const selectedTool = smsAgentToolMap[toolCall.name];
+        if (selectedTool) {
+          try {
+            const result = await selectedTool.invoke(args);
+            results.push(result);
+          } catch (toolError) {
+            console.error(`SMS Tool ${toolCall.name} error:`, toolError);
+            results.push(`Error: ${toolError.message}`);
+          }
+        }
+      }
+      
+      // Humanize the response
+      const toolOutput = results.join("\n\n");
+      const humanizePrompt = `You are Comsierge, a helpful SMS assistant. The user asked: "${message}"
+
+Tool results:
+${toolOutput}
+
+Respond in 1-2 short sentences. Be direct and friendly. NO emojis. NO markdown. Keep it brief for SMS.`;
+
+      try {
+        const humanized = await llm.invoke([new HumanMessage(humanizePrompt)]);
+        return sanitizeAIResponse(humanized.content || toolOutput);
+      } catch (humanizeError) {
+        console.error("Humanize error:", humanizeError);
+        return sanitizeAIResponse(toolOutput);
+      }
+    }
+    
+    // No tool calls - check if this is an unsupported request
+    const responseText = response.content || "";
+    
+    // If the LLM didn't use tools and didn't give a helpful response, give the prototype message
+    if (!responseText || responseText.length < 10) {
+      return "I'm currently in prototype mode. I can make calls, set reminders, summarize conversations, text someone, or check your meetings. More features coming soon!";
+    }
+    
+    return sanitizeAIResponse(responseText);
+    
+  } catch (error) {
+    console.error("SMS Agent Error:", error);
+    return `I encountered an error. Please try again or use the Comsierge dashboard.`;
+  }
+}
