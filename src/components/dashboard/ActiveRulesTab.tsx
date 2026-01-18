@@ -394,11 +394,12 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     "your forwarding number";
 
   const displayRules: ActiveRule[] = (() => {
-    // Show all user-created rules (transfer, auto-reply, block, priority, custom)
-    // Only exclude the routing rules (forward/message-notify) as they're shown in the routing group
-    const userRules = rules.filter((r) => 
-      r.type !== "forward" && r.type !== "message-notify"
+    // Keep Routing as a grouped rule, but show ALL other rule types below it.
+    // Users expect rules created via dashboard + @comsierge to appear here.
+    const routingRuleIds = new Set(
+      [routingForwardRule?.id, routingMessageRule?.id].filter(Boolean) as string[]
     );
+    const nonRoutingRules = rules.filter((r) => !routingRuleIds.has(r.id));
 
     const createdAt = (routingForwardRule?.createdAt || routingMessageRule?.createdAt || "").toString();
     const routingGroup: ActiveRule = {
@@ -426,7 +427,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
       },
     };
 
-    return [routingGroup, ...userRules];
+    return [routingGroup, ...nonRoutingRules];
   })();
 
   const activeRulesCount = displayRules.filter((r) => r.active).length;

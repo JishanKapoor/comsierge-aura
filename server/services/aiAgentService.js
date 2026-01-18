@@ -5213,11 +5213,29 @@ Please tell me: "My personal number is [your phone number]" or "Forward to [phon
       let targetName = parsed.action?.forward_to;
       
       if (targetName && parsed.type === "forward") {
-        // Check if it's already a phone number
-        const isPhone = /^\+?\d{10,}$/.test(targetName.replace(/[\s\-\(\)]/g, ''));
-        if (isPhone) {
-          targetPhone = targetName.startsWith('+') ? targetName : `+1${targetName.replace(/\D/g, '')}`;
-          targetName = targetPhone;
+        // If the string contains a phone number anywhere (e.g. "Jake (+14372392447)"), extract it.
+        const extractPhoneFromText = (text) => {
+          if (!text) return null;
+          const match = String(text).match(/(\+?\d[\d\s\-\(\)]{8,}\d)/);
+          if (!match) return null;
+          const digits = match[1].replace(/\D/g, "");
+          if (digits.length < 10) return null;
+          // Normalize to E.164-ish +<digits>
+          if (digits.length === 10) return `+1${digits}`;
+          return `+${digits}`;
+        };
+
+        const extractedPhone = extractPhoneFromText(targetName);
+        if (extractedPhone) {
+          targetPhone = extractedPhone;
+          // Try to preserve a human-friendly name if present
+          const nameOnly = String(targetName)
+            .replace(extractedPhone, "")
+            .replace(/\+?\d[\d\s\-\(\)]{8,}\d/, "")
+            .replace(/[\(\)\[\]\-–—:,]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          targetName = nameOnly || extractedPhone;
         } else {
           const target = await resolveContactWithAI(userId, targetName);
           if (target) {
