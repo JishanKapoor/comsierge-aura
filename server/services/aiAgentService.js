@@ -3946,7 +3946,7 @@ const setRoutingPreferencesTool = tool(
             }
             break;
           case "none":
-            callRuleDesc = "All calls go to AI (phone won't ring)";
+            callRuleDesc = "Calls won't ring your phone";
             break;
         }
         

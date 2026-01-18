@@ -682,7 +682,8 @@ router.put("/me/phone", async (req, res) => {
             schedule: { mode: "always" },
             transferDetails: { mode: "messages" },
             conditions: {
-              priorityFilter: "medium,high",
+              // Canonical values: all | important | urgent | none
+              priorityFilter: "important",
               translateEnabled: false,
               receiveLanguage: "en",
               destinationLabel: destination,

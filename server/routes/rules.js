@@ -43,7 +43,7 @@ router.post("/ensure-defaults", async (req, res) => {
 
     // Check and create message notification rule
     const existingMessageRule = await Rule.findOne({ userId: user._id, type: "message-notify" });
-    if (!existingMessageRule) {
+        if (!existingMessageRule) {
       const messageRule = await Rule.create({
         userId: user._id,
         rule: `Route medium and high priority messages to ${destination}`,
@@ -52,7 +52,7 @@ router.post("/ensure-defaults", async (req, res) => {
         schedule: { mode: "always" },
         transferDetails: { mode: "messages" },
         conditions: {
-          priorityFilter: "medium,high",
+              priorityFilter: "important",
           translateEnabled: false,
           receiveLanguage: "en",
           destinationLabel: destination,
@@ -112,7 +112,7 @@ router.get("/", async (req, res) => {
             schedule: { mode: "always" },
             transferDetails: { mode: "messages" },
             conditions: {
-              priorityFilter: "medium,high",
+              priorityFilter: "important",
               translateEnabled: false,
               receiveLanguage: "en",
               destinationLabel: destination,

@@ -1716,7 +1716,7 @@ router.post("/webhook/sms", async (req, res) => {
           userId: user._id,
           type: "message-notify",
           active: true
-        });
+        }).sort({ createdAt: -1 });
         
         console.log(`   Found ${messageNotifyRules.length} active message notification rules`);
         
@@ -1782,7 +1782,19 @@ router.post("/webhook/sms", async (req, res) => {
         for (const rule of messageNotifyRules) {
           const conditions = rule.conditions || {};
           console.log(`   📢 Rule conditions:`, JSON.stringify(conditions));
-          const priorityFilter = conditions.priorityFilter || "all"; // all, important, urgent
+          // Normalize priority filter values across older/newer rule creators.
+          // Supported: all | important | urgent | none
+          let priorityFilter = conditions.priorityFilter || "all";
+          if (typeof priorityFilter === "string") {
+            const pf = priorityFilter.toLowerCase().replace(/\s+/g, "");
+            if (pf === "medium,high" || pf === "high,medium" || pf === "mediumhigh" || pf === "highmedium") {
+              priorityFilter = "important";
+            } else if (pf === "no" || pf === "off" || pf === "mute" || pf === "none") {
+              priorityFilter = "none";
+            } else {
+              priorityFilter = priorityFilter.toLowerCase();
+            }
+          }
           const notifyTags = conditions.notifyTags || [];
           
           // Check time window schedule for message-notify rules
@@ -1884,6 +1896,11 @@ router.post("/webhook/sms", async (req, res) => {
               // Forward ALL messages including held/spam
               shouldNotify = true;
               console.log(`   All messages selected - forwarding (even if held/spam)`);
+              break;
+            case "none":
+              // Explicit mute: do not forward any message notifications.
+              shouldNotify = false;
+              console.log(`   Message notifications muted - not forwarding`);
               break;
             case "important":
               // Forward only high and medium priority - NEVER forward held/spam
@@ -3117,6 +3134,11 @@ router.post("/webhook/voice", async (req, res) => {
       
       const normalize = (p) => p ? p.replace(/[^\d+]/g, "") : "";
       const callerPhone = normalize(From);
+            default:
+              // Unknown filter value: be safe and do NOT notify.
+              shouldNotify = false;
+              console.log(`   Unknown priorityFilter='${priorityFilter}' - skipping notification`);
+              break;
       
       // Helper to build phone variations for robust contact lookup
       const normalizeToE164ish = (value) => {
@@ -3356,7 +3378,7 @@ router.post("/webhook/voice", async (req, res) => {
           userId: user._id, 
           type: "forward",
           active: true 
-        });
+        }).sort({ createdAt: -1 });
         
         console.log(`   📜 Found ${forwardRules.length} active forward rules`);
         console.log(`   📜 User's forwardingNumber: ${user.forwardingNumber || "NOT SET"}`);
@@ -3453,11 +3475,24 @@ router.post("/webhook/voice", async (req, res) => {
               matches = requiredTags.length > 0 && requiredTags.some(tag => callerInfo.tags.includes(tag));
               console.log(`      ${matches ? '✓' : '✗'} Mode 'tags' - required: [${requiredTags}], caller has: [${callerInfo.tags}]`);
               break;
+            case "none":
+              // Explicit DND: never forward calls to the user's phone.
+              matches = true;
+              shouldForward = false;
+              matchedRule = rule;
+              console.log(`      ✓ Mode 'none' - DO NOT forward to user's phone`);
+              break;
               
             default:
               matches = false;
           }
-          
+
+          // For mode "none" we already set shouldForward=false and want it to take precedence.
+          if (mode === "none" && matches) {
+            console.log(`   ✅ DND rule matched! Will NOT forward call.`);
+            break;
+          }
+
           if (matches) {
             shouldForward = true;
             matchedRule = rule;
