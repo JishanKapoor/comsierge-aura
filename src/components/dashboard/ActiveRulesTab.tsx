@@ -422,8 +422,29 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     setDraggedRuleId(null);
   };
 
-  const routingForwardRule = rules.find((r) => r.type === "forward");
-  const routingMessageRule = rules.find((r) => r.type === "message-notify");
+  const pickNewestRuleOfType = useCallback(
+    (type: RuleType) => {
+      const candidates = rules.filter((r) => r.type === type);
+      if (candidates.length === 0) return undefined;
+
+      // Prefer API-provided ISO timestamp for deterministic selection.
+      const withISO = candidates.filter((r) => Boolean((r as any).createdAtISO));
+      const list = withISO.length > 0 ? withISO : candidates;
+      return list.reduce((best, cur) => {
+        const bestISO = (best as any).createdAtISO;
+        const curISO = (cur as any).createdAtISO;
+        if (bestISO && curISO) {
+          return new Date(curISO).getTime() > new Date(bestISO).getTime() ? cur : best;
+        }
+        // Fallback: keep the earliest encountered when no timestamps.
+        return best;
+      }, list[0]);
+    },
+    [rules]
+  );
+
+  const routingForwardRule = pickNewestRuleOfType("forward");
+  const routingMessageRule = pickNewestRuleOfType("message-notify");
   const routingActive = Boolean(routingForwardRule?.active || routingMessageRule?.active);
 
   // Source of truth for "Forward To" is the user profile forwarding number.

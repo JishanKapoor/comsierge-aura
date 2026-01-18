@@ -18,7 +18,10 @@ export interface ActiveRule {
   id: string;
   rule: string;
   active: boolean;
+  // Human-readable label for UI lists.
   createdAt: string;
+  // ISO timestamp from API for stable ordering/selection.
+  createdAtISO?: string;
   type?: "transfer" | "auto-reply" | "block" | "forward" | "priority" | "custom" | "message-notify";
   conditions?: Record<string, any>;
   actions?: Record<string, any>;
@@ -68,6 +71,7 @@ export const fetchRules = async (): Promise<ActiveRule[]> => {
         id: r._id,
         rule: r.rule,
         active: r.active,
+        createdAtISO: r.createdAt,
         createdAt: new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         type: r.type,
         conditions: r.conditions,
@@ -107,7 +111,8 @@ export const createRule = async (rule: Omit<ActiveRule, "id" | "createdAt">): Pr
         id: data.data._id,
         rule: data.data.rule,
         active: data.data.active,
-        createdAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        createdAtISO: data.data.createdAt,
+        createdAt: new Date(data.data.createdAt || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
         type: data.data.type,
         conditions: data.data.conditions,
         actions: data.data.actions,
