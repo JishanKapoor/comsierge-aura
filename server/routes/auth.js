@@ -645,36 +645,53 @@ router.put("/me/phone", async (req, res) => {
     user.phoneNumber = phoneNumber;
     await user.save();
 
-    // Create default routing rule for new users
+    // Create default routing rules for new users
     if (isFirstTimeAssignment) {
       try {
-        // Check if user already has any routing rules (in case they had rules from before)
-        const existingRules = await Rule.findOne({ userId: user._id, type: "forward" });
+        // Check if user already has routing rules
+        const existingForwardRule = await Rule.findOne({ userId: user._id, type: "forward" });
+        const existingMessageRule = await Rule.findOne({ userId: user._id, type: "message-notify" });
         
-        if (!existingRules) {
-          // Create default rule: Forward all calls + medium/high priority messages
+        const destination = user.forwardingNumber || "your forwarding number";
+        
+        // Create default call forwarding rule: Forward ALL calls
+        if (!existingForwardRule) {
           await Rule.create({
             userId: user._id,
-            rule: "Forward all calls and important messages to my phone",
+            rule: `Route all calls to ${destination}`,
             type: "forward",
             active: true,
             schedule: { mode: "always" },
-            transferDetails: {
-              mode: "both",
-              priority: "all",
-              priorityFilter: "medium,high",
-              contactPhone: user.forwardingNumber || null,
-            },
-            conditions: {
-              callsEnabled: true,
-              messagesEnabled: true,
-              messagePriority: ["medium", "high"],
+            transferDetails: { mode: "calls" },
+            conditions: { 
+              mode: "all", 
+              tags: [], 
+              destinationLabel: destination 
             },
           });
-          console.log(`✅ Created default routing rule for new user ${user._id}`);
+          console.log(`✅ Created default call routing rule for user ${user._id}`);
+        }
+        
+        // Create default message notification rule: Medium + High priority
+        if (!existingMessageRule) {
+          await Rule.create({
+            userId: user._id,
+            rule: `Route medium and high priority messages to ${destination}`,
+            type: "message-notify",
+            active: true,
+            schedule: { mode: "always" },
+            transferDetails: { mode: "messages" },
+            conditions: {
+              priorityFilter: "medium,high",
+              translateEnabled: false,
+              receiveLanguage: "en",
+              destinationLabel: destination,
+            },
+          });
+          console.log(`✅ Created default message routing rule for user ${user._id}`);
         }
       } catch (ruleError) {
-        console.error("Error creating default rule:", ruleError);
+        console.error("Error creating default rules:", ruleError);
         // Don't fail the phone assignment if rule creation fails
       }
     }
