@@ -1,5 +1,6 @@
 import express from "express";
 import Rule from "../models/Rule.js";
+import User from "../models/User.js";
 import { authMiddleware } from "./auth.js";
 
 const router = express.Router();
@@ -7,12 +8,124 @@ const router = express.Router();
 // All routes require authentication
 router.use(authMiddleware);
 
+// @route   POST /api/rules/ensure-defaults
+// @desc    Ensure default routing rules exist for current user
+// @access  Private
+router.post("/ensure-defaults", async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const destination = user.forwardingNumber || "your forwarding number";
+    const created = [];
+
+    // Check and create call forwarding rule
+    const existingForwardRule = await Rule.findOne({ userId: user._id, type: "forward" });
+    if (!existingForwardRule) {
+      const callRule = await Rule.create({
+        userId: user._id,
+        rule: `Route all calls to ${destination}`,
+        type: "forward",
+        active: true,
+        schedule: { mode: "always" },
+        transferDetails: { mode: "calls" },
+        conditions: { 
+          mode: "all", 
+          tags: [], 
+          destinationLabel: destination 
+        },
+      });
+      created.push(callRule);
+      console.log(`✅ Created default call routing rule for user ${user._id}`);
+    }
+
+    // Check and create message notification rule
+    const existingMessageRule = await Rule.findOne({ userId: user._id, type: "message-notify" });
+    if (!existingMessageRule) {
+      const messageRule = await Rule.create({
+        userId: user._id,
+        rule: `Route medium and high priority messages to ${destination}`,
+        type: "message-notify",
+        active: true,
+        schedule: { mode: "always" },
+        transferDetails: { mode: "messages" },
+        conditions: {
+          priorityFilter: "medium,high",
+          translateEnabled: false,
+          receiveLanguage: "en",
+          destinationLabel: destination,
+        },
+      });
+      created.push(messageRule);
+      console.log(`✅ Created default message routing rule for user ${user._id}`);
+    }
+
+    res.json({
+      success: true,
+      message: created.length > 0 ? `Created ${created.length} default rule(s)` : "Default rules already exist",
+      data: created,
+    });
+  } catch (error) {
+    console.error("Ensure defaults error:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+});
+
 // @route   GET /api/rules
 // @desc    Get all rules for current user
 // @access  Private
 router.get("/", async (req, res) => {
   try {
-    const rules = await Rule.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    let rules = await Rule.find({ userId: req.user._id }).sort({ createdAt: -1 });
+
+    // Auto-create default routing rules if missing (for users who signed up before this feature)
+    const hasForwardRule = rules.some(r => r.type === "forward");
+    const hasMessageRule = rules.some(r => r.type === "message-notify");
+    
+    if (!hasForwardRule || !hasMessageRule) {
+      try {
+        const user = await User.findById(req.user._id);
+        const destination = user?.forwardingNumber || "your forwarding number";
+        
+        if (!hasForwardRule) {
+          const callRule = await Rule.create({
+            userId: req.user._id,
+            rule: `Route all calls to ${destination}`,
+            type: "forward",
+            active: true,
+            schedule: { mode: "always" },
+            transferDetails: { mode: "calls" },
+            conditions: { mode: "all", tags: [], destinationLabel: destination },
+          });
+          rules.unshift(callRule);
+          console.log(`✅ Auto-created default call routing rule for user ${req.user._id}`);
+        }
+        
+        if (!hasMessageRule) {
+          const messageRule = await Rule.create({
+            userId: req.user._id,
+            rule: `Route medium and high priority messages to ${destination}`,
+            type: "message-notify",
+            active: true,
+            schedule: { mode: "always" },
+            transferDetails: { mode: "messages" },
+            conditions: {
+              priorityFilter: "medium,high",
+              translateEnabled: false,
+              receiveLanguage: "en",
+              destinationLabel: destination,
+            },
+          });
+          rules.unshift(messageRule);
+          console.log(`✅ Auto-created default message routing rule for user ${req.user._id}`);
+        }
+      } catch (autoCreateErr) {
+        console.error("Auto-create default rules error:", autoCreateErr);
+        // Continue anyway - don't fail the GET request
+      }
+    }
 
     // Clean up duplicate transfer rules (caused by repeated submits / network retries).
     // Keep the newest one (rules are sorted newest-first) and delete older duplicates.
