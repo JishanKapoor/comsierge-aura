@@ -25,13 +25,15 @@ const llm = new ChatOpenAI({
 
 // ==================== LANGGRAPH: DND PARSING ====================
 
+// OpenAI structured output strict mode requires ALL properties in `required`.
+// Use nullable() instead of optional() to allow null values.
 const DndPreferenceSchema = z.object({
   // Use null when user explicitly says to keep unchanged or didn't specify.
   callsMode: z.enum(["all", "favorites", "saved", "tags", "none"]).nullable(),
   messagesMode: z.enum(["all", "important", "urgent", "none"]).nullable(),
-  callTags: z.array(z.string()).optional(),
-  keepCallsSame: z.boolean().optional().default(false),
-  keepMessagesSame: z.boolean().optional().default(false),
+  callTags: z.array(z.string()).nullable(),
+  keepCallsSame: z.boolean(),
+  keepMessagesSame: z.boolean(),
 });
 
 const DndGraphState = Annotation.Root({
