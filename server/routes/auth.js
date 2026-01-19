@@ -602,6 +602,14 @@ router.get("/available-phones", async (req, res) => {
 
     const availablePhones = allPhones.filter((p) => !assignedPhones.includes(p));
 
+    console.log("📞 Available phones debug:", {
+      totalTwilioAccounts: accounts.length,
+      allPhones,
+      assignedUsers: assignedUsers.length,
+      assignedPhones,
+      availablePhones,
+    });
+
     res.json({
       success: true,
       data: {
