@@ -297,6 +297,32 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
     }
   };
 
+  const deleteReminder = async (id: string) => {
+    // Optimistic update
+    const previousReminders = [...reminders];
+    setReminders((prev) => prev.filter((r) => r.id !== id));
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reminders/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("comsierge_token")}`,
+        },
+      });
+      if (response.ok) {
+        toast.success("Reminder deleted");
+      } else {
+        // Revert on failure
+        setReminders(previousReminders);
+        toast.error("Failed to delete reminder");
+      }
+    } catch (error) {
+      // Revert on failure
+      setReminders(previousReminders);
+      toast.error("Failed to delete reminder");
+    }
+  };
+
   const addRule = async (text: string, type?: RuleType) => {
     suppressRulesReloadUntilRef.current = Date.now() + 800;
     const cleaned = text.trim();
@@ -1153,7 +1179,7 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                         const TypeIcon = typeIcon;
                         
                         return (
-                          <div key={reminder.id} className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50">
+                          <div key={reminder.id} className="px-4 py-3 flex items-start gap-3 hover:bg-gray-50 group">
                             <div className={cn(
                               "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
                               reminder.type === "call" ? "bg-green-100" : "bg-amber-100"
@@ -1175,12 +1201,22 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
                                 <p className="text-xs text-gray-400 mt-1 truncate">{reminder.description}</p>
                               )}
                             </div>
-                            <span className={cn(
-                              "text-[10px] px-2 py-0.5 rounded-full shrink-0",
-                              reminder.type === "call" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                            )}>
-                              {reminder.type === "call" ? "Call" : "SMS"}
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={cn(
+                                "text-[10px] px-2 py-0.5 rounded-full",
+                                reminder.type === "call" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
+                              )}>
+                                {reminder.type === "call" ? "Call" : "SMS"}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-red-500 hover:bg-red-50"
+                                onClick={() => deleteReminder(reminder.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
