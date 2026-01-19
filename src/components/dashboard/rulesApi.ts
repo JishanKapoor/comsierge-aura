@@ -206,3 +206,21 @@ export const formatSchedule = (schedule?: ActiveRule["schedule"]): string => {
   }
   return "Always active";
 };
+
+// Delete all scheduled/time-based rules
+export const deleteScheduledRules = async (): Promise<{ success: boolean; deletedCount: number }> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/rules/cleanup/scheduled`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    });
+    const data = await response.json();
+    if (data.success) {
+      notifyRulesChange();
+    }
+    return { success: data.success, deletedCount: data.deletedCount || 0 };
+  } catch (error) {
+    console.error("Delete scheduled rules error:", error);
+    return { success: false, deletedCount: 0 };
+  }
+};

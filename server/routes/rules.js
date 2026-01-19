@@ -393,4 +393,43 @@ router.delete("/cleanup/transfers", async (req, res) => {
   }
 });
 
+// @route   DELETE /api/rules/cleanup/scheduled
+// @desc    Delete all time-based/scheduled rules (routing rules with schedules)
+// @access  Private
+router.delete("/cleanup/scheduled", async (req, res) => {
+  try {
+    // Find rules that have time-based scheduling
+    const scheduledRules = await Rule.find({
+      userId: req.user._id,
+      $or: [
+        { "conditions.schedule.start": { $exists: true } },
+        { "conditions.schedule.end": { $exists: true } },
+        { "schedule.startTime": { $exists: true } },
+        { "schedule.endTime": { $exists: true } },
+        { "schedule.mode": "custom" },
+        { "schedule.mode": "duration" },
+      ],
+    });
+
+    const deletedIds = scheduledRules.map((r) => r._id);
+
+    if (deletedIds.length > 0) {
+      await Rule.deleteMany({ _id: { $in: deletedIds } });
+    }
+
+    res.json({
+      success: true,
+      message: `Deleted ${deletedIds.length} scheduled/time-based rules`,
+      deletedCount: deletedIds.length,
+    });
+  } catch (error) {
+    console.error("Cleanup scheduled rules error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 export default router;

@@ -3804,6 +3804,57 @@ const cleanupRulesTool = tool(
   }
 );
 
+// Tool: Delete scheduled/time-based rules (rules with schedule times, not reminders)
+const deleteScheduledRulesTool = tool(
+  async ({ userId }) => {
+    try {
+      console.log("Deleting scheduled rules for user:", userId);
+
+      const scheduledRules = await Rule.find({
+        userId,
+        $or: [
+          { "conditions.schedule.start": { $exists: true } },
+          { "conditions.schedule.end": { $exists: true } },
+          { "schedule.startTime": { $exists: true } },
+          { "schedule.endTime": { $exists: true } },
+          { "schedule.mode": "custom" },
+          { "schedule.mode": "duration" },
+        ],
+      });
+
+      if (scheduledRules.length === 0) {
+        return "You have no scheduled/time-based rules to delete.";
+      }
+
+      const countsByType = scheduledRules.reduce((acc, r) => {
+        const t = r.type || "custom";
+        acc[t] = (acc[t] || 0) + 1;
+        return acc;
+      }, {});
+
+      const deleted = await Rule.deleteMany({ _id: { $in: scheduledRules.map((r) => r._id) } });
+
+      const summary = Object.entries(countsByType)
+        .sort((a, b) => b[1] - a[1])
+        .map(([t, n]) => `${n} ${t}`)
+        .join(", ");
+
+      return `Deleted ${deleted.deletedCount} scheduled/time-based rule(s): ${summary}. Reminders are not affected.`;
+    } catch (error) {
+      console.error("Delete scheduled rules error:", error);
+      return `Error deleting scheduled rules: ${error.message}`;
+    }
+  },
+  {
+    name: "delete_scheduled_rules",
+    description:
+      "Delete all scheduled/time-based routing rules. Use when user says 'remove time-based rules', 'delete scheduled rules', 'remove rules with schedules'. This does NOT delete reminders.",
+    schema: z.object({
+      userId: z.string().describe("User ID"),
+    }),
+  }
+);
+
 // Tool: Delete all rules (or all active rules) for a user
 // Used when user says: "delete my active rules", "delete all rules", "clear all rules"
 const deleteAllRulesTool = tool(
@@ -5946,6 +5997,7 @@ const fullAgentTools = [
   setRoutingPreferencesTool,
   cleanupRulesTool,
   deleteAllRulesTool,
+  deleteScheduledRulesTool,
   disableAllRulesTool,
   // AI Calls
   makeAICallTool,
@@ -6015,6 +6067,7 @@ const fullAgentToolMap = {
   set_routing_preferences: setRoutingPreferencesTool,
   cleanup_rules: cleanupRulesTool,
   delete_all_rules: deleteAllRulesTool,
+  delete_scheduled_rules: deleteScheduledRulesTool,
   disable_all_rules: disableAllRulesTool,
   make_ai_call: makeAICallTool,
   list_ai_calls: listAICallsTool,
