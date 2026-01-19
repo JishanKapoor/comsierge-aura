@@ -372,6 +372,14 @@ router.put("/users/:id/assign-phone", authMiddleware, adminMiddleware, async (re
       });
     }
 
+    // Admins cannot have phone numbers assigned
+    if (user.role === "admin") {
+      return res.status(400).json({
+        success: false,
+        message: "Admin accounts cannot have phone numbers assigned",
+      });
+    }
+
     if (phoneNumber) {
       // Verify phone number exists in a Twilio account
       const account = await TwilioAccount.findOne({ phoneNumbers: phoneNumber });

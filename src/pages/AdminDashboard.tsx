@@ -192,13 +192,13 @@ const AdminDashboard = () => {
       const response = await fetch(`${API_URL}/auth/users`);
       const data = await response.json();
       if (data.success) {
-        // Map backend users to AppUser format
+        // Map backend users to AppUser format (exclude admins - they can't have phones)
         const users: AppUser[] = data.data
-          .filter((u: any) => u.role !== "admin") // Don't show admins in user list
+          .filter((u: any) => u.role !== "admin")
           .map((u: any) => ({
             id: u._id,
             username: u.name,
-            personalPhone: u.email, // Using email as identifier
+            personalPhone: u.email,
             assignedPhone: u.phoneNumber || null,
           }));
         setAppUsers(users);

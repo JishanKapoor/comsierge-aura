@@ -597,7 +597,11 @@ router.get("/available-phones", async (req, res) => {
     const accounts = await TwilioAccount.find().select("phoneNumbers");
     const allPhones = accounts.flatMap((a) => a.phoneNumbers || []);
 
-    const assignedUsers = await User.find({ phoneNumber: { $ne: null } }).select("phoneNumber");
+    // Only check non-admin users for phone assignments (admins can't have phones)
+    const assignedUsers = await User.find({ 
+      phoneNumber: { $ne: null },
+      role: { $ne: "admin" }
+    }).select("phoneNumber");
     const assignedPhones = assignedUsers.map((u) => u.phoneNumber);
 
     const availablePhones = allPhones.filter((p) => !assignedPhones.includes(p));
@@ -635,6 +639,11 @@ router.put("/me/phone", async (req, res) => {
     const user = await User.findById(decoded.id);
     if (!user) {
       return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    // Admins cannot have phone numbers assigned
+    if (user.role === "admin") {
+      return res.status(400).json({ success: false, message: "Admin accounts cannot have phone numbers assigned" });
     }
 
     const { phoneNumber } = req.body;
