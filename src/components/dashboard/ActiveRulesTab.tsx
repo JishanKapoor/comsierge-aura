@@ -61,11 +61,12 @@ const RULE_TYPE_META: Record<RuleType, { label: string; icon: typeof Zap; color:
 };
 
 const AI_EXAMPLES = [
-  "I receive only calls that are labeled as work",
-  "Remind me in 30 seconds via text to return the files to Jeremy",
-  "If I receive a message from my grandma asking where I am, automatically text her that I am outside",
-  "Transfer all calls from Jeremy to +1 437-239-2448",
-  "Only deliver high priority messages to me",
+  "Route all calls to my phone, important messages only",
+  "No calls, no message notifications after 10pm",
+  "Favorites can call, urgent messages only",
+  "Transfer calls from Mom to my second number",
+  "Transfer all messages from Jeremy to +1 437-239-2448",
+  "From 8pm to 9pm: calls go to AI, no message notifications",
 ];
 
 const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRulesTabProps) => {
