@@ -240,7 +240,7 @@ async function sendScheduledMessage(scheduledMsg) {
     ]
   });
 
-  if (!twilioAccount) throw new Error('No Twilio account found');
+  if (!twilioAccount) throw new Error('Phone service not configured');
 
   // Get user's assigned phone number (from number)
   let fromNumber = null;

@@ -375,7 +375,7 @@ const AdminDashboard = () => {
       if (!response.ok) {
         setVerificationStatus("error");
         setVerificationMessage(data.message || "Verification failed");
-        toast.error(data.message || "Twilio verification failed");
+        toast.error(data.message || "Phone service verification failed");
         setIsVerifying(false);
         return;
       }
@@ -411,7 +411,7 @@ const AdminDashboard = () => {
       const syncData = await syncResp.json();
       if (!syncResp.ok || !syncData.success) {
         setVerificationStatus("error");
-        setVerificationMessage(syncData.message || "Failed to sync Twilio account to server");
+        setVerificationMessage(syncData.message || "Failed to sync phone service account to server");
         toast.error(syncData.message || "Failed to save numbers to server");
         setIsVerifying(false);
         return;
@@ -448,7 +448,7 @@ const AdminDashboard = () => {
     
     showConfirm(
       "Delete Account",
-      "Are you sure you want to delete this Twilio account? All phone numbers will be unassigned from users.",
+      "Are you sure you want to delete this phone service account? All phone numbers will be unassigned from users.",
       "Delete",
       async () => {
         try {
@@ -488,14 +488,14 @@ const AdminDashboard = () => {
 
           const deleteData = await deleteResp.json().catch(() => null);
           if (!deleteResp.ok || !deleteData?.success) {
-            throw new Error(deleteData?.message || "Failed to delete Twilio account");
+            throw new Error(deleteData?.message || "Failed to delete phone service account");
           }
 
           // Refresh accounts/users from server so UI matches DB
           await fetchTwilioAccounts();
           fetchUsers();
 
-          toast.success("Twilio account deleted");
+          toast.success("Phone service account deleted");
         } catch (error) {
           console.error("Delete account error:", error);
           toast.error(error instanceof Error ? error.message : "Failed to fully delete account");

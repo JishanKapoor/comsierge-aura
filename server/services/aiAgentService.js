@@ -2594,6 +2594,27 @@ const conversationTools = [
 // Create LLM with tools bound
 const llmWithTools = llm.bindTools(conversationTools);
 
+// Restricted tools for Inbox conversation AI (only summary, search, and transfer)
+const inboxConversationTools = [
+  createTransferRuleTool,
+  searchContactsTool,
+  searchMessagesTool,
+  searchMessagesByDateTool,
+  summarizeConversationTool,
+];
+
+// Create LLM with restricted tools for Inbox
+const llmWithInboxTools = llm.bindTools(inboxConversationTools);
+
+// Tool execution map for Inbox (restricted)
+const inboxToolMap = {
+  create_transfer_rule: createTransferRuleTool,
+  search_contacts: searchContactsTool,
+  search_messages: searchMessagesTool,
+  search_messages_by_date: searchMessagesByDateTool,
+  summarize_conversation: summarizeConversationTool,
+};
+
 // Tool execution map
 const toolMap = {
   create_transfer_rule: createTransferRuleTool,
@@ -2618,7 +2639,7 @@ const toolMap = {
 
 export async function conversationChat(userId, message, contactName, contactPhone, conversationContext) {
   try {
-    console.log("=== ConversationChat ===");
+    console.log("=== ConversationChat (Inbox - Restricted) ===");
     console.log("userId:", userId);
     console.log("contactName:", contactName);
     console.log("contactPhone:", contactPhone);
@@ -2628,84 +2649,65 @@ export async function conversationChat(userId, message, contactName, contactPhon
       return "Error: User not authenticated.";
     }
 
-    const systemPrompt = `You are Comsierge AI, an intelligent NLP-powered assistant for managing communications.
+    // Restricted system prompt for Inbox AI - only allows summary/analysis and transfer rules
+    const systemPrompt = `You are Comsierge AI, a conversation assistant in the Inbox view.
 
 === CURRENT CONTEXT ===
 User ID: ${userId}
 Current Contact: ${contactName}
 Contact Phone: ${contactPhone || "unknown"}
 
-=== YOUR TOOLS ===
-You have these tools - USE THEM when the user's intent matches:
+=== YOUR CAPABILITIES (RESTRICTED) ===
+In this Inbox view, you can ONLY do these things:
 
-1. create_transfer_rule - Forward messages/calls to someone
-   Triggers: "transfer", "forward", "redirect", "send to X", "route to"
-   
-2. create_auto_reply - Set automatic responses  
-   Triggers: "auto reply", "automatic response", "respond automatically"
-   
-3. block_contact - Block current contact
-   Triggers: "block", "mute", "ignore", "stop messages", "don't want to hear"
-   
-4. update_contact - Rename the contact
-   Triggers: "rename", "change name", "call them X", "name is", "update name", "change contact"
-   
-5. search_contacts - Find contacts by name/phone
-   Triggers: Looking up someone before transferring
-   
-6. mark_priority - Mark as high priority
-   Triggers: "important", "priority", "VIP", "urgent", "alert me"
+1. SUMMARIZE & ANALYZE conversations:
+   - "summarize our chat"
+   - "what did we talk about"
+   - "is he angry?"
+   - "what did he say on Monday?"
+   - "any meetings mentioned?"
+   - "search for X in our messages"
 
-7. search_messages - Search ALL messages for keywords
-   Triggers: "do I have a meeting", "any appointments", "find messages about", "when did they say", "search for", "look for"
-   ALWAYS USE THIS when user asks about meetings, appointments, plans, events, dates, times, lunch, dinner, calls scheduled
+2. FORWARD/TRANSFER this contact's messages to someone else:
+   - "forward his messages to Mark"
+   - "transfer important messages to +1234567890"
+   - "send his texts to my assistant"
 
-8. search_messages_by_date - Search messages in a date range
-   Triggers: "what did we talk about on [date]", "messages from January", "show messages from last week", "conversations on March 5"
+=== TOOLS AVAILABLE ===
+1. summarize_conversation - Summarize chat with this contact
+   Use for: summary, analysis, sentiment, "what did we talk about", "is he upset"
 
-9. get_rules - List all active rules
-   Triggers: "show my rules", "what rules do I have", "list my transfers", "my auto-replies"
+2. search_messages - Search messages for keywords
+   Use for: "any meetings", "did he mention X", "find messages about Y"
 
-10. delete_rule - Remove a rule
-    Triggers: "stop forwarding", "remove rule", "delete auto-reply", "cancel transfer to X"
+3. search_messages_by_date - Search messages by date
+   Use for: "what did he say on Jan 5", "messages from last week"
 
-11. summarize_conversation - Summarize chat with contact
-    Triggers: "summarize", "what did we talk about", "give me a summary", "recap our conversation"
+4. create_transfer_rule - Forward this contact's messages to someone
+   Use for: "forward to X", "transfer messages to Y", "send his texts to Z"
 
-12. unblock_contact - Unblock a blocked contact
-    Triggers: "unblock", "allow again", "remove block", "let them message"
+5. search_contacts - Find contacts (to get phone numbers for transfers)
 
-=== CRITICAL RULES FOR UNDERSTANDING INTENT ===
-1. READ THE AI CHAT HISTORY CAREFULLY - it contains important context from previous messages
-2. When user provides info like "X is +1234567890" - they're giving you a phone number for X, NOT asking to rename something
-3. "forward calls to Mark" then "Mark is +123..." means: use +123 as the target for the forward rule
-4. "change it back" or "undo" - refer to the chat history to see what was changed
-5. When user says "[Name] is [phone]" after asking for a forward/transfer - they're providing the TARGET phone number
-
-=== INTERPRETING MULTI-STEP CONVERSATIONS ===
-- If user said "forward to Mark" and you asked for Mark's number, and they reply "+1234567890" or "Mark is +1234567890"
-  → Complete the forward rule with targetPhone=+1234567890
-- If user gives a second number like "[Name] is [another number]" - they might be adding an alternative number, ask for clarification
-- Always use chat history to understand what the user is trying to accomplish
+=== WHAT YOU CANNOT DO HERE ===
+If the user asks for any of these, politely redirect them:
+- Auto-reply rules → "Please go to Active Rules to set up auto-replies."
+- Block contacts → "Please go to Active Rules to block contacts."
+- Rename contacts → "You can rename contacts using the contact menu (three dots)."
+- Create other types of rules → "Please go to Active Rules to create custom rules."
+- Make calls → "Please use the phone icon to make calls."
+- Send messages → "Type your message in the chat box below."
 
 === TOOL CALL RULES ===
-1. BE ACTION-ORIENTED - Execute immediately, don't ask unnecessary questions
-2. ALWAYS include these in tool calls:
-   - userId: "${userId}"
-   - sourceContact: "${contactName}"  
-   - sourcePhone: "${contactPhone}"
-3. When user says "transfer to X" → call create_transfer_rule with targetName=X
-4. When user says "change name to X" or "rename to X" or "change contact to X" → call update_contact with newName=X, currentPhone="${contactPhone}"
-5. When user asks about meetings/appointments/events → call search_messages with query="meeting" or relevant keywords
-6. When user asks about messages on a specific date → use search_messages_by_date
-7. When user asks "summarize" with no specific contact → use summarize_conversation with current contact
-8. When user says "unblock" → call unblock_contact with sourceContact and sourcePhone
-9. If no tool matches, analyze the conversation or answer the question
+1. ALWAYS include userId: "${userId}" in tool calls
+2. For searches about this contact, use contactPhone: "${contactPhone}"
+3. For transfers FROM this contact, use sourcePhone: "${contactPhone}", sourceContact: "${contactName}"
+4. When asked about meetings/appointments → use search_messages with relevant keywords
+5. When asked about specific dates → use search_messages_by_date
 
-=== CONVERSATION HISTORY (IMPORTANT - READ THIS) ===
+=== CONVERSATION HISTORY ===
 ${conversationContext || "No history available."}`;
 
-    const response = await llmWithTools.invoke([
+    const response = await llmWithInboxTools.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(message),
     ]);
@@ -2720,7 +2722,7 @@ ${conversationContext || "No history available."}`;
       for (const toolCall of response.tool_calls) {
         console.log(`Executing tool: ${toolCall.name}`, toolCall.args);
         
-        const selectedTool = toolMap[toolCall.name];
+        const selectedTool = inboxToolMap[toolCall.name];
         if (selectedTool) {
           try {
             const result = await selectedTool.invoke(toolCall.args);
@@ -3088,7 +3090,7 @@ const executeSendMessageTool = tool(
       const authToken = twilioAccount.authToken;
       
       if (!accountSid || !authToken) {
-        return "Twilio credentials not properly configured.";
+        return "Comsierge phone service not properly configured. Please contact support.";
       }
       
       console.log("Found Twilio account:", accountSid.slice(0, 8) + "...");
@@ -3304,23 +3306,28 @@ async function sendWelcomeSMS(user, toPhoneNumber) {
     }
     
     const userName = user.name || "there";
-    const welcomeMessage = `Comsierge Activated — Your AI Phone Number Is Now Live
+    const comsiergeNumber = user.phoneNumber;
+    const welcomeMessage = `Comsierge Activated — Your AI Phone Number Is Live
 
-Hi ${userName}, your Comsierge number is fully active.
+Hi ${userName}, your Comsierge number ${comsiergeNumber} is now active.
 
-From now on, your calls and texts are intelligently filtered, summarized, and routed — no app or Wi-Fi needed.
+I intelligently filter, summarize, and route your calls and texts — no app or Wi-Fi needed.
 
-Here's what I handle for you:
+What I do for you:
 • Filter calls and screen messages
-• Apply your rules (like forwarding bank texts or blocking spam)
-• Translate and summarize, and respond as needed
-• Initiate calls from your Comsierge number
+• Apply your rules (like forwarding or blocking)
+• Translate, summarize, and respond as needed
+• Make calls from your Comsierge number
+• Send reminders (e.g., "text me in 30 seconds")
+• Transfer calls or messages as you direct
 
-I help prevent spam and keep you updated on your upcoming schedule.
+I help block spam and keep you on schedule.
 
-You stay in control. Your phone, your way.
+You're in control — your phone, your way.
 
-Let me know if you want to call someone, set up new rules, or silence distractions.
+Use @comsierge before your commands to reach me.
+
+Need to call someone, set rules, or silence distractions? Just ask.
 
 I've got it covered.
 — Comsierge
@@ -4430,7 +4437,7 @@ const makeAICallTool = tool(
   },
   {
     name: "make_ai_call",
-    description: "Make an autonomous AI call where the AI has a conversation on behalf of the user. Use when user says: 'have AI call X', 'AI call X and ask about Y', 'call X and check on them', 'AI should call X'. The AI will make the call, follow the objective/script, and report back with a summary.",
+    description: "Make an autonomous AI call to a THIRD PARTY (not the user themselves). Use when user says: 'call +1234567890', 'call John', 'call X in 30 seconds', 'have AI call X', 'call X and tell him Y', 'call X and ask about Y'. The AI will make the call on behalf of the user. If user specifies a time like 'in 30 seconds' or 'in 5 min', use scheduledAt. DO NOT confuse with reminders - 'call ME' = reminder, 'call [NAME/PHONE]' = make_ai_call.",
     schema: z.object({
       userId: z.string().describe("User ID"),
       contactName: z.string().optional().describe("Contact name to call"),
@@ -4979,7 +4986,7 @@ const createReminderTool = tool(
   },
   {
     name: "create_reminder",
-    description: "Schedule a reminder that will CALL or TEXT the user at the specified time. Use for: 'call me in 30 seconds', 'text me in 5 min', 'remind me to...', 'don't let me forget'. Use type='call' when user says 'call me', use type='message' when user says 'text me' or just 'remind me'.",
+    description: "Schedule a reminder that will CALL or TEXT THE USER (not a third party) at the specified time. ONLY use for: 'call ME in 30 seconds', 'text ME in 5 min', 'remind ME to...', 'don't let me forget'. The keyword is 'me' - user wants to be reminded. Use type='call' when user says 'call me', use type='message' when user says 'text me' or just 'remind me'. DO NOT USE THIS if user says 'call [NAME]' or 'call [PHONE]' - that's make_ai_call instead.",
     schema: z.object({
       userId: z.string().describe("User ID"),
       title: z.string().describe("What to remind about - the message content"),
@@ -6099,6 +6106,22 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
     const trimmedMessage = (message || "").trim();
     const lowerMessage = trimmedMessage.toLowerCase();
 
+    // Fast-path: Clear AI chat thread requests
+    // User wants to clear THIS chat (with the AI), not a conversation with a contact
+    const isClearChatRequest = (
+      (lowerMessage.includes("clear") && (lowerMessage.includes("chat") || lowerMessage.includes("thread") || lowerMessage.includes("history"))) ||
+      (lowerMessage.includes("reset") && (lowerMessage.includes("chat") || lowerMessage.includes("conversation"))) ||
+      lowerMessage === "clear" ||
+      lowerMessage.includes("clear this") ||
+      lowerMessage.includes("start over") ||
+      lowerMessage.includes("new chat") ||
+      lowerMessage.includes("fresh start")
+    );
+    
+    if (isClearChatRequest) {
+      return "To clear this AI chat, click the refresh/reset icon at the top of the chat panel. That will start a fresh conversation with me.";
+    }
+
     // Fast-path: last message requests (fixes "show me his last message" loops)
     if (lowerMessage.includes("last message")) {
       const fromMatch = trimmedMessage.match(/last message\s+from\s+(.+)$/i);
@@ -6376,7 +6399,7 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
           
           if (!twilioAccount || !twilioAccount.accountSid || !twilioAccount.authToken) {
             console.log("No Twilio account found for phone:", user.phoneNumber);
-            return "Twilio not configured for your phone number. Please contact support.";
+            return "Phone service not configured for your number. Please contact support.";
           }
           
           console.log("Found Twilio account:", twilioAccount.accountSid.slice(0, 8) + "...");
@@ -6764,9 +6787,13 @@ NOTE: Auto-reply rules with conditions like "if X asks Y" automatically use Conv
 - "send me a test message" -> get_phone_info then send_message to forwarding number
 - "yes" after "Ready to send..." -> execute_send_message
 
-=== AI CALLS ===
+=== AI CALLS (CALLING THIRD PARTIES) ===
+- "call +13828804321" -> make_ai_call with contactPhone="+13828804321" (AI calls them NOW)
+- "call +13828804321 in 30 seconds" -> make_ai_call with contactPhone="+13828804321", scheduledAt="in 30 seconds"
+- "call John and tell him to drop files" -> make_ai_call with contactName="John", objective="Tell him to drop files"
 - "AI call George and ask about his day" -> make_ai_call
-- "have AI check on mom tomorrow at 3pm" -> make_ai_call with scheduledAt
+- "have AI check on mom tomorrow at 3pm" -> make_ai_call with scheduledAt="tomorrow at 3pm"
+NOTE: "call [NAME]" or "call [PHONE]" = make_ai_call (AI calls the third party)
 
 === TRANSLATION ===
 - "translate hello to Spanish" -> translate_text
@@ -6778,9 +6805,16 @@ NOTE: Auto-reply rules with conditions like "if X asks Y" automatically use Conv
 - "archive this chat" -> archive_conversation
 - "delete this conversation" -> delete_conversation
 
-=== REMINDERS ===
+=== REMINDERS (CALLING THE USER BACK) ===
+- "call ME in 30 seconds" -> create_reminder with type="call" (Comsierge calls the USER)
 - "remind me tomorrow at 2 about the meeting" -> create_reminder
 - "remind me to reply to Mike in 30 minutes" -> create_reminder
+- "text ME in 5 minutes" -> create_reminder with type="message"
+NOTE: "call ME" = reminder (user wants to be called), "call [NAME/PHONE]" = make_ai_call
+
+CRITICAL DISTINCTION:
+- "call ME" or "remind ME" -> create_reminder (Comsierge notifies the user)
+- "call [NAME]" or "call [PHONE]" or "call John" -> make_ai_call (AI calls a third party on user's behalf)
 
 IMPORTANT CONTEXT: This is a PHONE/SMS management app. When user says "routing number" they mean their PHONE forwarding/routing number, not something finance-related. Use get_phone_info for any routing/forwarding questions.
 

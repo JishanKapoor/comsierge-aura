@@ -8,6 +8,7 @@ import ConversationState from "../models/ConversationState.js";
 import CallRecord from "../models/CallRecord.js";
 import Media from "../models/Media.js";
 import AICall from "../models/AICall.js";
+import SupportTicket from "../models/SupportTicket.js";
 
 /**
  * Deletes all user-specific data when a phone number is unassigned.
@@ -36,6 +37,7 @@ export async function cleanupUserData(userId) {
     callRecords: 0,
     media: 0,
     aiCalls: 0,
+    supportTickets: 0,
   };
 
   try {
@@ -78,6 +80,10 @@ export async function cleanupUserData(userId) {
     // Delete all AI calls
     const aiCallsResult = await AICall.deleteMany({ userId });
     results.aiCalls = aiCallsResult.deletedCount;
+
+    // Delete all support tickets
+    const ticketsResult = await SupportTicket.deleteMany({ userId });
+    results.supportTickets = ticketsResult.deletedCount;
 
     const totalDeleted = Object.values(results).reduce((a, b) => a + b, 0);
     console.log(`✅ Cleanup complete for user ${userId}. Deleted ${totalDeleted} records:`, results);

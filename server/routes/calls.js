@@ -464,7 +464,7 @@ router.get("/:id/voicemail", async (req, res) => {
     const authToken = twilioAccount?.authToken || process.env.TWILIO_AUTH_TOKEN;
 
     if (!accountSid || !authToken) {
-      return res.status(500).json({ success: false, message: "Twilio not configured" });
+      return res.status(500).json({ success: false, message: "Phone service not configured" });
     }
 
     // Fetch the recording from Twilio with authentication

@@ -755,7 +755,7 @@ router.post("/verify-credentials", async (req, res) => {
     } catch (error) {
       return res.status(400).json({
         success: false,
-        message: "Failed to initialize Twilio client. Check your credentials.",
+        message: "Failed to initialize phone service. Please contact support.",
       });
     }
 
@@ -767,7 +767,7 @@ router.post("/verify-credentials", async (req, res) => {
       console.error("Twilio auth error:", error.message);
       return res.status(401).json({
         success: false,
-        message: "Invalid Twilio credentials. Please check your Account SID and Auth Token.",
+        message: "Phone service configuration error. Please contact support.",
         error: error.message,
       });
     }
@@ -791,7 +791,7 @@ router.post("/verify-credentials", async (req, res) => {
           const availableNumbers = incomingPhoneNumbers.map((p) => p.phoneNumber);
           return res.status(400).json({
             success: false,
-            message: `Phone number ${cleanPhone} not found in this Twilio account`,
+            message: `Phone number ${cleanPhone} not found. Please contact support.`,
             availableNumbers: availableNumbers.length > 0 ? availableNumbers : "No phone numbers in this account",
           });
         }
@@ -833,7 +833,7 @@ router.post("/verify-credentials", async (req, res) => {
     // Return account info if no phone number provided
     res.json({
       success: true,
-      message: "Twilio credentials verified successfully",
+      message: "Phone service verified successfully",
       data: {
         account: {
           sid: accountInfo.sid,
@@ -979,7 +979,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Twilio credentials not found. Add a Twilio account in admin panel or set env vars.",
+          "Phone service not configured. Please contact support.",
       });
     }
 
@@ -994,7 +994,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         console.error(`Phone ${cleanFrom} not found in Twilio account. Available: ${numbers.map(n => n.phoneNumber).join(", ")}`);
         return res.status(400).json({
           success: false,
-          message: `Phone number ${cleanFrom} is not registered in the Twilio account. Contact admin.`,
+          message: `Phone number ${cleanFrom} is not available. Please contact support.`,
         });
       }
       
@@ -1123,7 +1123,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         console.error("❌ Twilio error details:", twilioError.moreInfo);
         return res.status(400).json({
           success: false,
-          message: `Twilio error: ${twilioError.message}`,
+          message: "Message delivery failed. Please try again or contact support.",
           code: twilioError.code,
           moreInfo: twilioError.moreInfo,
         });
@@ -1159,7 +1159,7 @@ router.post("/send-sms", authMiddleware, async (req, res) => {
         // Return error to client so they know persistence failed
         return res.status(500).json({
           success: false,
-          message: "Message sent via Twilio but failed to save to database history.",
+          message: "Message sent but failed to save to history.",
           error: dbError.message,
           details: dbError.errors,
           data: {
@@ -4427,7 +4427,7 @@ router.post("/token", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Make sure your phone number is linked to a Twilio account.",
+        message: "Phone service not configured for your number. Please contact support.",
       });
     }
 
@@ -4569,7 +4569,7 @@ router.post("/conference/add-participant", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found"
+        message: "Phone service not configured. Please contact support."
       });
     }
 
@@ -4664,7 +4664,7 @@ router.post("/make-call", authMiddleware, async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Twilio credentials not found. Add a Twilio account in admin panel or set env vars.",
+          "Phone service not configured. Please contact support.",
       });
     }
 
@@ -4680,7 +4680,7 @@ router.post("/make-call", authMiddleware, async (req, res) => {
         console.error(`Phone ${cleanFrom} not found in Twilio account. Available: ${numbers.map(n => n.phoneNumber).join(", ")}`);
         return res.status(400).json({
           success: false,
-          message: `Phone number ${cleanFrom} is not registered in the Twilio account. Contact admin.`,
+          message: `Phone number ${cleanFrom} is not available. Please contact support.`,
         });
       }
       
@@ -4954,7 +4954,7 @@ router.post("/end-call", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Contact admin.",
+        message: "Phone service not configured. Please contact support.",
       });
     }
 
@@ -5061,7 +5061,7 @@ router.post("/hold-call", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Contact admin.",
+        message: "Phone service not configured. Please contact support.",
       });
     }
 
@@ -5122,7 +5122,7 @@ router.post("/transfer-call", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Contact admin.",
+        message: "Phone service not configured. Please contact support.",
       });
     }
 
@@ -5245,7 +5245,7 @@ router.post("/send-dtmf", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Contact admin.",
+        message: "Phone service not configured. Please contact support.",
       });
     }
 
@@ -5414,7 +5414,7 @@ router.post("/record-call", authMiddleware, async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Twilio credentials not found. Contact admin.",
+        message: "Phone service not configured. Please contact support.",
       });
     }
 
@@ -5488,7 +5488,7 @@ router.post("/call-status", async (req, res) => {
     if (!accountSid || !authToken) {
       return res.status(400).json({
         success: false,
-        message: "Could not resolve Twilio credentials",
+        message: "Phone service not configured. Please contact support.",
       });
     }
     

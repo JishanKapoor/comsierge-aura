@@ -60,7 +60,7 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
     } catch (e) {
       return res.status(400).json({
         success: false,
-        message: "Invalid Twilio credentials",
+        message: "Invalid phone service credentials",
         error: e.message,
       });
     }
@@ -87,7 +87,7 @@ router.post("/twilio-accounts", authMiddleware, adminMiddleware, async (req, res
     if (!match) {
       return res.status(400).json({
         success: false,
-        message: "Phone number not found in this Twilio account",
+        message: "Phone number not found in this account",
       });
     }
 
@@ -156,7 +156,7 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
     if (!account) {
       return res.status(404).json({
         success: false,
-        message: "Twilio account not found",
+        message: "Phone service account not found",
       });
     }
 
@@ -175,7 +175,7 @@ router.delete("/twilio-accounts/:id", authMiddleware, adminMiddleware, async (re
 
     res.json({
       success: true,
-      message: "Twilio account removed and all user data cleaned up",
+      message: "Phone service account removed and all user data cleaned up",
     });
   } catch (error) {
     console.error("Delete Twilio account error:", error);
@@ -198,7 +198,7 @@ router.delete("/twilio-accounts/by-sid/:accountSid", authMiddleware, adminMiddle
     if (!account) {
       return res.status(404).json({
         success: false,
-        message: "Twilio account not found",
+        message: "Phone service account not found",
       });
     }
 
@@ -216,7 +216,7 @@ router.delete("/twilio-accounts/by-sid/:accountSid", authMiddleware, adminMiddle
 
     res.json({
       success: true,
-      message: "Twilio account removed and all user data cleaned up",
+      message: "Phone service account removed and all user data cleaned up",
     });
   } catch (error) {
     console.error("Delete Twilio account by SID error:", error);
@@ -241,7 +241,7 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
     if (!account) {
       return res.status(404).json({
         success: false,
-        message: "Twilio account not found",
+        message: "Phone service account not found",
       });
     }
 
@@ -336,7 +336,7 @@ router.put("/users/:id/assign-phone", authMiddleware, adminMiddleware, async (re
       if (!account) {
         return res.status(400).json({
           success: false,
-          message: "Phone number not found in any Twilio account",
+          message: "Phone number not found in any account",
         });
       }
 

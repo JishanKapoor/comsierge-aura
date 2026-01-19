@@ -50,11 +50,11 @@ const HeroSection = () => {
         </p>
 
         <div className="mt-8 sm:mt-10 flex items-center justify-center gap-4">
-          <a href="mailto:jishan.kapoor@mail.utoronto.ca" className="pill-button group">
+          <a href="/auth?signup=true" className="pill-button group">
             <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-background flex items-center justify-center">
               <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-foreground transition-transform duration-300 group-hover:translate-x-0.5" />
             </span>
-            <span className="text-sm sm:text-base">Get in touch</span>
+            <span className="text-sm sm:text-base">Get started</span>
           </a>
         </div>
       </div>

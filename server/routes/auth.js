@@ -52,23 +52,28 @@ async function sendWelcomeSMS(user, toPhoneNumber) {
     }
     
     const userName = user.name || "there";
-    const welcomeMessage = `Comsierge Activated — Your AI Phone Number Is Now Live
+    const comsiergeNumber = user.phoneNumber;
+    const welcomeMessage = `Comsierge Activated — Your AI Phone Number Is Live
 
-Hi ${userName}, your Comsierge number is fully active.
+Hi ${userName}, your Comsierge number ${comsiergeNumber} is now active.
 
-From now on, your calls and texts are intelligently filtered, summarized, and routed — no app or Wi-Fi needed.
+I intelligently filter, summarize, and route your calls and texts — no app or Wi-Fi needed.
 
-Here's what I handle for you:
+What I do for you:
 • Filter calls and screen messages
-• Apply your rules (like forwarding bank texts or blocking spam)
-• Translate and summarize, and respond as needed
-• Initiate calls from your Comsierge number
+• Apply your rules (like forwarding or blocking)
+• Translate, summarize, and respond as needed
+• Make calls from your Comsierge number
+• Send reminders (e.g., "text me in 30 seconds")
+• Transfer calls or messages as you direct
 
-I help prevent spam and keep you updated on your upcoming schedule.
+I help block spam and keep you on schedule.
 
-You stay in control. Your phone, your way.
+You're in control — your phone, your way.
 
-Let me know if you want to call someone, set up new rules, or silence distractions.
+Use @comsierge before your commands to reach me.
+
+Need to call someone, set rules, or silence distractions? Just ask.
 
 I've got it covered.
 — Comsierge
@@ -631,7 +636,7 @@ router.put("/me/phone", async (req, res) => {
 
     const account = await TwilioAccount.findOne({ phoneNumbers: phoneNumber }).select("_id");
     if (!account) {
-      return res.status(400).json({ success: false, message: "Phone number not found in any Twilio account" });
+      return res.status(400).json({ success: false, message: "Phone number not available. Please contact support." });
     }
 
     const existingUser = await User.findOne({ phoneNumber, _id: { $ne: user._id } }).select("_id");

@@ -110,6 +110,9 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const [receiveLanguage, setReceiveLanguage] = useState<string>(() => persistedOnLoad.current?.receiveLanguage ?? "es");
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
 
+  // Loading state - prevents flickering by not rendering options until backend data is loaded
+  const [isLoadingRouting, setIsLoadingRouting] = useState(true);
+
   type RoutingSnapshot = {
     forwardCalls: boolean;
     forwardMessages: boolean;
@@ -126,8 +129,11 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
   const lastLocalChangeRef = useRef(0);
   const refreshTimerRef = useRef<number | null>(null);
   const isSavingRoutingRef = useRef(false);
+  const externalRefreshSeqRef = useRef(0);
 
   const uniq = (arr: string[]) => Array.from(new Set(arr.map((t) => t?.trim()).filter(Boolean) as string[]));
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
   const markLocalChange = () => {
     lastLocalChangeRef.current = Date.now();
@@ -309,7 +315,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     return raw || "your forwarding number";
   };
 
-  const loadRoutingFromBackend = async (opts?: { force?: boolean }) => {
+  const loadRoutingFromBackend = async (opts?: { force?: boolean; initialLoad?: boolean }) => {
     try {
       const rules = await fetchRules();
 
@@ -428,6 +434,41 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       }
     } catch (e) {
       console.error("Failed to load routing rules from backend:", e);
+    } finally {
+      // Mark loading complete after initial load
+      if (opts?.initialLoad) {
+        setIsLoadingRouting(false);
+      }
+    }
+  };
+
+  // External changes (e.g., AI creating routing rules) can arrive in multiple quick writes.
+  // We hide the UI while we do a short "settle" window so the user never sees intermediate states.
+  const refreshRoutingAfterExternalChange = async () => {
+    const seq = ++externalRefreshSeqRef.current;
+
+    // If the user is actively interacting or we're saving, don't blank the UI.
+    const userBusy = isSavingRoutingRef.current || Date.now() - lastLocalChangeRef.current < 800;
+    if (userBusy) {
+      await loadRoutingFromBackend();
+      return;
+    }
+
+    setIsLoadingRouting(true);
+    try {
+      // First read (might still show the previous rule depending on backend timing)
+      await loadRoutingFromBackend({ force: true });
+
+      // Wait for backend to settle (AI often creates/updates more than one rule)
+      await sleep(1200);
+
+      // Second read - should reflect the final, stable state
+      await loadRoutingFromBackend({ force: true });
+    } finally {
+      // Only clear loading if no newer refresh started.
+      if (externalRefreshSeqRef.current === seq) {
+        setIsLoadingRouting(false);
+      }
     }
   };
 
@@ -435,7 +476,7 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     // We hydrate state synchronously in useState initializers (prevents UI flicker).
     // After first paint, fetch backend source-of-truth and reconcile.
     lastSyncedRef.current = getSnapshot();
-    loadRoutingFromBackend({ force: true });
+    loadRoutingFromBackend({ force: true, initialLoad: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -445,9 +486,10 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       if (refreshTimerRef.current) {
         window.clearTimeout(refreshTimerRef.current);
       }
+      // Debounce and coalesce multiple rule writes into one settled refresh.
       refreshTimerRef.current = window.setTimeout(() => {
-        loadRoutingFromBackend();
-      }, 200);
+        void refreshRoutingAfterExternalChange();
+      }, 250);
     });
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -717,26 +759,39 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <PhoneCall className="w-4 h-4 text-gray-600" />
             <h3 className="font-medium text-gray-900 text-sm">Calls</h3>
           </div>
-          <button
-            onClick={() => {
-              markLocalChange();
-              setForwardCalls(!forwardCalls);
-            }}
-            className={cn(
-              "relative w-10 h-5 rounded-full transition-colors",
-              forwardCalls ? "bg-indigo-500" : "bg-gray-300"
-            )}
-          >
-            <span
+          {isLoadingRouting ? (
+            <div className="w-10 h-5 bg-gray-200 rounded-full animate-pulse" />
+          ) : (
+            <button
+              onClick={() => {
+                markLocalChange();
+                setForwardCalls(!forwardCalls);
+              }}
               className={cn(
-                "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
-                forwardCalls ? "left-5" : "left-0.5"
+                "relative w-10 h-5 rounded-full transition-colors",
+                forwardCalls ? "bg-indigo-500" : "bg-gray-300"
               )}
-            />
-          </button>
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                  forwardCalls ? "left-5" : "left-0.5"
+                )}
+              />
+            </button>
+          )}
         </div>
 
-        {forwardCalls && (
+        {isLoadingRouting ? (
+          <div className="space-y-2">
+            <div className="h-3 w-48 bg-gray-100 rounded animate-pulse" />
+            <div className="space-y-1.5">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-14 bg-gray-50 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : forwardCalls && (
           <>
             <p className="text-xs text-gray-500">Which calls should ring your phone?</p>
 
@@ -831,26 +886,39 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
             <MessageSquare className="w-4 h-4 text-gray-600" />
             <h3 className="font-medium text-gray-900 text-sm">Messages</h3>
           </div>
-          <button
-            onClick={() => {
-              markLocalChange();
-              setForwardMessages(!forwardMessages);
-            }}
-            className={cn(
-              "relative w-10 h-5 rounded-full transition-colors",
-              forwardMessages ? "bg-indigo-500" : "bg-gray-300"
-            )}
-          >
-            <span
+          {isLoadingRouting ? (
+            <div className="w-10 h-5 bg-gray-200 rounded-full animate-pulse" />
+          ) : (
+            <button
+              onClick={() => {
+                markLocalChange();
+                setForwardMessages(!forwardMessages);
+              }}
               className={cn(
-                "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
-                forwardMessages ? "left-5" : "left-0.5"
+                "relative w-10 h-5 rounded-full transition-colors",
+                forwardMessages ? "bg-indigo-500" : "bg-gray-300"
               )}
-            />
-          </button>
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow-sm",
+                  forwardMessages ? "left-5" : "left-0.5"
+                )}
+              />
+            </button>
+          )}
         </div>
 
-        {forwardMessages && (
+        {isLoadingRouting ? (
+          <div className="space-y-2">
+            <div className="h-3 w-48 bg-gray-100 rounded animate-pulse" />
+            <div className="space-y-1.5">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-12 bg-gray-50 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
+        ) : forwardMessages && (
           <>
             <p className="text-xs text-gray-500">Which messages should notify you?</p>
 
