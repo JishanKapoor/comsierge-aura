@@ -4069,6 +4069,7 @@ const setRoutingPreferencesTool = tool(
         "all": "all calls will ring",
         "favorites": "only favorites will ring",
         "saved": "only saved contacts will ring",
+        "tags": "only tagged contacts will ring",
         "none": "calls won't ring"
       };
       
@@ -4172,7 +4173,13 @@ const setRoutingPreferencesTool = tool(
       
       // Build natural conversational response
       const parts = [];
-      if (callsMode) parts.push(callsDesc[callsMode]);
+      if (callsMode) {
+        if (callsMode === "tags" && callTags && callTags.length > 0) {
+          parts.push(`only ${callTags.join(", ")} contacts will ring`);
+        } else {
+          parts.push(callsDesc[callsMode]);
+        }
+      }
       if (messagesMode) parts.push(messagesDesc[messagesMode]);
 
       const unchangedNote = (!callsMode && messagesMode)
