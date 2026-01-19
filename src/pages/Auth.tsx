@@ -93,7 +93,8 @@ const Auth = () => {
   // Allow deep-linking into signup/login
   useEffect(() => {
     const mode = searchParams.get("mode");
-    if (mode === "signup") {
+    const signupParam = searchParams.get("signup");
+    if (mode === "signup" || signupParam === "true") {
       setView("signup");
     } else if (mode === "login") {
       setView("login");
