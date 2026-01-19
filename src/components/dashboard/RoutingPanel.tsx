@@ -313,11 +313,25 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
     try {
       const rules = await fetchRules();
 
+      const pickNewest = <T extends { createdAtISO?: string }>(items: T[]): T | undefined => {
+        if (!items.length) return undefined;
+        return items.reduce((best, cur) => {
+          const b = best?.createdAtISO ? new Date(best.createdAtISO).getTime() : 0;
+          const c = cur?.createdAtISO ? new Date(cur.createdAtISO).getTime() : 0;
+          return c > b ? cur : best;
+        }, items[0]);
+      };
+
+      const pickNewestActiveOrNewest = <T extends { active?: boolean; createdAtISO?: string }>(items: T[]): T | undefined => {
+        const active = items.filter((r) => Boolean(r.active));
+        return pickNewest(active) ?? pickNewest(items);
+      };
+
       const forwardRules = rules.filter((r) => r.type === "forward");
       const notifyRules = rules.filter((r) => r.type === "message-notify");
 
-      const callRule = forwardRules.find((r) => r.active) ?? forwardRules[0];
-      const msgRule = notifyRules.find((r) => r.active) ?? notifyRules[0];
+      const callRule = pickNewestActiveOrNewest(forwardRules);
+      const msgRule = pickNewestActiveOrNewest(notifyRules);
 
       const persisted =
         safeParseJson<Record<string, any>>(localStorage.getItem(STORAGE_KEY)) || {};
@@ -327,9 +341,11 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       let nextSelectedCallTags: string[] = [];
 
       if (callRule) {
-        nextForwardCalls = Boolean(callRule.active);
-        persisted.forwardCalls = nextForwardCalls;
         const mode = callRule.conditions?.mode || "all";
+        // DND-style mute for calls is represented as mode="none" (even if rule is active).
+        nextForwardCalls = mode !== "none" && Boolean(callRule.active);
+        persisted.forwardCalls = nextForwardCalls;
+
         const modeToFilter: Record<string, CallFilter> = {
           all: "all",
           favorites: "favorites",
@@ -351,10 +367,25 @@ const RoutingPanel = ({ phoneNumber }: RoutingPanelProps) => {
       let nextReceiveLanguage = "es";
 
       if (msgRule) {
-        nextForwardMessages = Boolean(msgRule.active);
+        let priorityFilter = (msgRule.conditions?.priorityFilter || "all") as string;
+        // Normalize older default values.
+        const normalized = priorityFilter
+          .toLowerCase()
+          .split("")
+          .filter((ch) => ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r")
+          .join("");
+        if (normalized === "medium,high" || normalized === "high,medium" || normalized === "mediumhigh" || normalized === "highmedium") {
+          priorityFilter = "important";
+        }
+
+        // DND-style mute for messages is represented as priorityFilter="none" (even if rule is active).
+        nextForwardMessages = priorityFilter !== "none" && Boolean(msgRule.active);
         persisted.forwardMessages = nextForwardMessages;
-        const priorityFilter = msgRule.conditions?.priorityFilter || "all";
-        nextMessageFilter = priorityFilter as MessageFilter;
+
+        if (priorityFilter === "important" || priorityFilter === "urgent" || priorityFilter === "all") {
+          nextMessageFilter = priorityFilter as MessageFilter;
+        }
+
         if (Array.isArray(msgRule.conditions?.notifyTags)) {
           nextSelectedMessageTags = msgRule.conditions.notifyTags;
         }

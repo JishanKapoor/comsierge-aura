@@ -2,6 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
+import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import mongoose from "mongoose";
 import twilio from "twilio";
 import Rule from "../models/Rule.js";
@@ -21,6 +22,112 @@ const llm = new ChatOpenAI({
   temperature: 0.2,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
+
+// ==================== LANGGRAPH: DND PARSING ====================
+
+const DndPreferenceSchema = z.object({
+  // Use null when user explicitly says to keep unchanged or didn't specify.
+  callsMode: z.enum(["all", "favorites", "saved", "tags", "none"]).nullable(),
+  messagesMode: z.enum(["all", "important", "urgent", "none"]).nullable(),
+  callTags: z.array(z.string()).optional(),
+  keepCallsSame: z.boolean().optional().default(false),
+  keepMessagesSame: z.boolean().optional().default(false),
+});
+
+const DndGraphState = Annotation.Root({
+  userId: Annotation(),
+  userReply: Annotation(),
+  scheduleStart: Annotation(),
+  scheduleEnd: Annotation(),
+  parsed: Annotation(),
+  responseText: Annotation(),
+});
+
+const dndPreferenceExtractor = llm.withStructuredOutput(DndPreferenceSchema);
+
+const dndPreferenceGraph = new StateGraph(DndGraphState)
+  .addNode("extract", async (state) => {
+    const scheduleHint = state.scheduleStart && state.scheduleEnd
+      ? `The DND time window is from ${state.scheduleStart} to ${state.scheduleEnd}.`
+      : "No time window was specified.";
+
+    const system = new SystemMessage(
+      "You are a strict parser for Do Not Disturb routing preferences. " +
+        "Extract ONLY the allowed enum values. Do not guess. " +
+        "If the user says to keep calls/messages the same/unchanged, set the corresponding keep flag true and set that mode to null.\n\n" +
+        "Allowed callsMode: all | favorites | saved | tags | none\n" +
+        "Allowed messagesMode: all | important | urgent | none\n\n" +
+        "Mapping guidance:\n" +
+        "- 'no calls', 'don't ring', 'calls to AI' => callsMode='none'\n" +
+        "- 'favorites only' => callsMode='favorites'\n" +
+        "- 'saved contacts'/'contacts only' => callsMode='saved'\n" +
+        "- 'all calls' => callsMode='all'\n" +
+        "- 'no messages', 'mute messages', 'no notifications' => messagesMode='none'\n" +
+        "- 'all messages' => messagesMode='all'\n" +
+        "- 'high + medium', 'no spam' => messagesMode='important'\n" +
+        "- 'urgent only', 'critical only' => messagesMode='urgent'\n\n" +
+        scheduleHint
+    );
+
+    const human = new HumanMessage(
+      `User reply: ${String(state.userReply || "").trim()}\n\nReturn only the structured object.`
+    );
+
+    const parsed = await dndPreferenceExtractor.invoke([system, human]);
+    return { parsed };
+  })
+  .addNode("decide", async (state) => {
+    const parsed = state.parsed || {};
+    const callsMode = parsed.callsMode ?? null;
+    const messagesMode = parsed.messagesMode ?? null;
+    const keepCallsSame = Boolean(parsed.keepCallsSame);
+    const keepMessagesSame = Boolean(parsed.keepMessagesSame);
+
+    const hasActionableChange = Boolean(callsMode || messagesMode);
+
+    // If we couldn't extract anything actionable, ask again.
+    // "keep same" flags are informational; we still need at least one actionable change.
+    if (!hasActionableChange) {
+      const timeInfo = state.scheduleStart && state.scheduleEnd ? ` from ${state.scheduleStart} to ${state.scheduleEnd}` : "";
+      return {
+        responseText:
+          `I’m setting up Do Not Disturb${timeInfo}—what should be allowed? ` +
+          `Tell me your preferences for calls (all, favorites only, saved contacts, or none) ` +
+          `and messages (all, high + medium priority only, urgent only, or none).`,
+      };
+    }
+
+    // Otherwise, proceed (partial is OK; unchanged dimensions stay unchanged).
+    return { responseText: null };
+  })
+  .addNode("apply", async (state) => {
+    if (state.responseText) return {};
+
+    const parsed = state.parsed || {};
+    const schedule = state.scheduleStart && state.scheduleEnd
+      ? { startTime: state.scheduleStart, endTime: state.scheduleEnd }
+      : null;
+
+    const result = await setRoutingPreferencesTool.invoke({
+      userId: state.userId,
+      callsMode: parsed.callsMode || undefined,
+      callTags: parsed.callTags || undefined,
+      messagesMode: parsed.messagesMode || undefined,
+      schedule,
+      isDefault: !schedule,
+      origin: "dnd",
+    });
+
+    return { responseText: result };
+  })
+  .addEdge(START, "extract")
+  .addEdge("extract", "decide")
+  .addConditionalEdges(
+    "decide",
+    (state) => (state.responseText ? END : "apply")
+  )
+  .addEdge("apply", END)
+  .compile();
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -3805,12 +3912,9 @@ const disableAllRulesTool = tool(
 // Tool: Set Routing Preferences (Personal Routing)
 // Matches UI: Calls (all/favorites/saved/tags), Messages (all/important/urgent/none)
 const setRoutingPreferencesTool = tool(
-  async ({ userId, callsMode, callTags, messagesMode, schedule, isDefault }) => {
+  async ({ userId, callsMode, callTags, messagesMode, schedule, isDefault, origin }) => {
     try {
-      // If no schedule is provided, this IS a default routing setting
-      const effectiveIsDefault = isDefault !== false && !schedule;
-      
-      console.log("Setting routing preferences:", { userId, callsMode, messagesMode, schedule, isDefault, effectiveIsDefault });
+      const isDnd = origin === "dnd";
       
       const user = await User.findById(userId);
       if (!user) return "User not found.";
@@ -3853,43 +3957,95 @@ const setRoutingPreferencesTool = tool(
           scheduleInfo = ` from ${schedule.startTime} to ${schedule.endTime}`;
         }
       }
+
+      // If no (parsable) schedule is provided, this IS a default routing setting.
+      const effectiveIsDefault = isDefault !== false && !scheduleObj;
+
+      console.log("Setting routing preferences:", { userId, callsMode, messagesMode, schedule, isDefault, effectiveIsDefault, origin });
       
-      // If this is a default rule, only delete rules for what's being changed
-      // This preserves context - if user only mentions calls, keep their message settings
-      if (effectiveIsDefault) {
-        const typesToDelete = [];
-        if (callsMode) typesToDelete.push("forward");
-        if (messagesMode) typesToDelete.push("message-notify");
-        
-        if (typesToDelete.length > 0) {
-          // Delete non-scheduled rules (default routing rules)
-          // Check both schedule locations: top-level 'schedule' and 'conditions.schedule'
-          // Default rules created by GET /api/rules have schedule: { mode: "always" } at top level
-          // Rules created by AI may have conditions.schedule instead
-          const deleteQuery = { 
-            userId, 
-            type: { $in: typesToDelete },
-            // Match rules that don't have time-based scheduling (either location)
-            $and: [
-              { $or: [
-                { "conditions.schedule": { $exists: false } },
-                { "conditions.schedule": null },
-                { "conditions.schedule.start": { $exists: false } }
-              ]},
-              { $or: [
-                { "schedule.mode": "always" },
-                { "schedule": { $exists: false } },
-                { "schedule": null }
-              ]}
-            ]
+      const typesToManage = [];
+      if (callsMode) typesToManage.push("forward");
+      if (messagesMode) typesToManage.push("message-notify");
+
+      const defaultRuleScope = {
+        // Match rules that don't have time-based scheduling (either location)
+        $and: [
+          {
+            $or: [
+              { "conditions.schedule": { $exists: false } },
+              { "conditions.schedule": null },
+              { "conditions.schedule.start": { $exists: false } },
+            ],
+          },
+          {
+            $or: [
+              { "schedule.mode": "always" },
+              { "schedule": { $exists: false } },
+              { "schedule": null },
+            ],
+          },
+        ],
+      };
+
+      // Default behavior (non-DND): replace the existing default routing rules for the types being changed.
+      // DND behavior: do NOT delete prior routing; instead, deactivate existing rules and create DND-tagged rules.
+      if (typesToManage.length > 0) {
+        if (effectiveIsDefault && !isDnd) {
+          const deleteQuery = {
+            userId,
+            type: { $in: typesToManage },
+            ...defaultRuleScope,
           };
           const deleted = await Rule.deleteMany(deleteQuery);
-          console.log(`Deleted ${deleted.deletedCount} existing ${typesToDelete.join("/")} rules`);
+          console.log(`Deleted ${deleted.deletedCount} existing ${typesToManage.join("/")} rules`);
+        }
+
+        if (isDnd) {
+          // Remove any prior DND routing rules for the same scope, then deactivate non-DND rules so we can restore later.
+          const dndBaseQuery = {
+            userId,
+            type: { $in: typesToManage },
+            "conditions.dnd": true,
+          };
+
+          if (scheduleObj) {
+            await Rule.deleteMany({
+              ...dndBaseQuery,
+              "conditions.schedule.start": scheduleObj.start,
+              "conditions.schedule.end": scheduleObj.end,
+            });
+
+            await Rule.updateMany(
+              {
+                userId,
+                type: { $in: typesToManage },
+                active: true,
+                "conditions.dnd": { $ne: true },
+                "conditions.schedule.start": scheduleObj.start,
+                "conditions.schedule.end": scheduleObj.end,
+              },
+              { $set: { active: false } }
+            );
+          } else {
+            await Rule.deleteMany({ ...dndBaseQuery, ...defaultRuleScope });
+
+            await Rule.updateMany(
+              {
+                userId,
+                type: { $in: typesToManage },
+                active: true,
+                "conditions.dnd": { $ne: true },
+                ...defaultRuleScope,
+              },
+              { $set: { active: false } }
+            );
+          }
         }
       }
       
-      // If scheduled, only delete conflicting scheduled rules for the types being set
-      if (scheduleObj) {
+      // If scheduled (non-DND), delete conflicting scheduled rules for the types being set.
+      // For DND, we deactivate existing rules so they can be restored.
+      if (scheduleObj && !isDnd) {
         const typesToDelete = [];
         if (callsMode) typesToDelete.push("forward");
         if (messagesMode) typesToDelete.push("message-notify");
@@ -3911,7 +4067,7 @@ const setRoutingPreferencesTool = tool(
         "all": "all calls will ring",
         "favorites": "only favorites will ring",
         "saved": "only saved contacts will ring",
-        "none": "calls go straight to AI"
+        "none": "calls won't ring"
       };
       
       const messagesDesc = {
@@ -3950,13 +4106,17 @@ const setRoutingPreferencesTool = tool(
             break;
         }
         
+        const callRulePrefix = isDnd ? "DND: " : "";
+
         if (callsMode !== "none" && forwardingNumber) {
           await Rule.create({
             userId,
             type: "forward",
-            rule: callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+            rule: callRulePrefix + callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
             active: true,
-            conditions: scheduleObj ? { ...callConditions, schedule: scheduleObj } : callConditions,
+            conditions: scheduleObj
+              ? { ...callConditions, schedule: scheduleObj, ...(isDnd ? { dnd: true } : {}) }
+              : { ...callConditions, ...(isDnd ? { dnd: true } : {}) },
             transferDetails: { mode: "calls", contactPhone: forwardingNumber }
           });
         } else if (callsMode === "none") {
@@ -3964,9 +4124,11 @@ const setRoutingPreferencesTool = tool(
           await Rule.create({
             userId,
             type: "forward",
-            rule: callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+            rule: callRulePrefix + callRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
             active: true,
-            conditions: scheduleObj ? { mode: "none", schedule: scheduleObj, destinationLabel: forwardingNumber || "" } : { mode: "none", destinationLabel: forwardingNumber || "" },
+            conditions: scheduleObj
+              ? { mode: "none", schedule: scheduleObj, destinationLabel: forwardingNumber || "", ...(isDnd ? { dnd: true } : {}) }
+              : { mode: "none", destinationLabel: forwardingNumber || "", ...(isDnd ? { dnd: true } : {}) },
             transferDetails: { mode: "calls" }
           });
         }
@@ -3993,14 +4155,15 @@ const setRoutingPreferencesTool = tool(
             break;
         }
         
+        const msgRulePrefix = isDnd ? "DND: " : "";
         await Rule.create({
           userId,
           type: "message-notify",
-          rule: msgRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
+          rule: msgRulePrefix + msgRuleDesc + (scheduleObj ? scheduleInfo : " (default)"),
           active: true,
           conditions: scheduleObj 
-            ? { priorityFilter: messagesMode, schedule: scheduleObj, destinationLabel: forwardingNumber || "" }
-            : { priorityFilter: messagesMode, destinationLabel: forwardingNumber || "" },
+            ? { priorityFilter: messagesMode, schedule: scheduleObj, destinationLabel: forwardingNumber || "", ...(isDnd ? { dnd: true } : {}) }
+            : { priorityFilter: messagesMode, destinationLabel: forwardingNumber || "", ...(isDnd ? { dnd: true } : {}) },
           transferDetails: { mode: "messages" }
         });
       }
@@ -4068,6 +4231,7 @@ IMPORTANT: If user says DND or routing request WITHOUT specifying calls/messages
         .describe("If callsMode=tags, which tags (e.g. ['family', 'work'])"),
       messagesMode: z.enum(["all", "important", "urgent", "none"]).optional()
         .describe("Which messages notify: all, important, urgent, none"),
+      origin: z.enum(["user", "dnd"]).optional().describe("Internal: set to 'dnd' when applying DND routing so it can be reverted"),
       schedule: z.object({
         startTime: z.string().describe("Start time like '8pm', '20:00'"),
         endTime: z.string().describe("End time like '9pm', '21:00'"),
@@ -5977,130 +6141,21 @@ export async function rulesAgentChat(userId, message, chatHistory = [], options 
       }
     }
     
-    // Handle DND clarification response - parse user's calls/messages preferences and execute
+    // Handle DND clarification response via LangGraph + structured output (no regex parsing)
     if (pendingDNDClarification && message.toLowerCase() !== "cancel" && message.toLowerCase() !== "nevermind") {
-      console.log("Handling DND clarification response:", message);
-      const lowerMsg = message.toLowerCase();
+      console.log("Handling DND clarification response (LangGraph):", message);
 
-      // If user explicitly says to keep a dimension unchanged, don't treat that mention
-      // as an intent to modify that dimension (prevents unnecessary clarification loops).
-      const keepCallsSame = (
-        /\b(keep|leave)\s+(my\s+)?calls?\s+(the\s+)?(same|unchanged)\b/i.test(lowerMsg) ||
-        /\b(don'?t|do\s+not)\s+change\s+(my\s+)?calls?\b/i.test(lowerMsg) ||
-        /\bcalls?\s+(unchanged|the\s+same)\b/i.test(lowerMsg)
-      );
-      const keepMessagesSame = (
-        /\b(keep|leave)\s+(my\s+)?(messages?|texts?|sms|notifications?)\s+(the\s+)?(same|unchanged)\b/i.test(lowerMsg) ||
-        /\b(don'?t|do\s+not)\s+change\s+(my\s+)?(messages?|texts?|sms|notifications?)\b/i.test(lowerMsg)
-      );
-      
-      // Detect if user mentions spam filtering (not turning off)
-      const wantsNoSpam = /\bno\s+spam\b/i.test(lowerMsg);
-      const mentionsCalls = /\b(calls?|ring|phone)\b/i.test(lowerMsg);
-      const mentionsMessages = /\b(messages?|texts?|sms|notifications?)\b/i.test(lowerMsg);
-      const mentionsHighPriority = /\b(high\s*priorit|important|urgent|critical)\b/i.test(lowerMsg);
+      const resultState = await dndPreferenceGraph.invoke({
+        userId,
+        userReply: message,
+        scheduleStart: pendingDNDClarification.startTime,
+        scheduleEnd: pendingDNDClarification.endTime,
+      });
 
-      const mentionsCallsForUpdate = mentionsCalls && !keepCallsSame;
-      const mentionsMessagesForUpdate = mentionsMessages && !keepMessagesSame;
-      
-      // Parse calls preference - more permissive patterns
-      let callsMode = null;
-      if (/\b(all\s*call(s|ers)?|every\s*call(er)?|let\s*(all|everyone)\s*(call|ring))\b/i.test(lowerMsg)) {
-        callsMode = "all";
-      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && mentionsCallsForUpdate) {
-        callsMode = "favorites";
-      } else if (/\b(fav(ou?rite)?s?(\s+only)?)\b/i.test(lowerMsg) && !mentionsMessagesForUpdate) {
-        // "favorites only" without specifying calls/messages = calls
-        callsMode = "favorites";
-      } else if (/\b(saved|contacts?\s*only|known)\b/i.test(lowerMsg)) {
-        callsMode = "saved";
-      } else if (/\b(no\s*calls?|block\s*(all\s*)?calls?|don'?t\s*ring|calls?\s*to\s*ai|none.*calls?)\b/i.test(lowerMsg) && !wantsNoSpam) {
-        callsMode = "none";
-      } else if (wantsNoSpam && mentionsCallsForUpdate) {
-        // "no spam calls" = user wants calls filtered, not turned off
-        callsMode = null; // Will trigger clarification
-      } else if (mentionsHighPriority && mentionsCallsForUpdate) {
-        callsMode = "favorites";
-      }
-      
-      // Parse messages preference - more permissive patterns
-      let messagesMode = null;
-      if (/\b(all\s*messages?|every\s*message|all\s*notifications?)\b/i.test(lowerMsg)) {
-        messagesMode = "all";
-      } else if (/\b(imp(ortant)?(\s+only)?)\b/i.test(lowerMsg) && (mentionsMessagesForUpdate || !mentionsCallsForUpdate)) {
-        messagesMode = "important";
-      } else if (/\b(urgent|critical|emergency)(\s+only)?\b/i.test(lowerMsg)) {
-        messagesMode = "urgent";
-      } else if (/\b(high\s*priorit)(\s+only)?\b/i.test(lowerMsg)) {
-        // "high priority" alone or with messages = important
-        messagesMode = "important";
-      } else if (/\b(no\s*messages?|no\s*notification|mute\s*all|none.*messages?)\b/i.test(lowerMsg)) {
-        // "no messages" = turn off message notifications
-        messagesMode = "none";
-      } else if (wantsNoSpam && mentionsMessagesForUpdate) {
-        // "no spam messages" = important (filters out spam)
-        messagesMode = "important";
-      }
+      if (resultState?.responseText) return resultState.responseText;
 
-      // If user says "no spam" without explicitly changing calls, treat it as message filtering.
-      // This matches intent like: "allow no spam (medium + high priority), keep calls the same".
-      if (!messagesMode && wantsNoSpam && !mentionsCallsForUpdate) {
-        messagesMode = "important";
-      }
-
-      // If user said something ambiguous like "no spam calls" without specifying how to filter,
-      // or said "high priority" for both without being specific, ASK for clarification
-      const needsCallsClarification = (wantsNoSpam && mentionsCallsForUpdate && !callsMode) || 
-                   (mentionsHighPriority && mentionsCallsForUpdate && !callsMode);
-      const needsMessagesClarification = mentionsMessagesForUpdate && !messagesMode && !wantsNoSpam;
-      
-      if (needsCallsClarification || needsMessagesClarification) {
-        let clarification = "Quick question - ";
-        
-        if (needsCallsClarification) {
-          clarification += `which calls should ring your phone?\n\n`;
-          clarification += `- All calls\n`;
-          clarification += `- Favorites only\n`;
-          clarification += `- Saved contacts\n`;
-          clarification += `- None (AI handles all)\n\n`;
-        }
-        
-        if (needsMessagesClarification) {
-          clarification += `which messages should notify you?\n\n`;
-          clarification += `- All messages\n`;
-          clarification += `- High + medium priority only (no spam)\n`;
-          clarification += `- Urgent only\n`;
-          clarification += `- None\n\n`;
-        }
-        
-        clarification += "Just tell me, like 'favorites' or 'high + medium only'.";
-        return clarification;
-      }
-      
-      // If user only specified one (calls or messages), DON'T default the other to none
-      // Instead, leave it unchanged (don't create a rule for it)
-      
-      // Only proceed if we parsed at least one preference clearly
-      if (callsMode || messagesMode) {
-        console.log("Parsed DND preferences:", { callsMode, messagesMode, schedule: pendingDNDClarification });
-        
-        // Build schedule if times were specified
-        const schedule = pendingDNDClarification.startTime && pendingDNDClarification.endTime
-          ? { startTime: pendingDNDClarification.startTime, endTime: pendingDNDClarification.endTime }
-          : null;
-        
-        // Execute set_routing_preferences directly
-        // Only pass modes that were explicitly set
-        const result = await setRoutingPreferencesTool.invoke({
-          userId,
-          callsMode: callsMode || undefined,
-          messagesMode: messagesMode || undefined,
-          schedule,
-          isDefault: !schedule, // If no schedule, this is the default routing
-        });
-        
-        return result;
-      }
+      // Safety fallback
+      return "Got it. What would you like for calls (all, favorites only, saved contacts, or none) and messages (all, important, urgent, or none)?";
     }
     
     // If there's a pending clarification and user responded, complete the rule

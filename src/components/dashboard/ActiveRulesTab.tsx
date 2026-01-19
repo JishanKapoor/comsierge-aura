@@ -445,7 +445,12 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
 
   const routingForwardRule = pickNewestRuleOfType("forward");
   const routingMessageRule = pickNewestRuleOfType("message-notify");
-  const routingActive = Boolean(routingForwardRule?.active || routingMessageRule?.active);
+
+  const callsMuted = (routingForwardRule?.conditions?.mode as string | undefined) === "none";
+  const messagesMuted = (routingMessageRule?.conditions?.priorityFilter as string | undefined) === "none";
+  const callsActive = Boolean(routingForwardRule?.active) && !callsMuted;
+  const messagesActive = Boolean(routingMessageRule?.active) && !messagesMuted;
+  const routingActive = Boolean(callsActive || messagesActive);
 
   // Source of truth for "Forward To" is the user profile forwarding number.
   // Rules may lag behind (or contain stale destinationLabel), especially after changes made via AI/SMS.
@@ -475,13 +480,13 @@ const ActiveRulesTab = ({ externalRules, onRulesChange, onStartCall }: ActiveRul
         destination: routingDestination,
         calls: {
           id: routingForwardRule?.id,
-          active: Boolean(routingForwardRule?.active),
+          active: callsActive,
           mode: routingForwardRule?.conditions?.mode || "all",
           tags: routingForwardRule?.conditions?.tags || [],
         },
         messages: {
           id: routingMessageRule?.id,
-          active: Boolean(routingMessageRule?.active),
+          active: messagesActive,
           priorityFilter: routingMessageRule?.conditions?.priorityFilter || "all",
           translateEnabled: Boolean(routingMessageRule?.conditions?.translateEnabled),
           receiveLanguage: routingMessageRule?.conditions?.receiveLanguage || "en",
