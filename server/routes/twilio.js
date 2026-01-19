@@ -3134,11 +3134,6 @@ router.post("/webhook/voice", async (req, res) => {
       
       const normalize = (p) => p ? p.replace(/[^\d+]/g, "") : "";
       const callerPhone = normalize(From);
-            default:
-              // Unknown filter value: be safe and do NOT notify.
-              shouldNotify = false;
-              console.log(`   Unknown priorityFilter='${priorityFilter}' - skipping notification`);
-              break;
       
       // Helper to build phone variations for robust contact lookup
       const normalizeToE164ish = (value) => {
