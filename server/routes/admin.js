@@ -293,6 +293,48 @@ router.delete("/twilio-accounts/:accountSid/phones/:phone", authMiddleware, admi
   }
 });
 
+// @route   POST /api/admin/cleanup-phone-assignments
+// @desc    Find users with assigned phones and optionally unassign them
+// @access  Private (admin)
+router.post("/cleanup-phone-assignments", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { unassign } = req.body; // If true, actually unassign; otherwise just report
+
+    const usersWithPhones = await User.find({ phoneNumber: { $ne: null } }).select("_id name email phoneNumber");
+    
+    const report = usersWithPhones.map(u => ({
+      userId: u._id,
+      name: u.name,
+      email: u.email,
+      phoneNumber: u.phoneNumber,
+    }));
+
+    if (unassign && usersWithPhones.length > 0) {
+      for (const user of usersWithPhones) {
+        console.log(`🧹 Admin cleanup: unassigning ${user.phoneNumber} from user ${user._id}`);
+        await cleanupUserData(user._id);
+        user.phoneNumber = null;
+        await user.save();
+      }
+    }
+
+    res.json({
+      success: true,
+      message: unassign 
+        ? `Unassigned ${usersWithPhones.length} phone numbers` 
+        : `Found ${usersWithPhones.length} users with assigned phones`,
+      data: report,
+    });
+  } catch (error) {
+    console.error("Cleanup phone assignments error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
+
 // @route   GET /api/admin/users
 // @desc    Get all users (admin only)
 // @access  Private (admin)
